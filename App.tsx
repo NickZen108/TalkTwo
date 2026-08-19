@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   SafeAreaView,
   ScrollView,
   Share,
@@ -14,7 +15,7 @@ import {
 import type { Session } from '@supabase/supabase-js';
 import { evaluateFreeMessage, MAX_FREE_LENGTH } from './src/filter/freeFilter';
 import { supabase } from './src/lib/supabase';
-import { sendLoginCode, signOut, verifyLoginCode } from './src/services/auth';
+import { createSessionFromMagicLink, sendMagicLink, signOut } from './src/services/auth';
 import {
   acceptInvitation,
   createInvitation,
@@ -34,30 +35,23 @@ function Button({ title, onPress, disabled = false, secondary = false }: { title
   );
 }
 
+function invitationTokenFromUrl(url: string) {
+  const match = url.match(/^talktwo:\/\/invite\/([^?#]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [sentEmail, setSentEmail] = useState('');
-  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function requestCode() {
+  async function requestLink() {
     try {
       setBusy(true);
-      const normalized = await sendLoginCode(email);
+      const normalized = await sendMagicLink(email);
       setSentEmail(normalized);
     } catch (error) {
-      Alert.alert('Could not send login email', error instanceof Error ? error.message : 'Please try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmCode() {
-    try {
-      setBusy(true);
-      await verifyLoginCode(sentEmail, code);
-    } catch (error) {
-      Alert.alert('Code not accepted', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert('Could not send sign-in email', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusy(false);
     }
@@ -72,9 +66,9 @@ function LoginScreen() {
         </View>
         <View style={styles.card}>
           <Text style={styles.statusTitle}>Sign in</Text>
-          <Text style={styles.statusText}>No password. We send a one-time login code to your email.</Text>
           {!sentEmail ? (
             <>
+              <Text style={styles.statusText}>Enter your email. We will send you a secure sign-in link. No password needed.</Text>
               <Text style={styles.label}>Email</Text>
               <TextInput
                 autoCapitalize="none"
@@ -85,21 +79,14 @@ function LoginScreen() {
                 placeholder="you@example.com"
                 style={styles.singleInput}
               />
-              <Button title={busy ? 'Sending…' : 'Send login code'} onPress={requestCode} disabled={busy || !email.includes('@')} />
+              <Button title={busy ? 'Sending…' : 'Email me a sign-in link'} onPress={requestLink} disabled={busy || !email.includes('@')} />
             </>
           ) : (
             <>
-              <Text style={styles.smallNote}>Sent to {sentEmail}</Text>
-              <Text style={styles.label}>Login code</Text>
-              <TextInput
-                keyboardType="number-pad"
-                value={code}
-                onChangeText={setCode}
-                placeholder="6-digit code"
-                style={styles.singleInput}
-              />
-              <Button title={busy ? 'Checking…' : 'Continue'} onPress={confirmCode} disabled={busy || code.trim().length < 6} />
-              <Button title="Use another email" onPress={() => { setSentEmail(''); setCode(''); }} secondary />
+              <Text style={styles.statusText}>We sent a sign-in link to:</Text>
+              <Text style={styles.emailEmphasis}>{sentEmail}</Text>
+              <Text style={styles.smallNote}>Open the email on this phone and tap “Sign in”. TalkTwo should open automatically.</Text>
+              <Button title="Use another email" onPress={() => { setSentEmail(''); setEmail(''); }} secondary />
             </>
           )}
         </View>
@@ -108,7 +95,7 @@ function LoginScreen() {
   );
 }
 
-function HomeScreen({ session }: { session: Session }) {
+function HomeScreen({ session, pendingInvite, clearPendingInvite }: { session: Session; pendingInvite: string | null; clearPendingInvite: () => void }) {
   const [message, setMessage] = useState('');
   const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
   const [inviteCode, setInviteCode] = useState('');
@@ -126,13 +113,17 @@ function HomeScreen({ session }: { session: Session }) {
 
   useEffect(() => { void refreshRelationships(); }, []);
 
+  useEffect(() => {
+    if (pendingInvite) setInviteCode(pendingInvite);
+  }, [pendingInvite]);
+
   async function makeInvite() {
     try {
       setBusy(true);
       const invite = await createInvitation();
       const deepLink = `talktwo://invite/${invite.token}`;
       await Share.share({
-        message: `I have invited you to TalkTwo. Open this link after installing TalkTwo: ${deepLink}\n\nInvitation code: ${invite.token}`,
+        message: `I have invited you to TalkTwo. Open this link on your phone after installing TalkTwo: ${deepLink}`,
       });
       await refreshRelationships();
     } catch (error) {
@@ -147,10 +138,11 @@ function HomeScreen({ session }: { session: Session }) {
       setBusy(true);
       await acceptInvitation(inviteCode);
       setInviteCode('');
+      clearPendingInvite();
       await refreshRelationships();
       Alert.alert('Connected', 'This TalkTwo connection is now active.');
     } catch (error) {
-      Alert.alert('Invitation not accepted', error instanceof Error ? error.message : 'Check the code and try again.');
+      Alert.alert('Invitation not accepted', error instanceof Error ? error.message : 'Check the invitation and try again.');
     } finally {
       setBusy(false);
     }
@@ -169,19 +161,16 @@ function HomeScreen({ session }: { session: Session }) {
 
         <View style={styles.card}>
           <Text style={styles.statusTitle}>Connections</Text>
-          <Text style={styles.statusText}>Both people need TalkTwo. Invite someone, or enter the invitation code they sent you.</Text>
+          <Text style={styles.statusText}>Both people need TalkTwo. Send an invitation link, or open one sent to you.</Text>
           <Text style={styles.connectionCount}>{relationships.length} connection{relationships.length === 1 ? '' : 's'}</Text>
           <Button title={busy ? 'Please wait…' : 'Invite someone'} onPress={makeInvite} disabled={busy} />
-          <Text style={styles.label}>Invitation code</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={inviteCode}
-            onChangeText={setInviteCode}
-            placeholder="Paste code"
-            style={styles.singleInput}
-          />
-          <Button title="Accept invitation" onPress={joinWithCode} disabled={busy || inviteCode.trim().length < 12} secondary />
+          {inviteCode ? (
+            <View style={styles.inviteNotice}>
+              <Text style={styles.reasonTitle}>Invitation ready</Text>
+              <Text style={styles.reasonText}>Accepting connects this account to the person who sent the invitation.</Text>
+              <Button title="Accept invitation" onPress={joinWithCode} disabled={busy} secondary />
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -216,7 +205,7 @@ function HomeScreen({ session }: { session: Session }) {
 
         <View style={styles.premiumCard}>
           <Text style={styles.premiumTitle}>Premium</Text>
-          <Text style={styles.premiumText}>AI review, calm rewrites, Coach, longer messages, Personal Boundaries and PDF export will be added on top of the same calm communication rules.</Text>
+          <Text style={styles.premiumText}>AI review, calm rewrites, Coach, longer messages, Personal Boundaries and PDF export will sit on top of the same calm communication rules.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -226,20 +215,46 @@ function HomeScreen({ session }: { session: Session }) {
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
 
   useEffect(() => {
+    async function handleUrl(url: string | null) {
+      if (!url) return;
+      const inviteToken = invitationTokenFromUrl(url);
+      if (inviteToken) {
+        setPendingInvite(inviteToken);
+        return;
+      }
+      if (url.toLowerCase().startsWith('talktwo://auth')) {
+        try {
+          await createSessionFromMagicLink(url);
+        } catch (error) {
+          Alert.alert('Sign-in link could not be used', error instanceof Error ? error.message : 'Please request a new link.');
+        }
+      }
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
     });
+
+    void Linking.getInitialURL().then(handleUrl);
+    const linking = Linking.addEventListener('url', ({ url }) => { void handleUrl(url); });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
-    return () => listener.subscription.unsubscribe();
+
+    return () => {
+      linking.remove();
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   if (loading) {
     return <SafeAreaView style={styles.loading}><ActivityIndicator /><Text style={styles.smallNote}>Opening TalkTwo…</Text></SafeAreaView>;
   }
-  return session ? <HomeScreen session={session} /> : <LoginScreen />;
+  return session
+    ? <HomeScreen session={session} pendingInvite={pendingInvite} clearPendingInvite={() => setPendingInvite(null)} />
+    : <LoginScreen />;
 }
 
 const styles = StyleSheet.create({
@@ -250,6 +265,7 @@ const styles = StyleSheet.create({
   headerRow: { marginTop: 16, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   brand: { fontSize: 34, fontWeight: '800', color: '#161616' },
   tagline: { marginTop: 4, fontSize: 14, color: '#666' },
+  emailEmphasis: { fontSize: 16, fontWeight: '800', color: '#222' },
   signOut: { fontWeight: '700', color: '#555' },
   card: { backgroundColor: '#FFF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E5E5E0', gap: 12 },
   label: { fontSize: 14, fontWeight: '700', marginTop: 4, color: '#333' },
@@ -265,6 +281,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 15, lineHeight: 21, color: '#555' },
   smallNote: { color: '#666', lineHeight: 20 },
   connectionCount: { fontWeight: '700', color: '#333' },
+  inviteNotice: { gap: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#ECECE8' },
   reason: { marginTop: 4, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#ECECE8' },
   reasonTitle: { fontSize: 16, fontWeight: '700', color: '#222' },
   reasonText: { marginTop: 4, fontSize: 14, lineHeight: 20, color: '#555' },

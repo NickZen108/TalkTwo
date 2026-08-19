@@ -147,14 +147,23 @@ function ChatView({ relationship, session, onBack }: { relationship: Relationshi
           {messages.length === 0 ? <Text style={styles.empty}>No messages yet.</Text> : messages.map((item) => {
             const mine = item.sender_id === session.user.id;
             const opened = Boolean(item.opened_at);
+            const hideIncomingBody = !mine && !opened;
             return (
               <View key={item.id} style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
                 <Text style={styles.bubbleMeta}>{mine ? 'You' : 'Other person'} · {new Date(item.created_at).toLocaleString()}</Text>
-                <Text style={styles.bubbleText}>{item.body}</Text>
+                {hideIncomingBody ? (
+                  <>
+                    <Text style={styles.waitingTitle}>New message</Text>
+                    <Text style={styles.smallNote}>The message text stays hidden until you choose to open it.</Text>
+                    <Button title="Open message" onPress={() => void openIncoming(item)} secondary />
+                  </>
+                ) : (
+                  <Text style={styles.bubbleText}>{item.body}</Text>
+                )}
                 {mine ? <View style={styles.bubbleFooter}>
                   <Text style={styles.delivery}>{opened ? 'Opened' : 'Sent'}</Text>
                   {!opened && <TouchableOpacity onPress={() => void withdraw(item)}><Text style={styles.withdraw}>Withdraw</Text></TouchableOpacity>}
-                </View> : !opened ? <Button title="Open message" onPress={() => void openIncoming(item)} secondary /> : null}
+                </View> : null}
               </View>
             );
           })}
@@ -319,6 +328,7 @@ const styles = StyleSheet.create({
   theirs: { alignSelf: 'flex-start', backgroundColor: '#F0F0EC', borderColor: '#D9D9D3' },
   bubbleMeta: { fontSize: 11, color: '#777', marginBottom: 6 },
   bubbleText: { fontSize: 16, lineHeight: 22, color: '#171717' },
+  waitingTitle: { fontSize: 16, fontWeight: '800', color: '#222', marginBottom: 4 },
   bubbleFooter: { marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 16 },
   delivery: { fontSize: 12, color: '#777' },
   withdraw: { fontSize: 12, fontWeight: '800', color: '#555' },

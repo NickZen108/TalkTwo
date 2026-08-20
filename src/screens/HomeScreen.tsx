@@ -11,6 +11,7 @@ import ChatScreen from './ChatScreen';
 import MessageWindowsScreen from './MessageWindowsScreen';
 import FeedbackScreen from './FeedbackScreen';
 import PremiumGiftsScreen from './PremiumGiftsScreen';
+import AccountScreen from './AccountScreen';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 
@@ -41,6 +42,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   const [showWindows, setShowWindows] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showPremiumGifts, setShowPremiumGifts] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
   const storeBilling = useNativeStoreBilling(session.user.id, {
     onError: (message) => Alert.alert('Store purchase unavailable', message),
@@ -198,6 +200,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
   if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
   if (showPremiumGifts) return <PremiumGiftsScreen onBack={() => setShowPremiumGifts(false)} />;
+  if (showAccount) return <AccountScreen userId={session.user.id} relationshipIds={relationships.map((relationship) => relationship.id)} onBack={() => setShowAccount(false)} />;
 
   const appearanceOptions: AppearanceMode[] = ['system', 'light', 'dark'];
 
@@ -306,6 +309,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
           <Text style={styles.sectionTitle}>TalkTwo</Text>
           <Action styles={styles} title={storeBilling.processing ? 'Checking purchases…' : 'Restore purchases'} onPress={() => void storeBilling.restore().catch((error) => Alert.alert('Restore unavailable', error instanceof Error ? error.message : 'Please try again.'))} disabled={storeBilling.processing || !storeBilling.connected} quiet />
           <Action styles={styles} title="Send feedback" onPress={() => setShowFeedback(true)} quiet />
+          <Action styles={styles} title="Account & privacy" onPress={() => setShowAccount(true)} quiet />
           <Text style={styles.privacy}>No profile photos. No contacts, camera, microphone or location access. Chat appearance is stored only on this device.</Text>
         </View>
       </ScrollView>

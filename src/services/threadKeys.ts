@@ -108,3 +108,11 @@ export async function installActiveMemberEnvelope(invitationId: string, relation
   await SecureStore.deleteItemAsync(pendingName, secureOptions);
   return true;
 }
+
+export async function removeThreadKeys(relationshipIds: string[]) {
+  await Promise.all(
+    [...new Set(relationshipIds)]
+      .filter(Boolean)
+      .map((relationshipId) => SecureStore.deleteItemAsync(`${THREAD_PREFIX}${relationshipId}`, secureOptions)),
+  );
+}

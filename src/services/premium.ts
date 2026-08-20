@@ -6,6 +6,8 @@ export interface UserPlan {
   trial_started_at: string | null;
   trial_ends_at: string | null;
   premium_ends_at: string | null;
+  analyses_used_today: number;
+  analyses_remaining_today: number;
 }
 
 export interface AiReview {
@@ -18,15 +20,17 @@ export interface AiReview {
 }
 
 export async function getMyPlan() {
-  const { data, error } = await supabase.from('user_plans').select('user_id,plan,trial_started_at,trial_ends_at,premium_ends_at').single();
+  const { data, error } = await supabase.rpc('get_my_plan_status');
   if (error) throw error;
-  return data as UserPlan;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('Plan status could not be loaded.');
+  return row as UserPlan;
 }
 
 export async function startPremiumTrial() {
-  const { data, error } = await supabase.rpc('start_my_premium_trial');
+  const { error } = await supabase.rpc('start_my_premium_trial');
   if (error) throw error;
-  return data as UserPlan;
+  return getMyPlan();
 }
 
 export async function analyzePremiumMessage(relationshipId: string, message: string) {

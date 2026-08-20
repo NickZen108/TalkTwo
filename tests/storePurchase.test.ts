@@ -54,7 +54,7 @@ test('Google subscription purchase fails closed on ambiguous offers', () => {
     id: 'extra_observer_monthly',
     platform: 'android',
     subscriptionOffers: [{ offerTokenAndroid: 'one' }, { offerTokenAndroid: 'two' }],
-  }, 'extra_observer_monthly'), /exactly one eligible monthly offer/i);
+  }, 'extra_observer_monthly'), /exactly one eligible offer/i);
 });
 
 test('verification body never accepts a pending or tokenless purchase', () => {

@@ -4,12 +4,12 @@ import * as SecureStore from 'expo-secure-store';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './src/lib/supabase';
 import { createSessionFromMagicLink } from './src/services/auth';
-import { storePendingInviteKey } from './src/services/threadKeys';
+import { storePendingInviteSecret } from './src/services/threadKeys';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import { AppThemeProvider, useAppTheme } from './src/theme/AppTheme';
 
-const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v3';
+const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v4';
 const secureOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
@@ -19,16 +19,16 @@ export interface PendingInvite {
   token: string;
 }
 
-function invitationFromUrl(url: string): (PendingInvite & { key: string }) | null {
+function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
   const match = url.match(/^talktwo:\/\/(invite|member)\/([^?#]+)(?:\?[^#]*)?(?:#(.*))?$/i);
   if (!match?.[1] || !match[2]) return null;
   const fragment = match[3] ?? '';
-  const keyMatch = fragment.match(/(?:^|&)k=([0-9a-f]{64})(?:&|$)/i);
-  if (!keyMatch?.[1]) return null;
+  const secretMatch = fragment.match(/(?:^|&)s=([0-9a-f]{64})(?:&|$)/i);
+  if (!secretMatch?.[1]) return null;
   return {
     kind: match[1].toLowerCase() === 'member' ? 'member' : 'invite',
     token: decodeURIComponent(match[2]),
-    key: keyMatch[1].toLowerCase(),
+    secret: secretMatch[1].toLowerCase(),
   };
 }
 
@@ -64,7 +64,7 @@ function AppContent() {
       const invite = invitationFromUrl(url);
       if (invite) {
         try {
-          await storePendingInviteKey(invite.token, invite.key);
+          await storePendingInviteSecret(invite.token, invite.secret);
           await savePendingInvite({ kind: invite.kind, token: invite.token });
         } catch (error) {
           Alert.alert('Invitation could not be stored securely', error instanceof Error ? error.message : 'Ask for a new invitation.');
@@ -72,7 +72,7 @@ function AppContent() {
         return;
       }
       if (/^talktwo:\/\/(invite|member)\//i.test(url)) {
-        Alert.alert('Invitation is incomplete', 'This link is missing its secure conversation key. Ask the sender for a new invitation.');
+        Alert.alert('Invitation is incomplete', 'This link is missing its one-time encryption secret. Ask the sender for a new invitation.');
         return;
       }
       if (url.toLowerCase().startsWith('talktwo://auth')) {

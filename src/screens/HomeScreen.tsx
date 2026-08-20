@@ -43,7 +43,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     onError: (message) => Alert.alert('Store purchase unavailable', message),
     onPurchaseVerified: async () => {
       await refreshRelationships();
-      Alert.alert('Membership active', 'Your verified monthly membership is now active.');
+      Alert.alert('Purchase active', 'Your verified TalkTwo purchase is now active.');
     },
     onRestoreFinished: async (count) => {
       await refreshRelationships();
@@ -146,12 +146,29 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     }
   }
 
+  function buyIndividualPremium() {
+    Alert.alert(
+      'Individual Premium · 59 kr/month',
+      'Premium covers this TalkTwo account and renews monthly. Access starts only after the App Store or Google Play purchase is verified by TalkTwo.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Continue to store',
+          onPress: () => {
+            void storeBilling.purchasePremium('premium_individual_monthly')
+              .catch((error) => Alert.alert('Purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+          },
+        },
+      ],
+    );
+  }
+
   const approvedPending = useMemo(() => pendingMemberships.find((item) => item.status === 'awaiting_payment') ?? null, [pendingMemberships]);
   const pendingText = useMemo(() => approvedPending
     ? `Your extra membership is approved. ${approvedPending.role === 'observer' ? 'Read-only access costs 29 kr/month.' : 'Writing access costs 99 kr/month.'}`
     : pendingMemberships.length ? 'A group invitation is waiting for the other chat members to approve you. No payment can happen yet.' : null, [approvedPending, pendingMemberships]);
 
-  if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => { setSelected(null); void refreshRelationships(); }} />;
+  if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => { setSelected(null); void refreshRelationships(); }} onPurchasePremium={storeBilling.purchasePremium} storePurchaseBusy={storeBilling.processing || !storeBilling.connected} />;
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
   if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
 
@@ -212,6 +229,13 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
               <Action styles={styles} title="Start a chat" onPress={() => void makeInvite()} disabled={busy} />
             </View>
           ) : null}
+        </View>
+
+        <View style={styles.tools}>
+          <Text style={styles.sectionTitle}>Premium</Text>
+          <Text style={styles.toolHelp}>Individual Premium adds AI message review, longer messages, Coach and the other Premium tools to your account.</Text>
+          <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Individual Premium · 59 kr/month'} onPress={buyIndividualPremium} disabled={storeBilling.processing || !storeBilling.connected} />
+          <Text style={styles.privacy}>A two-person plan can be bought for you and one core chat partner from that chat's settings.</Text>
         </View>
 
         <View style={styles.tools}>

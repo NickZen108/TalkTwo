@@ -76,7 +76,7 @@ After server verification, TalkTwo creates a durable recipient entitlement bound
 ## Native build requirements
 TalkTwo uses `expo-iap` and therefore requires a native development build for purchase testing. Expo Go is not sufficient.
 
-The current native baseline is iOS 16.4+ and Android minSdk 23 with a Kotlin 2.2 toolchain. Development, internal preview and production EAS build profiles are defined in `eas.json`.
+The current native baseline is iOS 16.4+ and Android minSdk 24 with a Kotlin 2.2 toolchain. Development, internal preview and production EAS build profiles are defined in `eas.json`.
 
 ## EU alternative billing
 Apple and Google provide special EU/EEA programs that can permit external or alternative payment flows subject to enrollment, technical APIs, disclosures, reporting and fees. TalkTwo does not depend on those programs for v1. Native store billing is the default so the first release can also operate outside the EU without maintaining two different purchase systems from day one.

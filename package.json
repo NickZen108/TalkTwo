@@ -15,7 +15,6 @@
     "qa": "npm run typecheck && npm run typecheck:tests && npm test && npx expo-doctor && npm run audit:runtime"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.112.3",
     "expo": "~57.0.13",
     "expo-constants": "~57.0.12",

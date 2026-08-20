@@ -111,20 +111,25 @@ function AppContent() {
     }
 
     void (async () => {
-      const [{ data }, storedInvite, storedGift, initialUrl] = await Promise.all([
-        supabase.auth.getSession(),
-        SecureStore.getItemAsync(PENDING_INVITE_KEY, secureOptions).catch(() => null),
-        SecureStore.getItemAsync(PENDING_GIFT_KEY, secureOptions).catch(() => null),
-        Linking.getInitialURL(),
-      ]);
-      if (!mounted) return;
-      setSession(data.session);
-      const parsed = parseStoredInvite(storedInvite);
-      if (parsed) setPendingInvite(parsed);
-      const parsedGift = parseStoredGift(storedGift);
-      if (parsedGift) setPendingGift(parsedGift);
-      await handleUrl(initialUrl);
-      if (mounted) setLoading(false);
+      try {
+        const [{ data }, storedInvite, storedGift, initialUrl] = await Promise.all([
+          supabase.auth.getSession(),
+          SecureStore.getItemAsync(PENDING_INVITE_KEY, secureOptions).catch(() => null),
+          SecureStore.getItemAsync(PENDING_GIFT_KEY, secureOptions).catch(() => null),
+          Linking.getInitialURL(),
+        ]);
+        if (!mounted) return;
+        setSession(data.session);
+        const parsed = parseStoredInvite(storedInvite);
+        if (parsed) setPendingInvite(parsed);
+        const parsedGift = parseStoredGift(storedGift);
+        if (parsedGift) setPendingGift(parsedGift);
+        await handleUrl(initialUrl);
+      } catch {
+        if (mounted) Alert.alert('TalkTwo could not finish opening', 'Check your connection, then reopen the app.');
+      } finally {
+        if (mounted) setLoading(false);
+      }
     })();
 
     const linking = Linking.addEventListener('url', ({ url }) => {

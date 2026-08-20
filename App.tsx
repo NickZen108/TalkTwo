@@ -21,6 +21,7 @@ import { storePendingInviteSecret, storePendingKeyRecoveryApproval } from './src
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import { AppThemeProvider, useAppTheme } from './src/theme/AppTheme';
+import { addPushTokenRefreshListener, refreshPushRegistrationIfEnabled } from './src/services/pushNotifications';
 
 const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v4';
 const PENDING_GIFT_KEY = 'talktwo.pendingPremiumGift.v1';
@@ -230,6 +231,13 @@ function AppContent() {
 
     return () => { cancelled = true; };
   }, [session, pendingGift, giftPromptedForUserId]);
+
+  useEffect(() => {
+    if (!session) return;
+    void refreshPushRegistrationIfEnabled().catch(() => undefined);
+    const listener = addPushTokenRefreshListener();
+    return () => listener.remove();
+  }, [session?.user.id]);
 
   function clearPendingInvite() {
     setPendingInvite(null);

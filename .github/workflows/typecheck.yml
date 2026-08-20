@@ -18,6 +18,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run typecheck:tests
       - run: npm test
+      - run: npm run layout:check
+      - run: npm run privacy:check
       - run: npx expo-doctor
       - run: npm run audit:runtime
       - run: npx expo export --platform android --output-dir dist-qa

@@ -64,13 +64,15 @@ function checkManifest(manifestPath, expectRemovalDirectives) {
 }
 
 const mergedMode = process.argv.includes('--merged');
+const buildVariant = process.argv.includes('--release') ? 'release' : 'debug';
+const variantPattern = new RegExp(`(?:^|[\\\\/])${buildVariant}(?:[\\\\/]|$)`, 'i');
 const paths = mergedMode
-  ? manifestsUnder('android/app/build/intermediates/merged_manifests').filter((item) => /debug/i.test(item))
+  ? manifestsUnder('android/app/build/intermediates/merged_manifests').filter((item) => variantPattern.test(item))
   : ['android/app/src/main/AndroidManifest.xml'];
 
 if (!paths.length || paths.some((item) => !fs.existsSync(item))) {
   console.error(mergedMode
-    ? 'No merged debug AndroidManifest.xml found. Build the Android debug app first.'
+    ? `No merged ${buildVariant} AndroidManifest.xml found. Build the Android ${buildVariant} app first.`
     : 'Missing android/app/src/main/AndroidManifest.xml. Run Expo prebuild first.');
   process.exit(1);
 }

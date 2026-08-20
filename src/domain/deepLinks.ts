@@ -12,6 +12,10 @@ export interface PendingPremiumGift {
   token: string;
 }
 
+export interface PendingKeyRecoveryApproval {
+  token: string;
+}
+
 function safeIdentifier(value: string) {
   if (!value || value.length > MAX_IDENTIFIER_LENGTH) return null;
   try {
@@ -53,12 +57,26 @@ export function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
   return { giftId, token };
 }
 
+export function keyRecoveryFromUrl(url: string): (PendingKeyRecoveryApproval & { secret: string }) | null {
+  if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
+  const match = url.match(/^talktwo:\/\/recover-key\/([^?#]+)#(.*)$/i);
+  if (!match?.[1] || !match[2]) return null;
+  const token = safeIdentifier(match[1]);
+  const secret = singleParameter(match[2], 's');
+  if (!token || !secret || !INVITATION_SECRET_PATTERN.test(secret)) return null;
+  return { token, secret: secret.toLowerCase() };
+}
+
 export function isInvitationUrl(url: string) {
   return /^talktwo:\/\/(invite|member)(?:\/|$)/i.test(url);
 }
 
 export function isPremiumGiftUrl(url: string) {
   return /^talktwo:\/\/premium-gift(?:\/|$)/i.test(url);
+}
+
+export function isKeyRecoveryUrl(url: string) {
+  return /^talktwo:\/\/recover-key(?:\/|$)/i.test(url);
 }
 
 export function isAuthCallbackUrl(url: string) {

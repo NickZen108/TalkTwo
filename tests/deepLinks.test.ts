@@ -4,7 +4,9 @@ import {
   invitationFromUrl,
   isAuthCallbackUrl,
   isInvitationUrl,
+  isKeyRecoveryUrl,
   isPremiumGiftUrl,
+  keyRecoveryFromUrl,
   premiumGiftFromUrl,
 } from '../src/domain/deepLinks';
 
@@ -41,11 +43,23 @@ test('parses one unambiguous Premium gift token', () => {
   assert.equal(premiumGiftFromUrl('talktwo://premium-gift/id?source=share'), null);
 });
 
+test('parses a recovery secret only from an unambiguous fragment', () => {
+  assert.deepEqual(keyRecoveryFromUrl(`talktwo://recover-key/request%201#s=${secret}`), {
+    token: 'request 1',
+    secret: secret.toLowerCase(),
+  });
+  assert.equal(keyRecoveryFromUrl('talktwo://recover-key/request-1'), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key/request-1#s=${secret}&s=${secret}`), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key/%E0%A4%A#s=${secret}`), null);
+});
+
 test('recognizes only exact TalkTwo link families', () => {
   assert.equal(isInvitationUrl('talktwo://invite/id'), true);
   assert.equal(isInvitationUrl('talktwo://invited/id'), false);
   assert.equal(isPremiumGiftUrl('talktwo://premium-gift/id'), true);
   assert.equal(isPremiumGiftUrl('talktwo://premium-gifts/id'), false);
+  assert.equal(isKeyRecoveryUrl('talktwo://recover-key/id'), true);
+  assert.equal(isKeyRecoveryUrl('talktwo://recover-keys/id'), false);
   assert.equal(isAuthCallbackUrl('talktwo://auth#access_token=x'), true);
   assert.equal(isAuthCallbackUrl('talktwo://authentication#access_token=x'), false);
   assert.equal(isAuthCallbackUrl(`talktwo://auth#${'x'.repeat(4096)}`), false);

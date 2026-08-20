@@ -109,9 +109,24 @@ export async function respondMemberInvitation(invitationId: string, approve: boo
   return String(data);
 }
 
+export interface PendingMembership {
+  invitation_id: string;
+  relationship_id: string;
+  role: MemberRole;
+  status: 'awaiting_approvals' | 'awaiting_seat';
+  created_at: string;
+}
+
+export async function listMyPendingMemberships() {
+  const { data, error } = await supabase.rpc('list_my_pending_memberships');
+  if (error) throw error;
+  return (data ?? []) as PendingMembership[];
+}
+
 export async function getRelationshipSeatStatus(relationshipId: string) {
   const { data, error } = await supabase.rpc('get_relationship_seat_status', { rel_id: relationshipId });
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('Seat status could not be loaded.');
   return row as { member_count: number; extra_seats: number; max_members: number; available_seats: number };
 }

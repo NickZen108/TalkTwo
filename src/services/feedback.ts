@@ -14,7 +14,7 @@ export async function submitFeedback(category: FeedbackCategory, message: string
     user_id: user.id,
     category,
     message: clean,
-    app_version: '0.2.0',
+    app_version: '0.3.0',
   });
   if (error) throw error;
 }

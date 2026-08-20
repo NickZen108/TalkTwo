@@ -7,6 +7,7 @@ import { createSessionFromMagicLink } from './src/services/auth';
 import { storePendingInviteKey } from './src/services/threadKeys';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import { AppThemeProvider, useAppTheme } from './src/theme/AppTheme';
 
 const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v3';
 const secureOptions: SecureStore.SecureStoreOptions = {
@@ -44,7 +45,8 @@ function parseStoredInvite(value: string | null): PendingInvite | null {
   return null;
 }
 
-export default function App() {
+function AppContent() {
+  const { colors } = useAppTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
@@ -112,7 +114,7 @@ export default function App() {
   }
 
   if (loading) {
-    return <SafeAreaView style={styles.loading}><ActivityIndicator /><Text style={styles.note}>Opening TalkTwo…</Text></SafeAreaView>;
+    return <SafeAreaView style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.accent} /><Text style={[styles.note, { color: colors.muted }]}>Opening TalkTwo…</Text></SafeAreaView>;
   }
 
   return session
@@ -120,7 +122,11 @@ export default function App() {
     : <LoginScreen />;
 }
 
+export default function App() {
+  return <AppThemeProvider><AppContent /></AppThemeProvider>;
+}
+
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: '#F5F5F2' },
-  note: { color: '#666' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  note: {},
 });

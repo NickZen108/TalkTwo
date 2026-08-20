@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { listCachedMessages } from './localDb';
 
 export interface UserPlan {
   user_id: string;
@@ -34,8 +35,16 @@ export async function startPremiumTrial() {
 }
 
 export async function analyzePremiumMessage(relationshipId: string, message: string) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) throw new Error('Please sign in again.');
+  const cached = await listCachedMessages(user.id, relationshipId);
+  const recentContext = cached.slice(-10).map((item) => ({
+    logical_id: item.logical_id,
+    text: item.body,
+  }));
+
   const { data, error } = await supabase.functions.invoke('analyze-message', {
-    body: { relationship_id: relationshipId, message },
+    body: { relationship_id: relationshipId, message, recent_context: recentContext },
   });
   if (error) throw error;
   if (data?.fallback_free) throw new Error('Daily trial limit reached');

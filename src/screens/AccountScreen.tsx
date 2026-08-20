@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ACCOUNT_DELETE_CONFIRMATION, accountDeleteConfirmed } from '../domain/accountDeletion';
 import { deleteAccount } from '../services/auth';
+import { disablePushNotifications, enablePushNotifications, pushNotificationStatus } from '../services/pushNotifications';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 
 export default function AccountScreen({
@@ -17,7 +18,31 @@ export default function AccountScreen({
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [confirmation, setConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushPermission, setPushPermission] = useState<string>('undetermined');
+  const [pushBusy, setPushBusy] = useState(false);
   const confirmed = accountDeleteConfirmed(confirmation);
+
+  useEffect(() => {
+    void pushNotificationStatus()
+      .then((status) => { setPushEnabled(status.enabled); setPushPermission(status.permission); })
+      .catch(() => undefined);
+  }, []);
+
+  async function setPush(next: boolean) {
+    try {
+      setPushBusy(true);
+      if (next) await enablePushNotifications();
+      else await disablePushNotifications();
+      const status = await pushNotificationStatus();
+      setPushEnabled(status.enabled);
+      setPushPermission(status.permission);
+    } catch (error) {
+      Alert.alert('Notifications', error instanceof Error ? error.message : 'Notification settings could not be changed.');
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   function confirmDeletion() {
     if (!confirmed || deleting) return;
@@ -50,6 +75,21 @@ export default function AccountScreen({
           <View style={styles.headerText}>
             <Text style={styles.title}>Account & privacy</Text>
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Private message notifications</Text>
+          <Text style={styles.body}>TalkTwo can notify you when a message becomes available. Alerts never include message text, sender names or document names, and are never sent before your communication window opens.</Text>
+          <Text style={styles.body}>System permission: {pushPermission}. You can also turn TalkTwo notifications off in device settings.</Text>
+          <TouchableOpacity
+            accessibilityRole="switch"
+            accessibilityState={{ checked: pushEnabled, disabled: pushBusy }}
+            disabled={pushBusy}
+            onPress={() => void setPush(!pushEnabled)}
+            style={[styles.notificationButton, pushEnabled && styles.notificationButtonEnabled, pushBusy && styles.disabled]}
+          >
+            <Text style={styles.notificationButtonText}>{pushBusy ? 'Updating…' : pushEnabled ? 'Notifications on' : 'Turn on notifications'}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
@@ -102,6 +142,9 @@ function makeStyles(colors: AppColors) {
     input: { minHeight: 46, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: colors.text, backgroundColor: colors.surfaceSoft },
     deleteButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.danger },
     deleteText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    notificationButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
+    notificationButtonEnabled: { backgroundColor: colors.accentStrong },
+    notificationButtonText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
     disabled: { opacity: 0.4 },
   });
 }

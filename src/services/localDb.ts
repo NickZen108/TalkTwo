@@ -187,3 +187,18 @@ export async function setMemberPreference(ownerUserId: string, relationshipId: s
     ownerUserId, relationshipId, memberUserId, localAlias?.trim() || null, bubbleTheme,
   );
 }
+
+export async function clearLocalAccountData(userId: string) {
+  const db = await getLocalDatabase();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      'DELETE FROM local_messages WHERE owner_user_id=? OR sender_id=? OR recipient_id=?',
+      userId, userId, userId,
+    );
+    await db.runAsync(
+      'DELETE FROM member_preferences WHERE owner_user_id=? OR member_user_id=?',
+      userId, userId,
+    );
+    await db.runAsync('DELETE FROM conversation_preferences WHERE owner_user_id=?', userId);
+  });
+}

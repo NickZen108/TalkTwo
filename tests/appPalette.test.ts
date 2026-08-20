@@ -13,6 +13,12 @@ const normalTextPairs = [
   ['noticeText', 'notice'],
   ['inviteText', 'invite'],
   ['accentText', 'accentStrong'],
+  ['reviewText', 'reviewGreen'],
+  ['reviewText', 'reviewYellow'],
+  ['reviewText', 'reviewRed'],
+  ['reviewMuted', 'reviewGreen'],
+  ['reviewMuted', 'reviewYellow'],
+  ['reviewMuted', 'reviewRed'],
 ] as const;
 
 test('light and dark palettes keep normal text at WCAG AA contrast', () => {

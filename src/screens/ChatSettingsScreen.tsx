@@ -6,6 +6,16 @@ import { getConversationTheme, listMemberPreferences, setConversationTheme, setM
 import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
+import { MAX_PERSONAL_BOUNDARIES, MAX_PERSONAL_BOUNDARY_LENGTH, validatePersonalBoundary } from '../domain/personalBoundaries';
+import { getMyPlan, type UserPlan } from '../services/premium';
+import { addMyPersonalBoundary, listMyPersonalBoundaries, removeMyPersonalBoundary, type PersonalBoundaryRow } from '../services/personalBoundaries';
+
+function hasActivePremium(plan: UserPlan | null) {
+  if (!plan) return false;
+  const now = Date.now();
+  if (plan.plan === 'trial') return Boolean(plan.trial_ends_at && new Date(plan.trial_ends_at).getTime() > now);
+  return plan.plan === 'premium' && (!plan.premium_ends_at || new Date(plan.premium_ends_at).getTime() > now);
+}
 
 function Button({ title, onPress, secondary = false, danger = false, disabled = false, styles }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean; styles: ReturnType<typeof makeStyles> }) {
   return (
@@ -35,13 +45,18 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
   const [background, setBackground] = useState<BackgroundThemeName>('paper');
   const [localStates, setLocalStates] = useState<Record<string, LocalMemberState>>({});
   const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<UserPlan | null>(null);
+  const [boundaries, setBoundaries] = useState<PersonalBoundaryRow[]>([]);
+  const [boundaryDraft, setBoundaryDraft] = useState('');
 
   async function refresh() {
-    const [nextMembers, approvals, savedBackground, preferences] = await Promise.all([
+    const [nextMembers, approvals, savedBackground, preferences, nextPlan, nextBoundaries] = await Promise.all([
       listRelationshipMembers(relationship.id),
       listPendingMemberApprovals(relationship.id),
       getConversationTheme(session.user.id, relationship.id),
       listMemberPreferences(session.user.id, relationship.id),
+      getMyPlan(),
+      listMyPersonalBoundaries(relationship.id),
     ]);
     const prefMap = new Map(preferences.map((item) => [item.member_user_id, item]));
     const nextLocal: Record<string, LocalMemberState> = {};
@@ -56,6 +71,8 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     setPendingApprovals(approvals);
     setBackground(safeBackgroundTheme(savedBackground));
     setLocalStates(nextLocal);
+    setPlan(nextPlan);
+    setBoundaries(nextBoundaries);
   }
 
   useEffect(() => {
@@ -70,6 +87,36 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     () => members.filter((member) => member.user_id !== session.user.id && !member.is_extra),
     [members, session.user.id],
   );
+  const premiumActive = hasActivePremium(plan);
+  const boundaryValidation = validatePersonalBoundary(boundaryDraft);
+
+  async function addBoundary() {
+    if (!premiumActive || !boundaryValidation.valid || busy) return;
+    try {
+      setBusy(true);
+      await addMyPersonalBoundary(relationship.id, boundaryDraft);
+      setBoundaryDraft('');
+      await refresh();
+    } catch (error) {
+      Alert.alert('Boundary not saved', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeBoundary(item: PersonalBoundaryRow) {
+    if (busy) return;
+    try {
+      setBusy(true);
+      const removed = await removeMyPersonalBoundary(item.id);
+      if (!removed) throw new Error('The boundary no longer exists.');
+      await refresh();
+    } catch (error) {
+      Alert.alert('Boundary not removed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function buyTwoPersonPremium(member: RelationshipMember, productKey: 'premium_two_monthly' | 'premium_two_annual') {
     const displayName = localStates[member.user_id]?.alias.trim() || member.display_name;
@@ -234,6 +281,38 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
         ) : null}
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Personal Boundaries · Premium</Text>
+          <Text style={styles.help}>Add up to {MAX_PERSONAL_BOUNDARIES} words or short phrases you do not want in messages in this chat. TalkTwo checks complete words, ignores capitalisation and punctuation, and tells the sender exactly which boundary stopped the message.</Text>
+          <Text style={styles.help}>Essential logistics words such as child, school, doctor or emergency cannot be blocked on their own. Boundaries are enforced only while your Premium or trial access is active.</Text>
+          {!premiumActive ? <Text accessibilityLiveRegion="polite" style={styles.premiumNote}>Premium or an active trial is required to add boundaries. Existing entries remain visible and can be removed.</Text> : null}
+          <Text style={styles.smallLabel}>Blocked word or phrase · {boundaries.length}/{MAX_PERSONAL_BOUNDARIES}</Text>
+          <TextInput
+            accessibilityLabel="New personal boundary for this chat"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={premiumActive && !busy && boundaries.length < MAX_PERSONAL_BOUNDARIES}
+            maxLength={MAX_PERSONAL_BOUNDARY_LENGTH}
+            onChangeText={setBoundaryDraft}
+            onSubmitEditing={() => void addBoundary()}
+            placeholder="Example: you never care"
+            placeholderTextColor={colors.subtle}
+            returnKeyType="done"
+            style={styles.aliasInput}
+            value={boundaryDraft}
+          />
+          {boundaryDraft && !boundaryValidation.valid ? <Text accessibilityLiveRegion="polite" style={styles.inputError}>{boundaryValidation.error}</Text> : null}
+          <Button styles={styles} title={busy ? 'Saving…' : 'Add boundary'} onPress={() => void addBoundary()} disabled={!premiumActive || !boundaryValidation.valid || busy || boundaries.length >= MAX_PERSONAL_BOUNDARIES} />
+          {boundaries.map((item) => (
+            <View key={item.id} style={styles.boundaryRow}>
+              <Text style={styles.boundaryPhrase}>{item.phrase}</Text>
+              <TouchableOpacity accessibilityLabel={`Remove boundary ${item.phrase}`} accessibilityRole="button" disabled={busy} onPress={() => void removeBoundary(item)} style={styles.removeButton}>
+                <Text style={styles.removeButtonText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Background</Text>
           <Text style={styles.help}>Only you see this. App dark mode is currently {resolved}; conversation backgrounds stay a separate local choice.</Text>
           <View style={styles.themeGrid}>
@@ -331,6 +410,12 @@ function makeStyles(colors: AppColors) {
     section: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, gap: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text, flexShrink: 1 },
     help: { color: colors.muted, lineHeight: 20, flexShrink: 1 },
+    premiumNote: { color: colors.noticeText, backgroundColor: colors.notice, borderRadius: 10, padding: 10, lineHeight: 19, flexShrink: 1 },
+    inputError: { color: colors.danger, lineHeight: 18, fontSize: 13, flexShrink: 1 },
+    boundaryRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 8 },
+    boundaryPhrase: { flex: 1, minWidth: 0, color: colors.text, fontWeight: '700', lineHeight: 20 },
+    removeButton: { minHeight: 44, minWidth: 72, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+    removeButtonText: { color: colors.danger, fontWeight: '800' },
     themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     themeChip: { minWidth: 98, minHeight: 54, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, justifyContent: 'center', borderWidth: 1, borderColor: colors.borderStrong, flexGrow: 1, flexBasis: 98 },
     selectedTheme: { borderWidth: 3, borderColor: colors.accent },

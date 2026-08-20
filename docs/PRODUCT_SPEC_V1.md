@@ -100,7 +100,8 @@ Premium:
 Premium only.
 - Up to 10 blocked words or phrases.
 - The feature is visible but disabled in Free.
-- Essential or abusive blocking patterns may be disallowed to prevent the feature becoming a communication weapon.
+- Matching uses complete normalized words, ignores capitalisation and punctuation, and applies to new or edited messages while the recipient has active Premium or trial access.
+- Essential logistics words such as child, school, doctor or emergency cannot be blocked on their own, preventing the feature becoming a communication weapon.
 - If a message is rejected because of a personal boundary, the sender is told which word or phrase caused the rejection.
 
 ## Coach

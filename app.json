@@ -9,6 +9,18 @@
     "plugins": [
       "expo-iap",
       [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.0"
+          },
+          "android": {
+            "minSdkVersion": 23,
+            "kotlinVersion": "2.2.0"
+          }
+        }
+      ],
+      [
         "expo-sqlite",
         {
           "useSQLCipher": true

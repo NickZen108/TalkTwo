@@ -22,17 +22,25 @@ const allowedBuildOnlyAdvisories = new Set([
   'GHSA-5p2g-fcmc-qvqq', // image-size JXL/HEIF parser DoS; no patched npm release as of 2026-08-20
 ]);
 
-function collectLeafAdvisories(packageName, seen = new Set()) {
+function collectSevereLeafAdvisories(packageName, seen = new Set()) {
   if (seen.has(packageName)) return new Set();
-  seen.add(packageName);
+  const nextSeen = new Set(seen);
+  nextSeen.add(packageName);
   const item = vulnerabilities[packageName];
   const ids = new Set();
   if (!item) return ids;
+
   for (const via of item.via ?? []) {
     if (typeof via === 'string') {
-      for (const id of collectLeafAdvisories(via, seen)) ids.add(id);
+      for (const id of collectSevereLeafAdvisories(via, nextSeen)) ids.add(id);
       continue;
     }
+
+    // npm can mark a parent package "high" because one dependency is high while
+    // the same dependency tree also contains unrelated moderate advisories.
+    // Judge each advisory by its own severity so moderate findings cannot be
+    // accidentally promoted to high merely by sharing a parent package.
+    if (!['high', 'critical'].includes(String(via.severity ?? '').toLowerCase())) continue;
     const match = String(via.url ?? '').match(/GHSA-[a-z0-9-]+/i);
     if (match) ids.add(match[0]);
   }
@@ -44,14 +52,14 @@ const blocked = [];
 const accepted = [];
 
 for (const [name, item] of severe) {
-  const advisories = [...collectLeafAdvisories(name)];
+  const advisories = [...collectSevereLeafAdvisories(name)];
   const isKnownBuildOnlyClosure = advisories.length > 0 && advisories.every((id) => allowedBuildOnlyAdvisories.has(id));
   if (isKnownBuildOnlyClosure) accepted.push({ name, severity: item.severity, advisories });
   else blocked.push({ name, severity: item.severity, advisories });
 }
 
 if (accepted.length) {
-  console.warn('Known Expo/Metro build-time advisory closure accepted temporarily:');
+  console.warn('Known Expo/Metro build-time high-severity advisory closure accepted temporarily:');
   for (const item of accepted) console.warn(`- ${item.name}: ${item.severity} (${item.advisories.join(', ')})`);
   console.warn('Rationale: these image parsers are reached through Expo/Metro build tooling, not TalkTwo message or attachment runtime paths, and no patched image-size npm release is currently available. Re-check on every CI run.');
 }
@@ -59,11 +67,12 @@ if (accepted.length) {
 const metadata = report.metadata?.vulnerabilities;
 if (metadata) {
   console.log(`npm audit totals: low=${metadata.low ?? 0}, moderate=${metadata.moderate ?? 0}, high=${metadata.high ?? 0}, critical=${metadata.critical ?? 0}`);
+  if ((metadata.moderate ?? 0) > 0) console.warn('Moderate dependency advisories remain visible in the audit total and are reviewed separately; this gate fails on every unaccepted high/critical advisory.');
 }
 
 if (blocked.length) {
-  console.error('Unaccepted high/critical runtime dependency findings:');
-  for (const item of blocked) console.error(`- ${item.name}: ${item.severity}${item.advisories.length ? ` (${item.advisories.join(', ')})` : ''}`);
+  console.error('Unaccepted high/critical dependency findings:');
+  for (const item of blocked) console.error(`- ${item.name}: ${item.severity}${item.advisories.length ? ` (${item.advisories.join(', ')})` : ' (no severe leaf advisory could be verified)'}`);
   process.exit(1);
 }
 

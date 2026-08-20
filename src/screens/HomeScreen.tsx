@@ -3,7 +3,7 @@ import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TouchableOpac
 import type { Session } from '@supabase/supabase-js';
 import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
-import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
+import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, installMyActiveMemberKeys, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { releaseWaitingMessages } from '../services/windows';
 import { useAppTheme, type AppColors, type AppearanceMode } from '../theme/AppTheme';
 import ChatScreen from './ChatScreen';
@@ -33,17 +33,20 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
   const [members, setMembers] = useState<Record<string, RelationshipMember[]>>({});
   const [pendingMemberships, setPendingMemberships] = useState<PendingMembership[]>([]);
+  const [missingSecureKeys, setMissingSecureKeys] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<RelationshipSummary | null>(null);
   const [showWindows, setShowWindows] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
 
   async function refreshRelationships() {
+    const keyResult = await installMyActiveMemberKeys();
     const [nextRelationships, nextPending] = await Promise.all([listRelationships(), listMyPendingMemberships()]);
     const memberPairs = await Promise.all(nextRelationships.map(async (rel) => [rel.id, await listRelationshipMembers(rel.id)] as const));
     setRelationships(nextRelationships);
     setPendingMemberships(nextPending);
     setMembers(Object.fromEntries(memberPairs));
+    setMissingSecureKeys(keyResult.missing);
   }
 
   useEffect(() => {
@@ -71,14 +74,14 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
         await acceptInvitation(pendingInvite.token);
         clearPendingInvite();
         await refreshRelationships();
-        Alert.alert('Connected', 'The private conversation is ready.');
+        Alert.alert('Connected', 'The private conversation and its encryption key are ready on this device.');
       } else {
         const result = await acceptMemberInvitation(pendingInvite.token);
         clearPendingInvite();
         await refreshRelationships();
         if (result.status === 'active') Alert.alert('Added', 'You can now see messages sent from this point forward.');
         else if (result.status === 'awaiting_payment') Alert.alert('Approved', 'Everyone has approved you. Your monthly membership can now be purchased. You are not charged before this point.');
-        else Alert.alert('Waiting for approval', 'Everyone already in the chat must approve you before payment is available. You will not receive earlier chat history.');
+        else Alert.alert('Waiting for approval', 'Everyone already in the chat must approve you before payment is available. Your encrypted conversation key is not released before access is active.');
       }
     } catch (error) {
       Alert.alert('Invitation not accepted', error instanceof Error ? error.message : 'Ask the sender for a new invitation.');
@@ -152,6 +155,8 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
 
         {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title="View monthly membership" onPress={() => void showPaymentOffer(approvedPending)} disabled={busy} /></View> : null}</View> : null}
 
+        {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>Encryption key needed on this device</Text><Text style={styles.securityText}>One or more chats are linked to your account, but this device no longer has the one-time secret needed to open their encrypted key envelope. TalkTwo will not ask the server to reveal the conversation key. Secure recovery sharing is being added before release.</Text></View> : null}
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Chats</Text>
           <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void makeInvite()}><Text style={styles.newChat}>New chat</Text></TouchableOpacity>
@@ -163,12 +168,13 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
             const title = conversationTitle(relMembers, session.user.id);
             const initials = initialsForName(title);
             const subtitle = rel.my_role === 'observer' ? `Observer · ${rel.member_count} people` : rel.member_count > 2 ? `${rel.member_count} people` : 'Private conversation';
+            const keyMissing = missingSecureKeys.includes(rel.id);
             return (
-              <TouchableOpacity accessibilityRole="button" key={rel.id} onPress={() => setSelected(rel)} style={styles.chatRow}>
+              <TouchableOpacity accessibilityRole="button" key={rel.id} disabled={keyMissing} onPress={() => setSelected(rel)} style={[styles.chatRow, keyMissing && styles.disabled]}>
                 <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
                 <View style={styles.chatText}>
                   <Text numberOfLines={2} ellipsizeMode="tail" style={styles.chatTitle}>{title}</Text>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{subtitle}</Text>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{keyMissing ? 'Secure key unavailable on this device' : subtitle}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
@@ -229,6 +235,9 @@ function makeStyles(colors: AppColors) {
     pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: colors.notice, padding: 12, gap: 10 },
     pendingNoticeText: { color: colors.noticeText, lineHeight: 19, flexShrink: 1 },
     pendingAction: { alignSelf: 'stretch' },
+    securityNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger, padding: 12, gap: 5 },
+    securityTitle: { color: colors.danger, fontWeight: '800', flexShrink: 1 },
+    securityText: { color: colors.muted, lineHeight: 18, flexShrink: 1 },
     sectionHeader: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text, flexShrink: 1 },
     newChat: { color: colors.accent, fontWeight: '800', paddingVertical: 10 },

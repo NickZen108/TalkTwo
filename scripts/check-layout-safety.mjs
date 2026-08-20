@@ -7,6 +7,7 @@ const files = {
   login: fs.readFileSync('src/screens/LoginScreen.tsx', 'utf8'),
   windows: fs.readFileSync('src/screens/MessageWindowsScreen.tsx', 'utf8'),
   feedback: fs.readFileSync('src/screens/FeedbackScreen.tsx', 'utf8'),
+  account: fs.readFileSync('src/screens/AccountScreen.tsx', 'utf8'),
 };
 
 const failures = [];
@@ -37,6 +38,7 @@ requireText('settings', files.settings, "memberText: { flex: 1, minWidth: 0 }", 
 requireText('settings', files.settings, "twoButtons: { flexDirection: 'row', flexWrap: 'wrap'", 'approval buttons must wrap instead of colliding');
 requireText('settings', files.settings, "themeGrid: { flexDirection: 'row', flexWrap: 'wrap'", 'theme choices must wrap');
 requireText('settings', files.settings, "colorRow: { flexDirection: 'row', flexWrap: 'wrap'", 'bubble colour choices must wrap');
+requireText('account', files.account, "headerText: { flex: 1, minWidth: 0 }", 'account screen title must shrink beside the back control');
 
 for (const key of ['chat', 'home', 'settings']) {
   if (/<Image(?:\s|>)/.test(files[key])) failures.push(`${key}: profile/chat UI must not render user profile photos`);

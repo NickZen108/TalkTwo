@@ -9,10 +9,15 @@ export const EXTRA_MEMBER_BILLING = {
   interval: 'month',
   intervalCount: 1,
   autoRenew: true,
+  scope: 'account',
 } as const;
 
 export function extraMemberMonthlyPrice(role: ExtraMemberRole) {
   return EXTRA_MEMBER_PRICES_DKK[role];
+}
+
+export function extraMemberAccessCovers(currentRole: ExtraMemberRole, requestedRole: ExtraMemberRole) {
+  return currentRole === 'participant' || requestedRole === 'observer';
 }
 
 export function proratedObserverUpgradeDkk(periodStartMs: number, periodEndMs: number, nowMs: number) {

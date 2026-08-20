@@ -1,20 +1,33 @@
-import * as Crypto from 'expo-crypto';
+import {
+  AESEncryptionKey,
+  AESSealedData,
+  aesDecryptAsync,
+  aesEncryptAsync,
+  getRandomBytesAsync,
+} from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
 const THREAD_PREFIX = 'talktwo.threadkey.';
-const PENDING_PREFIX = 'talktwo.pendingkey.';
+const PENDING_TOKEN_PREFIX = 'talktwo.invite-secret.token.';
+const PENDING_INVITATION_PREFIX = 'talktwo.invite-secret.id.';
 const KEY_PATTERN = /^[0-9a-f]{64}$/i;
 const secureOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function assertKey(key: string) {
-  if (!KEY_PATTERN.test(key)) throw new Error('The secure conversation key is invalid.');
+  if (!KEY_PATTERN.test(key)) throw new Error('The secure key is invalid.');
   return key.toLowerCase();
+}
+
+function envelopeAad(token: string) {
+  return encoder.encode(`talktwo-key-envelope-v1:${token.trim()}`);
 }
 
 export async function getThreadKey(relationshipId: string) {
@@ -29,25 +42,58 @@ export async function storeThreadKey(relationshipId: string, key: string) {
 export async function ensureThreadKey(relationshipId: string) {
   const existing = await getThreadKey(relationshipId);
   if (existing) return existing;
-  const generated = bytesToHex(await Crypto.getRandomBytesAsync(32));
+  const generated = bytesToHex(await getRandomBytesAsync(32));
   await storeThreadKey(relationshipId, generated);
   return generated;
 }
 
-export async function storePendingInviteKey(token: string, key: string) {
-  await SecureStore.setItemAsync(`${PENDING_PREFIX}${token}`, assertKey(key), secureOptions);
+export async function createInvitationEnvelope(token: string, threadKey: string) {
+  const secret = bytesToHex(await getRandomBytesAsync(32));
+  const wrappingKey = await AESEncryptionKey.import(secret, 'hex');
+  const sealed = await aesEncryptAsync(encoder.encode(assertKey(threadKey)), wrappingKey, { additionalData: envelopeAad(token) });
+  return { secret, envelope: await sealed.combined('base64') };
 }
 
-export async function consumePendingInviteKey(token: string, relationshipId: string) {
-  const pendingName = `${PENDING_PREFIX}${token}`;
-  const key = await SecureStore.getItemAsync(pendingName, secureOptions);
-  if (!key) throw new Error('This invitation is missing its secure conversation key. Ask the sender for a new invitation.');
-  await storeThreadKey(relationshipId, key);
+export async function openInvitationEnvelope(token: string, secret: string, envelope: string) {
+  const wrappingKey = await AESEncryptionKey.import(assertKey(secret), 'hex');
+  const sealed = AESSealedData.fromCombined(envelope);
+  const decrypted = await aesDecryptAsync(sealed, wrappingKey, { additionalData: envelopeAad(token), output: 'bytes' });
+  return assertKey(decoder.decode(decrypted as Uint8Array).trim());
+}
+
+export async function storePendingInviteSecret(token: string, secret: string) {
+  await SecureStore.setItemAsync(`${PENDING_TOKEN_PREFIX}${token}`, assertKey(secret), secureOptions);
+}
+
+export async function getPendingInviteSecret(token: string) {
+  const secret = await SecureStore.getItemAsync(`${PENDING_TOKEN_PREFIX}${token}`, secureOptions);
+  return secret ? assertKey(secret) : null;
+}
+
+export async function consumeInitialInviteEnvelope(token: string, relationshipId: string, envelope: string) {
+  const pendingName = `${PENDING_TOKEN_PREFIX}${token}`;
+  const secret = await SecureStore.getItemAsync(pendingName, secureOptions);
+  if (!secret) throw new Error('This invitation is missing its one-time encryption secret. Ask the sender for a new invitation.');
+  const threadKey = await openInvitationEnvelope(token, secret, envelope);
+  await storeThreadKey(relationshipId, threadKey);
   await SecureStore.deleteItemAsync(pendingName, secureOptions);
-  return key;
+  return threadKey;
 }
 
-export async function getPendingInviteKey(token: string) {
-  const key = await SecureStore.getItemAsync(`${PENDING_PREFIX}${token}`, secureOptions);
-  return key ? assertKey(key) : null;
+export async function bindPendingMemberInviteSecret(token: string, invitationId: string) {
+  const tokenName = `${PENDING_TOKEN_PREFIX}${token}`;
+  const secret = await SecureStore.getItemAsync(tokenName, secureOptions);
+  if (!secret) throw new Error('This invitation is missing its one-time encryption secret. Ask the sender for a new invitation.');
+  await SecureStore.setItemAsync(`${PENDING_INVITATION_PREFIX}${invitationId}`, assertKey(secret), secureOptions);
+  await SecureStore.deleteItemAsync(tokenName, secureOptions);
+}
+
+export async function installActiveMemberEnvelope(invitationId: string, relationshipId: string, token: string, envelope: string) {
+  const pendingName = `${PENDING_INVITATION_PREFIX}${invitationId}`;
+  const secret = await SecureStore.getItemAsync(pendingName, secureOptions);
+  if (!secret) return false;
+  const threadKey = await openInvitationEnvelope(token, secret, envelope);
+  await storeThreadKey(relationshipId, threadKey);
+  await SecureStore.deleteItemAsync(pendingName, secureOptions);
+  return true;
 }

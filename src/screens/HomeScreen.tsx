@@ -13,6 +13,7 @@ import FeedbackScreen from './FeedbackScreen';
 import PremiumGiftsScreen from './PremiumGiftsScreen';
 import AccountScreen from './AccountScreen';
 import { createKeyRecoveryRequest, fulfillKeyRecoveryRequest, getKeyRecoveryApproval, installFulfilledKeyRecoveries } from '../services/keyRecovery';
+import { useI18n } from '../i18n/I18nContext';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 type PendingRecovery = { token: string };
@@ -25,15 +26,16 @@ function Action({ title, onPress, styles, disabled = false, quiet = false }: { t
   );
 }
 
-function conversationTitle(members: RelationshipMember[], me: string) {
-  const others = members.filter((member) => member.user_id !== me).map((member) => member.display_name.trim() || 'Member');
-  if (!others.length) return 'New conversation';
+function conversationTitle(members: RelationshipMember[], me: string, memberLabel: string, newConversationLabel: string) {
+  const others = members.filter((member) => member.user_id !== me).map((member) => member.display_name.trim() || memberLabel);
+  if (!others.length) return newConversationLabel;
   if (others.length <= 2) return others.join(', ');
   return `${others.slice(0, 2).join(', ')} +${others.length - 2}`;
 }
 
 export default function HomeScreen({ session, pendingInvite, clearPendingInvite, pendingRecovery, clearPendingRecovery }: { session: Session; pendingInvite: PendingInvite | null; clearPendingInvite: () => void; pendingRecovery: PendingRecovery | null; clearPendingRecovery: () => void }) {
   const { colors, mode, resolved, setMode } = useAppTheme();
+  const { t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
   const [members, setMembers] = useState<Record<string, RelationshipMember[]>>({});
@@ -47,16 +49,16 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   const [showAccount, setShowAccount] = useState(false);
   const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
   const storeBilling = useNativeStoreBilling(session.user.id, {
-    onError: (message) => Alert.alert('Store purchase unavailable', message),
+    onError: (message) => Alert.alert(t('home.storeUnavailable'), message),
     onPurchaseVerified: async () => {
       await refreshRelationships();
-      Alert.alert('Purchase verified', 'Your verified TalkTwo purchase has been processed.');
+      Alert.alert(t('home.purchaseVerified'), t('home.purchaseVerifiedBody'));
     },
     onRestoreFinished: async (count) => {
       await refreshRelationships();
       Alert.alert(
-        count > 0 ? 'Purchases restored' : 'Nothing to restore',
-        count > 0 ? `${count} verified purchase${count === 1 ? '' : 's'} were linked to this TalkTwo account.` : 'No verified purchases linked to this TalkTwo account were found.',
+        count > 0 ? t('home.purchasesRestored') : t('home.nothingRestore'),
+        count > 0 ? t(count === 1 ? 'home.restoredOne' : 'home.restoredMany', { count }) : t('home.noRestored'),
       );
     },
   });
@@ -76,10 +78,10 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
     try {
       setBusy(true);
       const request = await createKeyRecoveryRequest(relationship.id);
-      await Share.share({ message: `Please help me recover this TalkTwo conversation on a new device. Open this link in TalkTwo and approve only after confirming with me directly: ${request.url}` });
-      Alert.alert('Verify separately', `Your verification code is ${request.verificationCode}. Confirm this code with the other chat member by voice or another trusted channel.`);
+      await Share.share({ message: t('home.recoveryShare', { url: request.url }) });
+      Alert.alert(t('home.verifySeparately'), t('home.verifyCode', { code: request.verificationCode }));
     } catch (error) {
-      Alert.alert('Recovery request unavailable', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('home.recoveryUnavailable'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -91,42 +93,42 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
       setBusy(true);
       const request = await getKeyRecoveryApproval(pendingRecovery.token);
       Alert.alert(
-        'Share conversation key?',
-        `${request.requester_name} requested this chat key for a new device. Verification code: ${request.verification_code}. Approve only after confirming the request and code directly with that person.`,
+        t('home.shareKey'),
+        t('home.shareKeyBody', { name: request.requester_name, code: request.verification_code }),
         [
-          { text: 'Do not approve', style: 'cancel' },
+          { text: t('home.doNotApprove'), style: 'cancel' },
           {
-            text: 'Approve secure recovery',
+            text: t('home.approveRecovery'),
             onPress: () => {
               void fulfillKeyRecoveryRequest(pendingRecovery.token, request.relationship_id)
                 .then(() => {
                   clearPendingRecovery();
-                  Alert.alert('Key shared securely', 'Only the requesting device can open the encrypted recovery envelope.');
+                  Alert.alert(t('home.keyShared'), t('home.keySharedBody'));
                 })
-                .catch((error) => Alert.alert('Recovery not approved', error instanceof Error ? error.message : 'Please try again.'));
+                .catch((error) => Alert.alert(t('home.recoveryNotApproved'), error instanceof Error ? error.message : t('common.tryAgain')));
             },
           },
         ],
       );
     } catch (error) {
-      Alert.alert('Recovery request unavailable', error instanceof Error ? error.message : 'Ask for a new recovery link.');
+      Alert.alert(t('home.recoveryUnavailable'), error instanceof Error ? error.message : t('home.newRecoveryLink'));
     } finally {
       setBusy(false);
     }
   }
 
   useEffect(() => {
-    void refreshRelationships().catch((error) => Alert.alert('Could not load chats', error instanceof Error ? error.message : 'Please try again.'));
+    void refreshRelationships().catch((error) => Alert.alert(t('home.loadChatsError'), error instanceof Error ? error.message : t('common.tryAgain')));
   }, []);
 
   async function makeInvite() {
     try {
       setBusy(true);
       const invite = await createInvitation();
-      await Share.share({ message: `I have invited you to a private TalkTwo conversation. ${invite.url}` });
+      await Share.share({ message: t('home.inviteShare', { url: invite.url }) });
       await refreshRelationships();
     } catch (error) {
-      Alert.alert('Could not create invitation', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('home.inviteCreateError'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -140,17 +142,17 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
         await acceptInvitation(pendingInvite.token);
         clearPendingInvite();
         await refreshRelationships();
-        Alert.alert('Connected', 'The private conversation and its encryption key are ready on this device.');
+        Alert.alert(t('home.connected'), t('home.connectedBody'));
       } else {
         const result = await acceptMemberInvitation(pendingInvite.token);
         clearPendingInvite();
         await refreshRelationships();
-        if (result.status === 'active') Alert.alert('Added', 'You can now see messages sent from this point forward.');
-        else if (result.status === 'awaiting_payment') Alert.alert('Approved', 'Everyone has approved you. Your monthly membership can now be purchased. You are not charged before this point.');
-        else Alert.alert('Waiting for approval', 'Everyone already in the chat must approve you before payment is available. Your encrypted conversation key is not released before access is active.');
+        if (result.status === 'active') Alert.alert(t('home.added'), t('home.addedBody'));
+        else if (result.status === 'awaiting_payment') Alert.alert(t('home.approved'), t('home.approvedBody'));
+        else Alert.alert(t('home.waitingApproval'), t('home.waitingApprovalBody'));
       }
     } catch (error) {
-      Alert.alert('Invitation not accepted', error instanceof Error ? error.message : 'Ask the sender for a new invitation.');
+      Alert.alert(t('home.inviteNotAccepted'), error instanceof Error ? error.message : t('home.newInvitation'));
     } finally {
       setBusy(false);
     }
@@ -161,25 +163,25 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
       setBusy(true);
       const offer = await getMemberPaymentOffer(item.invitation_id);
       if (!offer.ready_to_pay) {
-        Alert.alert('Not ready for payment', 'All current chat members must approve you before payment can begin.');
+        Alert.alert(t('home.notReadyPayment'), t('home.notReadyPaymentBody'));
         return;
       }
       Alert.alert(
-        `${offer.price_dkk} kr/month`,
-        `${offer.role === 'observer' ? 'Read-only access' : 'Participant access with writing'} renews one month at a time. Annual prepayment is not available for extra members. Access starts only after the store purchase is verified by TalkTwo.`,
+        t('home.monthlyPrice', { price: offer.price_dkk }),
+        t('home.extraPaymentBody', { access: t(offer.role === 'observer' ? 'home.readOnlyAccess' : 'home.writingAccess') }),
         [
-          { text: 'Not now', style: 'cancel' },
+          { text: t('home.notNow'), style: 'cancel' },
           {
-            text: 'Continue to store',
+            text: t('home.continueStore'),
             onPress: () => {
               void storeBilling.purchaseExtraMember(item.invitation_id, offer.role)
-                .catch((error) => Alert.alert('Purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+                .catch((error) => Alert.alert(t('home.purchaseStartError'), error instanceof Error ? error.message : t('common.tryAgain')));
             },
           },
         ],
       );
     } catch (error) {
-      Alert.alert('Payment offer unavailable', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('home.offerUnavailable'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -189,9 +191,9 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
     try {
       setBusy(true);
       const count = await releaseWaitingMessages();
-      Alert.alert(count > 0 ? 'Waiting messages released' : 'Nothing waiting', count > 0 ? `${count} message${count === 1 ? '' : 's'} can now appear in your chats.` : 'There are no messages waiting outside your current message windows.');
+      Alert.alert(count > 0 ? t('home.waitingReleased') : t('home.nothingWaiting'), count > 0 ? t(count === 1 ? 'home.releasedOne' : 'home.releasedMany', { count }) : t('home.noWaiting'));
     } catch (error) {
-      Alert.alert('Could not check waiting messages', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('home.checkWaitingError'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -199,15 +201,15 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
 
   function buyIndividualPremium() {
     Alert.alert(
-      'Individual Premium · 59 kr/month',
-      'Premium covers this TalkTwo account and renews monthly. Access starts only after the App Store or Google Play purchase is verified by TalkTwo.',
+      t('home.individualTitle'),
+      t('home.individualBody'),
       [
-        { text: 'Not now', style: 'cancel' },
+        { text: t('home.notNow'), style: 'cancel' },
         {
-          text: 'Continue to store',
+          text: t('home.continueStore'),
           onPress: () => {
             void storeBilling.purchasePremium('premium_individual_monthly')
-              .catch((error) => Alert.alert('Purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+              .catch((error) => Alert.alert(t('home.purchaseStartError'), error instanceof Error ? error.message : t('common.tryAgain')));
           },
         },
       ],
@@ -217,20 +219,20 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   function buyPremiumGift() {
     const recipient = giftRecipientEmail.trim();
     if (!recipient) {
-      Alert.alert('Recipient needed', 'Enter the email address the recipient uses or will use for TalkTwo.');
+      Alert.alert(t('home.recipientNeeded'), t('home.recipientNeededBody'));
       return;
     }
     Alert.alert(
-      'Give one month of Premium · 59 kr',
-      `The gift will be tied to ${recipient}, so the recipient does not lose it if an invitation link is misplaced. The store charge is a one-time purchase, not a subscription.`,
+      t('home.giftConfirmTitle'),
+      t('home.giftConfirmBody', { recipient }),
       [
-        { text: 'Not now', style: 'cancel' },
+        { text: t('home.notNow'), style: 'cancel' },
         {
-          text: 'Continue to store',
+          text: t('home.continueStore'),
           onPress: () => {
             void storeBilling.purchasePremiumGift(recipient)
               .then(() => setGiftRecipientEmail(''))
-              .catch((error) => Alert.alert('Gift purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+              .catch((error) => Alert.alert(t('home.giftStartError'), error instanceof Error ? error.message : t('common.tryAgain')));
           },
         },
       ],
@@ -239,8 +241,8 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
 
   const approvedPending = useMemo(() => pendingMemberships.find((item) => item.status === 'awaiting_payment') ?? null, [pendingMemberships]);
   const pendingText = useMemo(() => approvedPending
-    ? `Your extra membership is approved. ${approvedPending.role === 'observer' ? 'Read-only access costs 29 kr/month.' : 'Writing access costs 99 kr/month.'}`
-    : pendingMemberships.length ? 'A group invitation is waiting for the other chat members to approve you. No payment can happen yet.' : null, [approvedPending, pendingMemberships]);
+    ? t(approvedPending.role === 'observer' ? 'home.pendingReadOnly' : 'home.pendingWriting')
+    : pendingMemberships.length ? t('home.pendingApproval') : null, [approvedPending, pendingMemberships, t]);
 
   if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => { setSelected(null); void refreshRelationships(); }} onPurchasePremium={storeBilling.purchasePremium} storePurchaseBusy={storeBilling.processing || !storeBilling.connected} />;
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
@@ -258,75 +260,75 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
             <Text style={styles.brand}>TalkTwo</Text>
             <Text numberOfLines={1} ellipsizeMode="middle" style={styles.account}>{session.user.email}</Text>
           </View>
-          <TouchableOpacity accessibilityRole="button" onPress={() => void signOut()} style={styles.headerButton}><Text style={styles.headerButtonText}>Sign out</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={() => void signOut()} style={styles.headerButton}><Text style={styles.headerButtonText}>{t('home.signOut')}</Text></TouchableOpacity>
         </View>
 
         {pendingInvite ? (
           <View style={styles.invitationBanner}>
             <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>{pendingInvite.kind === 'member' ? 'Group invitation' : 'Conversation invitation'}</Text>
-              <Text style={styles.bannerHelp}>{pendingInvite.kind === 'member' ? 'Accepting only requests access. Everyone already in the chat must approve before payment is available or you can see new messages.' : 'Accept to start this private TalkTwo chat.'}</Text>
+              <Text style={styles.bannerTitle}>{t(pendingInvite.kind === 'member' ? 'home.groupInvitation' : 'home.conversationInvitation')}</Text>
+              <Text style={styles.bannerHelp}>{t(pendingInvite.kind === 'member' ? 'home.groupInvitationHelp' : 'home.conversationInvitationHelp')}</Text>
             </View>
-            <Action styles={styles} title={busy ? 'Please wait…' : 'Accept'} onPress={() => void acceptPendingInvite()} disabled={busy} />
+            <Action styles={styles} title={busy ? t('home.pleaseWait') : t('home.accept')} onPress={() => void acceptPendingInvite()} disabled={busy} />
           </View>
         ) : null}
 
         {pendingRecovery ? (
           <View style={styles.invitationBanner}>
             <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>Secure key recovery</Text>
-              <Text style={styles.bannerHelp}>Another chat member asked this device to encrypt and share a conversation key. Verify the person and code before approving.</Text>
+              <Text style={styles.bannerTitle}>{t('home.secureRecovery')}</Text>
+              <Text style={styles.bannerHelp}>{t('home.secureRecoveryHelp')}</Text>
             </View>
-            <Action styles={styles} title={busy ? 'Please wait…' : 'Review request'} onPress={() => void reviewKeyRecovery()} disabled={busy} />
+            <Action styles={styles} title={busy ? t('home.pleaseWait') : t('home.reviewRequest')} onPress={() => void reviewKeyRecovery()} disabled={busy} />
           </View>
         ) : null}
 
-        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'View monthly membership'} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
+        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.viewMembership')} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
 
-        {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>Encryption key needed on this device</Text><Text style={styles.securityText}>Tap an affected chat to ask another current member to share its key securely. TalkTwo's server never receives the conversation key or recovery secret.</Text></View> : null}
+        {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>{t('home.keyNeeded')}</Text><Text style={styles.securityText}>{t('home.keyNeededBody')}</Text></View> : null}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Chats</Text>
-          <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void makeInvite()}><Text style={styles.newChat}>New chat</Text></TouchableOpacity>
+          <Text style={styles.sectionTitle}>{t('home.chats')}</Text>
+          <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void makeInvite()}><Text style={styles.newChat}>{t('home.newChat')}</Text></TouchableOpacity>
         </View>
 
         <View style={styles.chatList}>
           {relationships.map((rel) => {
             const relMembers = members[rel.id] ?? [];
-            const title = conversationTitle(relMembers, session.user.id);
+            const title = conversationTitle(relMembers, session.user.id, t('chat.member'), t('home.newConversation'));
             const initials = initialsForName(title);
-            const subtitle = rel.my_role === 'observer' ? `Observer · ${rel.member_count} people` : rel.member_count > 2 ? `${rel.member_count} people` : 'Private conversation';
+            const subtitle = rel.my_role === 'observer' ? t('chat.observerPeople', { count: rel.member_count }) : rel.member_count > 2 ? t('chat.people', { count: rel.member_count }) : t('chat.privateConversation');
             const keyMissing = missingSecureKeys.includes(rel.id);
             return (
               <TouchableOpacity accessibilityRole="button" key={rel.id} disabled={busy} onPress={() => keyMissing ? void requestSecureKey(rel) : setSelected(rel)} style={[styles.chatRow, busy && styles.disabled]}>
                 <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
                 <View style={styles.chatText}>
                   <Text numberOfLines={2} ellipsizeMode="tail" style={styles.chatTitle}>{title}</Text>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{keyMissing ? 'Secure key unavailable on this device' : subtitle}</Text>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{keyMissing ? t('home.keyUnavailable') : subtitle}</Text>
                 </View>
-                <Text style={styles.chevron}>{keyMissing ? 'Key' : '›'}</Text>
+                <Text style={styles.chevron}>{keyMissing ? t('home.key') : '›'}</Text>
               </TouchableOpacity>
             );
           })}
           {!relationships.length ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No chats yet</Text>
-              <Text style={styles.emptyText}>Start a conversation and share the private invitation link with the other person.</Text>
-              <Action styles={styles} title="Start a chat" onPress={() => void makeInvite()} disabled={busy} />
+              <Text style={styles.emptyTitle}>{t('home.noChats')}</Text>
+              <Text style={styles.emptyText}>{t('home.noChatsBody')}</Text>
+              <Action styles={styles} title={t('home.startChat')} onPress={() => void makeInvite()} disabled={busy} />
             </View>
           ) : null}
         </View>
 
         <View style={styles.tools}>
-          <Text style={styles.sectionTitle}>Premium</Text>
-          <Text style={styles.toolHelp}>Individual Premium adds AI message review, longer messages, Coach and the other Premium tools to your account.</Text>
-          <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Individual Premium · 59 kr/month'} onPress={buyIndividualPremium} disabled={storeBilling.processing || !storeBilling.connected} />
-          <Text style={styles.privacy}>A two-person plan can be bought for you and one core chat partner from that chat's settings.</Text>
+          <Text style={styles.sectionTitle}>{t('home.premium')}</Text>
+          <Text style={styles.toolHelp}>{t('home.premiumHelp')}</Text>
+          <Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.individualAction')} onPress={buyIndividualPremium} disabled={storeBilling.processing || !storeBilling.connected} />
+          <Text style={styles.privacy}>{t('home.twoPersonHelp')}</Text>
           <View style={styles.giftDivider} />
-          <Text style={styles.giftTitle}>Give one month of Premium</Text>
-          <Text style={styles.toolHelp}>The 59 kr one-time gift is bound to the recipient's TalkTwo email, including if they create their account later.</Text>
+          <Text style={styles.giftTitle}>{t('home.giftTitle')}</Text>
+          <Text style={styles.toolHelp}>{t('home.giftHelp')}</Text>
           <TextInput
-            accessibilityLabel="Premium gift recipient email"
+            accessibilityLabel={t('home.giftEmailLabel')}
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect={false}
@@ -338,24 +340,24 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
             style={styles.input}
             value={giftRecipientEmail}
           />
-          <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Give Premium · 59 kr once'} onPress={buyPremiumGift} disabled={storeBilling.processing || !storeBilling.connected} quiet />
-          <Action styles={styles} title="Manage Premium gifts" onPress={() => setShowPremiumGifts(true)} quiet />
+          <Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.giftAction')} onPress={buyPremiumGift} disabled={storeBilling.processing || !storeBilling.connected} quiet />
+          <Action styles={styles} title={t('home.manageGifts')} onPress={() => setShowPremiumGifts(true)} quiet />
         </View>
 
         <View style={styles.tools}>
-          <Text style={styles.sectionTitle}>Quiet controls</Text>
-          <Text style={styles.toolHelp}>Choose when messages may appear. TalkTwo does not treat every message like a fire alarm.</Text>
-          <Action styles={styles} title="Message windows" onPress={() => setShowWindows(true)} quiet />
-          <Action styles={styles} title="Check waiting messages" onPress={() => void checkWaiting()} disabled={busy} quiet />
+          <Text style={styles.sectionTitle}>{t('home.quietControls')}</Text>
+          <Text style={styles.toolHelp}>{t('home.quietHelp')}</Text>
+          <Action styles={styles} title={t('windows.title')} onPress={() => setShowWindows(true)} quiet />
+          <Action styles={styles} title={t('home.checkWaiting')} onPress={() => void checkWaiting()} disabled={busy} quiet />
         </View>
 
         <View style={styles.tools}>
-          <Text style={styles.sectionTitle}>Appearance</Text>
-          <Text style={styles.toolHelp}>Choose light, dark, or follow your phone. Current appearance: {resolved}.</Text>
+          <Text style={styles.sectionTitle}>{t('home.appearance')}</Text>
+          <Text style={styles.toolHelp}>{t('home.appearanceHelp', { appearance: t(resolved === 'dark' ? 'home.appearanceDark' : 'home.appearanceLight') })}</Text>
           <View style={styles.appearanceRow}>
             {appearanceOptions.map((option) => (
               <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ selected: mode === option }} onPress={() => void setMode(option)} style={[styles.appearanceChip, mode === option && styles.appearanceChipSelected]}>
-                <Text style={[styles.appearanceChipText, mode === option && styles.appearanceChipTextSelected]}>{option[0]?.toUpperCase()}{option.slice(1)}</Text>
+                <Text style={[styles.appearanceChipText, mode === option && styles.appearanceChipTextSelected]}>{t(option === 'system' ? 'home.appearanceSystem' : option === 'light' ? 'home.appearanceLight' : 'home.appearanceDark')}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -363,10 +365,10 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
 
         <View style={styles.tools}>
           <Text style={styles.sectionTitle}>TalkTwo</Text>
-          <Action styles={styles} title={storeBilling.processing ? 'Checking purchases…' : 'Restore purchases'} onPress={() => void storeBilling.restore().catch((error) => Alert.alert('Restore unavailable', error instanceof Error ? error.message : 'Please try again.'))} disabled={storeBilling.processing || !storeBilling.connected} quiet />
-          <Action styles={styles} title="Send feedback" onPress={() => setShowFeedback(true)} quiet />
-          <Action styles={styles} title="Account & privacy" onPress={() => setShowAccount(true)} quiet />
-          <Text style={styles.privacy}>No profile photos. No contacts, camera, microphone or location access. Chat appearance is stored only on this device.</Text>
+          <Action styles={styles} title={storeBilling.processing ? t('home.checkingPurchases') : t('home.restorePurchases')} onPress={() => void storeBilling.restore().catch((error) => Alert.alert(t('home.restoreUnavailable'), error instanceof Error ? error.message : t('common.tryAgain')))} disabled={storeBilling.processing || !storeBilling.connected} quiet />
+          <Action styles={styles} title={t('home.sendFeedback')} onPress={() => setShowFeedback(true)} quiet />
+          <Action styles={styles} title={t('home.accountPrivacy')} onPress={() => setShowAccount(true)} quiet />
+          <Text style={styles.privacy}>{t('home.privacyBody')}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

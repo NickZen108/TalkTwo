@@ -48,6 +48,10 @@ Restore is acknowledgement-only. A restored receipt must verify with Apple or Go
 
 A cancellation means access continues until the paid period ends unless the store reports a refund/revocation that requires earlier termination.
 
+Individual Premium is bound to the purchasing TalkTwo account. A two-person subscription is bound to the purchaser and one named user selected through a shared active relationship before checkout. The provider subscription ID and beneficiary set are immutable; changing tier or beneficiary requires a new server-created checkout rather than trusting a store callback or client-supplied replacement.
+
+Premium subscription periods are applied monotonically. Delayed notifications cannot shorten access. Grace-period events may extend the verified paid boundary, while cancellation, pause or account hold stop renewal without erasing already-paid access. Expiry removes only that subscription source, and refund/revocation removes it immediately. A later Premium gift or another valid subscription remains intact.
+
 ## Account-wide extra-member access
 Extra-member billing is per TalkTwo account, not per chat.
 

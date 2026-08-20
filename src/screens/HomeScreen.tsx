@@ -44,7 +44,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     onError: (message) => Alert.alert('Store purchase unavailable', message),
     onPurchaseVerified: async () => {
       await refreshRelationships();
-      Alert.alert('Purchase active', 'Your verified TalkTwo purchase is now active.');
+      Alert.alert('Purchase verified', 'Your verified TalkTwo purchase has been processed.');
     },
     onRestoreFinished: async (count) => {
       await refreshRelationships();

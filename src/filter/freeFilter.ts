@@ -2,14 +2,31 @@ import { FilterReason, FilterResult } from './types';
 
 const MAX_FREE_LENGTH = 160;
 
-const PROFANITY = [
-  'fuck', 'fucking', 'shit', 'bitch', 'idiot', 'asshole',
-  'fuck dig', 'lort', 'røvhul', 'kælling', 'fandme'
+const PROFANITY_PATTERNS: Array<{ label: string; regex: RegExp }> = [
+  { label: 'fuck', regex: /(?:^|[^\p{L}])(?:fuck(?:ing|ed|er)?|motherfucker)(?=$|[^\p{L}])/iu },
+  { label: 'shit', regex: /(?:^|[^\p{L}])(?:shit|bullshit)(?=$|[^\p{L}])/iu },
+  { label: 'bitch', regex: /(?:^|[^\p{L}])bitch(?=$|[^\p{L}])/iu },
+  { label: 'asshole', regex: /(?:^|[^\p{L}])asshole(?=$|[^\p{L}])/iu },
+  { label: 'cunt', regex: /(?:^|[^\p{L}])cunt(?=$|[^\p{L}])/iu },
+  { label: 'dickhead', regex: /(?:^|[^\p{L}])dickhead(?=$|[^\p{L}])/iu },
+  { label: 'idiot', regex: /(?:^|[^\p{L}])(?:idiot|moron)(?=$|[^\p{L}])/iu },
+  { label: 'fuck dig', regex: /(?:^|[^\p{L}])fuck\s+dig(?=$|[^\p{L}])/iu },
+  { label: 'røvhul', regex: /(?:^|[^\p{L}])røvhul(?=$|[^\p{L}])/iu },
+  { label: 'kælling', regex: /(?:^|[^\p{L}])kælling(?=$|[^\p{L}])/iu },
+  { label: 'fandme', regex: /(?:^|[^\p{L}])fandme(?=$|[^\p{L}])/iu },
+  { label: 'hold kæft', regex: /(?:^|[^\p{L}])hold\s+kæft(?=$|[^\p{L}])/iu },
+  { label: 'lort', regex: /(?:^|[^\p{L}])lort(?=$|[^\p{L}])/iu },
 ];
 
-const GENERALISATIONS = [
-  'always', 'never', 'every time', 'constantly',
-  'altid', 'aldrig', 'hver gang', 'konstant'
+const GENERALISATIONS: Array<{ label: string; regex: RegExp }> = [
+  { label: 'always', regex: /(?:^|[^\p{L}])always(?=$|[^\p{L}])/iu },
+  { label: 'never', regex: /(?:^|[^\p{L}])never(?=$|[^\p{L}])/iu },
+  { label: 'every time', regex: /(?:^|[^\p{L}])every\s+time(?=$|[^\p{L}])/iu },
+  { label: 'constantly', regex: /(?:^|[^\p{L}])constantly(?=$|[^\p{L}])/iu },
+  { label: 'altid', regex: /(?:^|[^\p{L}])altid(?=$|[^\p{L}])/iu },
+  { label: 'aldrig', regex: /(?:^|[^\p{L}])aldrig(?=$|[^\p{L}])/iu },
+  { label: 'hver gang', regex: /(?:^|[^\p{L}])hver\s+gang(?=$|[^\p{L}])/iu },
+  { label: 'konstant', regex: /(?:^|[^\p{L}])konstant(?=$|[^\p{L}])/iu },
 ];
 
 const FAULT_REMINDER_PATTERNS = [
@@ -41,7 +58,10 @@ const EMOTION_PATTERNS = [
   /\bjeg er såret\b/i,
 ];
 
-const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+// Extended pictographs covers most emoji. Regional indicators catch flags, while
+// variation selector/keycap catch emoji sequences such as ©️ and 1️⃣.
+const emojiRegex = /[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u20E3]/u;
+const emoticonRegex = /(?:[:;=8xX][\-^']?[()DPp]|<3)/;
 
 function addReason(reasons: FilterReason[], reason: FilterReason) {
   if (!reasons.some((item) => item.code === reason.code && item.matchedText === reason.matchedText)) {
@@ -49,12 +69,15 @@ function addReason(reasons: FilterReason[], reason: FilterReason) {
   }
 }
 
+export function countMessageCharacters(message: string) {
+  return Array.from(message).length;
+}
+
 export function evaluateFreeMessage(message: string): FilterResult {
   const text = message.trim();
-  const lower = text.toLocaleLowerCase();
   const reasons: FilterReason[] = [];
 
-  if (text.length > MAX_FREE_LENGTH) {
+  if (countMessageCharacters(text) > MAX_FREE_LENGTH) {
     addReason(reasons, {
       code: 'too_long',
       title: 'Message too long',
@@ -73,7 +96,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
     });
   }
 
-  if (emojiRegex.test(text) || /:-?\)|:-?\(|;\-?\)|:\-?D/.test(text)) {
+  if (emojiRegex.test(text) || emoticonRegex.test(text)) {
     addReason(reasons, {
       code: 'emoji',
       title: 'Remove emoji or emoticon',
@@ -82,27 +105,27 @@ export function evaluateFreeMessage(message: string): FilterResult {
     });
   }
 
-  for (const word of PROFANITY) {
-    if (lower.includes(word)) {
+  for (const { label, regex } of PROFANITY_PATTERNS) {
+    if (regex.test(text)) {
       addReason(reasons, {
         code: 'profanity',
         title: 'Remove profanity',
         explanation: 'Profanity can be misunderstood or experienced as hostile, even when intended humorously.',
         suggestion: 'Replace it with neutral language.',
-        matchedText: word,
+        matchedText: label,
       });
       break;
     }
   }
 
-  for (const phrase of GENERALISATIONS) {
-    if (lower.includes(phrase)) {
+  for (const { label, regex } of GENERALISATIONS) {
+    if (regex.test(text)) {
       addReason(reasons, {
         code: 'generalisation',
         title: 'Remove the generalisation',
-        explanation: `“${phrase}” turns one situation into a broad judgment and can increase conflict.`,
+        explanation: `“${label}” turns one situation into a broad judgment and can increase conflict.`,
         suggestion: 'Describe only the specific practical situation that matters now.',
-        matchedText: phrase,
+        matchedText: label,
       });
     }
   }

@@ -5,6 +5,7 @@ import test from 'node:test';
 const windowsScreen = fs.readFileSync('src/screens/MessageWindowsScreen.tsx', 'utf8');
 const feedbackScreen = fs.readFileSync('src/screens/FeedbackScreen.tsx', 'utf8');
 const chatScreen = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
+const homeScreen = fs.readFileSync('src/screens/HomeScreen.tsx', 'utf8');
 
 test('message window copy and accessibility labels use the locale catalogue', () => {
   assert.match(windowsScreen, /const \{ t \} = useI18n\(\)/);
@@ -32,4 +33,14 @@ test('chat actions, message states and dates use the locale catalogue', () => {
   assert.doesNotMatch(chatScreen, />Try Premium AI review for 7 days</);
   assert.doesNotMatch(chatScreen, />Observer · read only</);
   assert.doesNotMatch(chatScreen, /accessibilityLabel="Send message"/);
+});
+
+test('home navigation, recovery and purchase gates use the locale catalogue', () => {
+  assert.match(homeScreen, /const \{ t \} = useI18n\(\)/);
+  assert.match(homeScreen, /t\('home\.shareKeyBody', \{ name: request\.requester_name, code: request\.verification_code \}\)/);
+  assert.match(homeScreen, /t\('home\.extraPaymentBody', \{ access:/);
+  assert.match(homeScreen, /accessibilityLabel=\{t\('home\.giftEmailLabel'\)\}/);
+  assert.doesNotMatch(homeScreen, />Sign out</);
+  assert.doesNotMatch(homeScreen, /title="Manage Premium gifts"/);
+  assert.doesNotMatch(homeScreen, /Alert\.alert\('Purchase could not start'/);
 });

@@ -47,6 +47,11 @@ If any required existing member withdraws approval:
 
 Blocking remains immediate and separate from billing.
 
+## Account-wide provider lifecycle
+The provider subscription ID belongs to the user's account-wide extra-member entitlement. Multiple approved chats may reference that same ID; it is not unique per chat.
+
+Renewal notifications update the account boundary and only extend chats that still have unanimous approval. Delayed or duplicate renewals cannot move a paid boundary backwards. Store cancellation marks all covered chats to end at the paid boundary, normal expiry removes access after that boundary, and refund/revocation removes the account-wide entitlement immediately.
+
 ## Security rules
 - Never trust price, role, duration, recipient or entitlement information supplied by the client when a server can derive it.
 - Never complete an entitlement from a client callback alone.

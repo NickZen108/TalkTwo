@@ -3,8 +3,7 @@ import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, To
 import type { Session } from '@supabase/supabase-js';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
-import { createMemberInvitation, getRelationshipSeatStatus, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
-import { purchaseExtraRelationshipSeat } from '../services/purchases';
+import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 
 function Button({ title, onPress, secondary = false, danger = false, disabled = false }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean }) {
   return (
@@ -27,16 +26,14 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
 }) {
   const [members, setMembers] = useState<RelationshipMember[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
-  const [seatStatus, setSeatStatus] = useState<{ member_count: number; extra_seats: number; max_members: number; available_seats: number } | null>(null);
   const [background, setBackground] = useState<BackgroundThemeName>('paper');
   const [localStates, setLocalStates] = useState<Record<string, LocalMemberState>>({});
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
-    const [nextMembers, approvals, seats, savedBackground, preferences] = await Promise.all([
+    const [nextMembers, approvals, savedBackground, preferences] = await Promise.all([
       listRelationshipMembers(relationship.id),
       listPendingMemberApprovals(relationship.id),
-      getRelationshipSeatStatus(relationship.id),
       getConversationTheme(session.user.id, relationship.id),
       listMemberPreferences(session.user.id, relationship.id),
     ]);
@@ -51,7 +48,6 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     }
     setMembers(nextMembers);
     setPendingApprovals(approvals);
-    setSeatStatus(seats);
     setBackground(safeBackgroundTheme(savedBackground));
     setLocalStates(nextLocal);
   }
@@ -116,10 +112,11 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     try {
       setBusy(true);
       const invitation = await createMemberInvitation(relationship.id, role);
+      const price = role === 'observer' ? 29 : 99;
       await Share.share({
         message: role === 'observer'
-          ? `You are invited to observe a TalkTwo conversation. Everyone already in the chat must approve you before you can see new messages. ${invitation.url}`
-          : `You are invited to join a TalkTwo conversation. Everyone already in the chat must approve you before you can see new messages. ${invitation.url}`,
+          ? `You are invited to observe a TalkTwo conversation for ${price} kr/month. Everyone already in the chat must approve you before payment is available or you can see new messages. ${invitation.url}`
+          : `You are invited to join a TalkTwo conversation for ${price} kr/month with writing access. Everyone already in the chat must approve you before payment is available or you can see new messages. ${invitation.url}`,
       });
     } catch (error) {
       Alert.alert('Invitation could not be created', error instanceof Error ? error.message : 'Please try again.');
@@ -133,23 +130,14 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
       setBusy(true);
       const status = await respondMemberInvitation(item.invitation_id, approve);
       await refresh();
-      if (status === 'awaiting_seat') Alert.alert('Approved', 'Everyone has approved. One extra group seat must now be purchased before this person gets access.');
+      if (status === 'awaiting_payment') {
+        const price = item.role === 'observer' ? 29 : 99;
+        Alert.alert('Approved', `Everyone has approved. ${item.display_name} can now start a ${price} kr monthly membership. No payment was possible before this approval.`);
+      }
       if (status === 'active') Alert.alert('Added', 'The new person can now see messages sent from this point forward.');
       if (status === 'rejected') Alert.alert('Not added', 'The invitation was rejected.');
     } catch (error) {
       Alert.alert('Approval could not be saved', error instanceof Error ? error.message : 'Please try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function buySeat() {
-    try {
-      setBusy(true);
-      await purchaseExtraRelationshipSeat(relationship.id);
-      await refresh();
-    } catch (error) {
-      Alert.alert('Purchase setup needed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusy(false);
     }
@@ -217,14 +205,14 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
         {pendingApprovals.length ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Needs your approval</Text>
-            <Text style={styles.help}>A new person gets no old chat history. Every current member must approve before access begins.</Text>
+            <Text style={styles.help}>A new person gets no old chat history. Every current member must approve first. Only then is monthly payment made available to the invited person.</Text>
             {pendingApprovals.map((item) => (
               <View key={item.invitation_id} style={styles.approvalCard}>
                 <View style={styles.memberHeader}>
                   <View style={styles.avatar}><Text style={styles.avatarText}>{initialsForName(item.display_name)}</Text></View>
                   <View style={styles.memberText}>
                     <Text numberOfLines={2} ellipsizeMode="tail" style={styles.memberName}>{item.display_name}</Text>
-                    <Text style={styles.role}>{item.role === 'observer' ? 'Observer · read only' : 'Participant'}</Text>
+                    <Text style={styles.role}>{item.role === 'observer' ? 'Observer · 29 kr/month · read only' : 'Participant · 99 kr/month · can write'}</Text>
                   </View>
                 </View>
                 <View style={styles.twoButtons}>
@@ -238,12 +226,10 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Add another person</Text>
-          <Text style={styles.help}>Two people are included. Person 3 and onward use an extra group seat. A lawyer, family counsellor or other third party can join as read-only Observer.</Text>
-          {seatStatus ? <Text style={styles.seatText}>{seatStatus.member_count} of {seatStatus.max_members} seats in use · {seatStatus.available_seats} available</Text> : null}
-          <Button title="Invite participant" onPress={() => void invite('participant')} disabled={busy} />
-          <Button title="Invite read-only observer" onPress={() => void invite('observer')} secondary disabled={busy} />
-          {seatStatus && seatStatus.available_seats === 0 && seatStatus.member_count >= 2 ? <Button title="Buy one extra seat" onPress={() => void buySeat()} secondary disabled={busy} /> : null}
-          <Text style={styles.privacyNote}>Invited people receive no earlier messages. Existing participants can export older messages separately if they intentionally want to share them.</Text>
+          <Text style={styles.help}>The first two people are the core chat. Person 3 and onward pays for their own access only after every current member has approved them.</Text>
+          <Button title="Invite participant · 99 kr/month" onPress={() => void invite('participant')} disabled={busy} />
+          <Button title="Invite read-only observer · 29 kr/month" onPress={() => void invite('observer')} secondary disabled={busy} />
+          <Text style={styles.privacyNote}>Extra memberships renew one month at a time. Annual prepayment is not offered. Invited people receive no earlier messages. Existing participants can export older messages separately if they intentionally want to share them.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -287,6 +273,5 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   buttonText: { color: '#FFFFFF', fontSize: 15, lineHeight: 20, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
   secondaryButtonText: { color: '#222222' },
-  seatText: { fontWeight: '700', color: '#33332F', lineHeight: 20, flexShrink: 1 },
   privacyNote: { color: '#777771', fontSize: 12, lineHeight: 17, flexShrink: 1 },
 });

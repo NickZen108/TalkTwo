@@ -8,6 +8,7 @@ const chatScreen = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
 const homeScreen = fs.readFileSync('src/screens/HomeScreen.tsx', 'utf8');
 const giftsScreen = fs.readFileSync('src/screens/PremiumGiftsScreen.tsx', 'utf8');
 const settingsScreen = fs.readFileSync('src/screens/ChatSettingsScreen.tsx', 'utf8');
+const accountScreen = fs.readFileSync('src/screens/AccountScreen.tsx', 'utf8');
 
 test('message window copy and accessibility labels use the locale catalogue', () => {
   assert.match(windowsScreen, /const \{ t \} = useI18n\(\)/);
@@ -63,4 +64,12 @@ test('chat settings localize safety, payment, boundary and appearance controls',
   assert.doesNotMatch(settingsScreen, />Chat settings</);
   assert.doesNotMatch(settingsScreen, /title="Invite participant/);
   assert.doesNotMatch(settingsScreen, /Alert\.alert\('Block setting/);
+});
+
+test('account confirmations and Free-filter guidance use the locale catalogue', () => {
+  assert.match(accountScreen, /t\('account\.confirmDeleteTitle'\)/);
+  assert.match(accountScreen, /accessibilityLabel=\{t\('account\.deleteAccessibility'/);
+  assert.doesNotMatch(accountScreen, /Alert\.alert\('Notifications'/);
+  assert.match(chatScreen, /localizedFilterProblem\(firstProblem, t\)/);
+  assert.match(chatScreen, /generalisation: \['filter\.generalisationTitle', 'filter\.generalisationBody'\]/);
 });

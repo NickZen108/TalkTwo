@@ -12,7 +12,9 @@
     "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "audit:runtime": "node scripts/audit-runtime.mjs",
-    "qa": "npm run typecheck && npm run typecheck:tests && npm test && npx expo-doctor && npm run audit:runtime"
+    "layout:check": "node scripts/check-layout-safety.mjs",
+    "privacy:check": "node scripts/check-privacy-surface.mjs",
+    "qa": "npm run typecheck && npm run typecheck:tests && npm test && npm run layout:check && npm run privacy:check && npx expo-doctor && npm run audit:runtime"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

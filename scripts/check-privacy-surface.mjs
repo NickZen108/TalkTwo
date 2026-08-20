@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const roots = ['App.tsx', 'src'];
 const forbiddenImports = [
+  '@react-native-async-storage/async-storage',
   'expo-camera',
   'expo-contacts',
   'expo-location',
@@ -49,9 +50,16 @@ if (Array.isArray(android.permissions) && android.permissions.length > 0) {
   failures.push(`app.json: explicit Android permissions should stay empty until a feature genuinely requires one (${android.permissions.join(', ')})`);
 }
 
+const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+if (packageJson.dependencies?.['@react-native-async-storage/async-storage']) {
+  failures.push('package.json: AsyncStorage is not allowed; sensitive persistent state must use SecureStore or SQLCipher');
+}
+if (!packageJson.dependencies?.['expo-secure-store']) failures.push('package.json: expo-secure-store must remain installed for keys, auth session and invitation secrets');
+if (!packageJson.dependencies?.['expo-sqlite']) failures.push('package.json: expo-sqlite must remain installed for the encrypted local message cache');
+
 if (failures.length) {
   console.error('Privacy surface gate failed:\n- ' + failures.join('\n- '));
   process.exit(1);
 }
 
-console.log('Privacy surface gate passed. No camera/contact/location/media/audio permission code is present.');
+console.log('Privacy surface gate passed. No invasive permission code or unencrypted AsyncStorage is present; SecureStore and SQLCipher remain required.');

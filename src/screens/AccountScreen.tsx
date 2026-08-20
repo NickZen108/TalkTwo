@@ -4,6 +4,7 @@ import { ACCOUNT_DELETE_CONFIRMATION, accountDeleteConfirmed } from '../domain/a
 import { deleteAccount } from '../services/auth';
 import { disablePushNotifications, enablePushNotifications, pushNotificationStatus } from '../services/pushNotifications';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
+import { saveAccountLocalePreference, useI18n, type LocalePreference } from '../i18n/I18nContext';
 
 export default function AccountScreen({
   userId,
@@ -15,6 +16,7 @@ export default function AccountScreen({
   onBack: () => void;
 }) {
   const { colors } = useAppTheme();
+  const { t, locale, preference, setPreference } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [confirmation, setConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -44,6 +46,16 @@ export default function AccountScreen({
     }
   }
 
+  async function changeLanguage(next: LocalePreference) {
+    try {
+      const resolved = next === 'system' ? locale : next;
+      await saveAccountLocalePreference(next, resolved);
+      await setPreference(next);
+    } catch (error) {
+      Alert.alert('Language', error instanceof Error ? error.message : t('common.tryAgain'));
+    }
+  }
+
   function confirmDeletion() {
     if (!confirmed || deleting) return;
     Alert.alert(
@@ -70,17 +82,29 @@ export default function AccountScreen({
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <TouchableOpacity accessibilityRole="button" onPress={onBack} style={styles.backButton}>
-            <Text style={styles.backText}>‹ Back</Text>
+            <Text style={styles.backText}>{t('account.back')}</Text>
           </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.title}>Account & privacy</Text>
+            <Text style={styles.title}>{t('account.title')}</Text>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Private message notifications</Text>
-          <Text style={styles.body}>TalkTwo can notify you when a message becomes available. Alerts never include message text, sender names or document names, and are never sent before your communication window opens.</Text>
-          <Text style={styles.body}>System permission: {pushPermission}. You can also turn TalkTwo notifications off in device settings.</Text>
+          <Text style={styles.sectionTitle}>{t('account.languageTitle')}</Text>
+          <Text style={styles.body}>{t('account.languageHelp')}</Text>
+          <View style={styles.languageOptions}>
+            {(['system', 'en', 'da'] as LocalePreference[]).map((item) => (
+              <TouchableOpacity key={item} accessibilityRole="radio" accessibilityState={{ checked: preference === item }} onPress={() => void changeLanguage(item)} style={[styles.languageOption, preference === item && styles.languageOptionSelected]}>
+                <Text style={styles.languageOptionText}>{t(item === 'system' ? 'language.system' : item === 'en' ? 'language.english' : 'language.danish')}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{t('account.notificationsTitle')}</Text>
+          <Text style={styles.body}>{t('account.notificationsBody')}</Text>
+          <Text style={styles.body}>{t('account.permission', { permission: pushPermission })}</Text>
           <TouchableOpacity
             accessibilityRole="switch"
             accessibilityState={{ checked: pushEnabled, disabled: pushBusy }}
@@ -88,17 +112,17 @@ export default function AccountScreen({
             onPress={() => void setPush(!pushEnabled)}
             style={[styles.notificationButton, pushEnabled && styles.notificationButtonEnabled, pushBusy && styles.disabled]}
           >
-            <Text style={styles.notificationButtonText}>{pushBusy ? 'Updating…' : pushEnabled ? 'Notifications on' : 'Turn on notifications'}</Text>
+            <Text style={styles.notificationButtonText}>{pushBusy ? t('account.updating') : pushEnabled ? t('account.notificationsOn') : t('account.notificationsOff')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Delete TalkTwo account</Text>
-          <Text style={styles.body}>Deletion removes your account, profile, chat memberships, settings and server-side messages involving your account. It also removes this account's decrypted local messages and conversation keys from this device.</Text>
-          <Text style={styles.body}>Other people may still have messages they already opened on their own devices. TalkTwo cannot remotely erase private data stored on somebody else's phone.</Text>
-          <Text style={styles.body}>Deleting TalkTwo does not cancel an Apple App Store or Google Play subscription. Cancel an active subscription in the store to stop future charges.</Text>
-          <Text style={styles.warning}>This is permanent. A new account using the same email will not recover deleted chats or encryption keys.</Text>
-          <Text style={styles.label}>Type {ACCOUNT_DELETE_CONFIRMATION} to continue</Text>
+          <Text style={styles.sectionTitle}>{t('account.deleteTitle')}</Text>
+          <Text style={styles.body}>{t('account.deleteBody1')}</Text>
+          <Text style={styles.body}>{t('account.deleteBody2')}</Text>
+          <Text style={styles.body}>{t('account.deleteBody3')}</Text>
+          <Text style={styles.warning}>{t('account.deleteWarning')}</Text>
+          <Text style={styles.label}>{t('account.deleteType', { confirmation: ACCOUNT_DELETE_CONFIRMATION })}</Text>
           <TextInput
             accessibilityLabel={`Type ${ACCOUNT_DELETE_CONFIRMATION} to confirm account deletion`}
             autoCapitalize="characters"
@@ -117,7 +141,7 @@ export default function AccountScreen({
             onPress={confirmDeletion}
             style={[styles.deleteButton, (!confirmed || deleting) && styles.disabled]}
           >
-            <Text style={styles.deleteText}>{deleting ? 'Deleting account…' : 'Delete account permanently'}</Text>
+            <Text style={styles.deleteText}>{deleting ? t('account.deleting') : t('account.deleteButton')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -145,6 +169,10 @@ function makeStyles(colors: AppColors) {
     notificationButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
     notificationButtonEnabled: { backgroundColor: colors.accentStrong },
     notificationButtonText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    languageOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    languageOption: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSoft },
+    languageOptionSelected: { borderColor: colors.accent, borderWidth: 2 },
+    languageOptionText: { color: colors.text, fontWeight: '700' },
     disabled: { opacity: 0.4 },
   });
 }

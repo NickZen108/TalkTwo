@@ -1,8 +1,10 @@
 import {
   AESEncryptionKey,
   AESSealedData,
+  CryptoDigestAlgorithm,
   aesDecryptAsync,
   aesEncryptAsync,
+  digestStringAsync,
   getRandomBytesAsync,
 } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
@@ -10,6 +12,8 @@ import * as SecureStore from 'expo-secure-store';
 const THREAD_PREFIX = 'talktwo.threadkey.';
 const PENDING_TOKEN_PREFIX = 'talktwo.invite-secret.token.';
 const PENDING_INVITATION_PREFIX = 'talktwo.invite-secret.id.';
+const RECOVERY_REQUEST_PREFIX = 'talktwo.key-recovery.request.';
+const RECOVERY_APPROVAL_PREFIX = 'talktwo.key-recovery.approval.';
 const KEY_PATTERN = /^[0-9a-f]{64}$/i;
 const secureOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -28,6 +32,18 @@ function assertKey(key: string) {
 
 function envelopeAad(token: string) {
   return encoder.encode(`talktwo-key-envelope-v1:${token.trim()}`);
+}
+
+function recoveryAad(token: string) {
+  return encoder.encode(`talktwo-key-recovery-v1:${token.trim()}`);
+}
+
+async function recoveryVerificationCode(secret: string) {
+  const digest = await digestStringAsync(
+    CryptoDigestAlgorithm.SHA256,
+    `talktwo-recovery-code-v1:${assertKey(secret)}`,
+  );
+  return `${digest.slice(0, 4)}-${digest.slice(4, 8)}`.toUpperCase();
 }
 
 export async function getThreadKey(relationshipId: string) {
@@ -115,4 +131,62 @@ export async function removeThreadKeys(relationshipIds: string[]) {
       .filter(Boolean)
       .map((relationshipId) => SecureStore.deleteItemAsync(`${THREAD_PREFIX}${relationshipId}`, secureOptions)),
   );
+}
+
+export async function createKeyRecoverySecret(requestId: string, token: string) {
+  const secret = bytesToHex(await getRandomBytesAsync(32));
+  await SecureStore.setItemAsync(
+    `${RECOVERY_REQUEST_PREFIX}${requestId}`,
+    JSON.stringify({ token: token.trim(), secret }),
+    secureOptions,
+  );
+  return { secret, verificationCode: await recoveryVerificationCode(secret) };
+}
+
+export async function storePendingKeyRecoveryApproval(token: string, secret: string) {
+  await SecureStore.setItemAsync(`${RECOVERY_APPROVAL_PREFIX}${token.trim()}`, assertKey(secret), secureOptions);
+}
+
+export async function keyRecoveryApprovalCode(token: string) {
+  const secret = await SecureStore.getItemAsync(`${RECOVERY_APPROVAL_PREFIX}${token.trim()}`, secureOptions);
+  if (!secret) throw new Error('This recovery link is missing its one-time secret. Ask for a new recovery request.');
+  return recoveryVerificationCode(secret);
+}
+
+export async function createKeyRecoveryEnvelope(token: string, relationshipId: string) {
+  const secretName = `${RECOVERY_APPROVAL_PREFIX}${token.trim()}`;
+  const [secret, threadKey] = await Promise.all([
+    SecureStore.getItemAsync(secretName, secureOptions),
+    getThreadKey(relationshipId),
+  ]);
+  if (!secret) throw new Error('This recovery link is missing its one-time secret. Ask for a new recovery request.');
+  if (!threadKey) throw new Error('This device does not have the conversation key and cannot approve recovery.');
+  const wrappingKey = await AESEncryptionKey.import(assertKey(secret), 'hex');
+  const sealed = await aesEncryptAsync(encoder.encode(threadKey), wrappingKey, { additionalData: recoveryAad(token) });
+  return await sealed.combined('base64') as string;
+}
+
+export async function clearKeyRecoveryApproval(token: string) {
+  await SecureStore.deleteItemAsync(`${RECOVERY_APPROVAL_PREFIX}${token.trim()}`, secureOptions);
+}
+
+export async function installKeyRecoveryEnvelope(requestId: string, token: string, relationshipId: string, envelope: string) {
+  const requestName = `${RECOVERY_REQUEST_PREFIX}${requestId}`;
+  const stored = await SecureStore.getItemAsync(requestName, secureOptions);
+  if (!stored) return false;
+  let parsed: { token?: unknown; secret?: unknown };
+  try {
+    parsed = JSON.parse(stored) as { token?: unknown; secret?: unknown };
+  } catch {
+    throw new Error('The recovery secret on this device is damaged. Create a new recovery request.');
+  }
+  if (parsed.token !== token || typeof parsed.secret !== 'string') {
+    throw new Error('The recovery response does not match this device request.');
+  }
+  const wrappingKey = await AESEncryptionKey.import(assertKey(parsed.secret), 'hex');
+  const sealed = AESSealedData.fromCombined(envelope);
+  const decrypted = await aesDecryptAsync(sealed, wrappingKey, { additionalData: recoveryAad(token), output: 'bytes' });
+  await storeThreadKey(relationshipId, assertKey(decoder.decode(decrypted as Uint8Array).trim()));
+  await SecureStore.deleteItemAsync(requestName, secureOptions);
+  return true;
 }

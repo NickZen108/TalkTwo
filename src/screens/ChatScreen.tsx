@@ -10,6 +10,7 @@ import { listRelationshipMembers, type RelationshipMember, type RelationshipSumm
 import { getPartnerWindows } from '../services/windows';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import ChatSettingsScreen from './ChatSettingsScreen';
+import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 
 const MAX_PREMIUM_LENGTH = 480;
 
@@ -59,7 +60,13 @@ function CompactButton({ title, onPress, styles, disabled = false, secondary = f
   );
 }
 
-export default function ChatScreen({ relationship, session, onBack }: { relationship: RelationshipSummary; session: Session; onBack: () => void }) {
+export default function ChatScreen({ relationship, session, onBack, onPurchasePremium, storePurchaseBusy }: {
+  relationship: RelationshipSummary;
+  session: Session;
+  onBack: () => void;
+  onPurchasePremium: (productKey: PremiumSubscriptionProductKey, relationshipId?: string | null, beneficiaryUserId?: string | null) => Promise<void>;
+  storePurchaseBusy: boolean;
+}) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [message, setMessage] = useState('');
@@ -259,6 +266,8 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
       <ChatSettingsScreen
         relationship={relationship}
         session={session}
+        onPurchasePremium={onPurchasePremium}
+        storePurchaseBusy={storePurchaseBusy}
         onBack={() => {
           setShowSettings(false);
           void refreshAppearance();

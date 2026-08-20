@@ -4,35 +4,69 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './src/lib/supabase';
 import { createSessionFromMagicLink } from './src/services/auth';
+import { storePendingInviteKey } from './src/services/threadKeys';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 
-const PENDING_INVITE_KEY = 'talktwo.pendingInvite';
+const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v2';
 
-function invitationTokenFromUrl(url: string) {
-  const match = url.match(/^talktwo:\/\/invite\/([^?#]+)/i);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+export interface PendingInvite {
+  kind: 'invite' | 'member';
+  token: string;
+}
+
+function invitationFromUrl(url: string): (PendingInvite & { key: string }) | null {
+  const match = url.match(/^talktwo:\/\/(invite|member)\/([^?#]+)(?:\?[^#]*)?(?:#(.*))?$/i);
+  if (!match?.[1] || !match[2]) return null;
+  const fragment = match[3] ?? '';
+  const keyMatch = fragment.match(/(?:^|&)k=([0-9a-f]{64})(?:&|$)/i);
+  if (!keyMatch?.[1]) return null;
+  return {
+    kind: match[1].toLowerCase() === 'member' ? 'member' : 'invite',
+    token: decodeURIComponent(match[2]),
+    key: keyMatch[1].toLowerCase(),
+  };
+}
+
+function parseStoredInvite(value: string | null): PendingInvite | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<PendingInvite>;
+    if ((parsed.kind === 'invite' || parsed.kind === 'member') && typeof parsed.token === 'string' && parsed.token) {
+      return { kind: parsed.kind, token: parsed.token };
+    }
+  } catch { /* Ignore obsolete or damaged local state. */ }
+  return null;
 }
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    async function savePendingInvite(token: string) {
-      setPendingInvite(token);
-      try { await AsyncStorage.setItem(PENDING_INVITE_KEY, token); }
-      catch { /* The in-memory token still works for this session. */ }
+    async function savePendingInvite(invite: PendingInvite) {
+      setPendingInvite(invite);
+      try { await AsyncStorage.setItem(PENDING_INVITE_KEY, JSON.stringify(invite)); }
+      catch { /* The in-memory invitation still works for this session. */ }
     }
 
     async function handleUrl(url: string | null) {
       if (!url) return;
-      const inviteToken = invitationTokenFromUrl(url);
-      if (inviteToken) {
-        await savePendingInvite(inviteToken);
+      const invite = invitationFromUrl(url);
+      if (invite) {
+        try {
+          await storePendingInviteKey(invite.token, invite.key);
+          await savePendingInvite({ kind: invite.kind, token: invite.token });
+        } catch (error) {
+          Alert.alert('Invitation could not be stored securely', error instanceof Error ? error.message : 'Ask for a new invitation.');
+        }
+        return;
+      }
+      if (/^talktwo:\/\/(invite|member)\//i.test(url)) {
+        Alert.alert('Invitation is incomplete', 'This link is missing its secure conversation key. Ask the sender for a new invitation.');
         return;
       }
       if (url.toLowerCase().startsWith('talktwo://auth')) {
@@ -52,7 +86,8 @@ export default function App() {
       ]);
       if (!mounted) return;
       setSession(data.session);
-      if (storedInvite) setPendingInvite(storedInvite);
+      const parsed = parseStoredInvite(storedInvite);
+      if (parsed) setPendingInvite(parsed);
       await handleUrl(initialUrl);
       if (mounted) setLoading(false);
     })();

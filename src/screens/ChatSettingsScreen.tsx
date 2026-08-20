@@ -5,6 +5,7 @@ import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme,
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
 import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
+import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 
 function Button({ title, onPress, secondary = false, danger = false, disabled = false, styles }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean; styles: ReturnType<typeof makeStyles> }) {
   return (
@@ -19,11 +20,13 @@ interface LocalMemberState {
   bubble: BubbleThemeName;
 }
 
-export default function ChatSettingsScreen({ relationship, session, onBack, onAppearanceChanged }: {
+export default function ChatSettingsScreen({ relationship, session, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
   relationship: RelationshipSummary;
   session: Session;
   onBack: () => void;
   onAppearanceChanged: () => void;
+  onPurchasePremium: (productKey: PremiumSubscriptionProductKey, relationshipId?: string | null, beneficiaryUserId?: string | null) => Promise<void>;
+  storePurchaseBusy: boolean;
 }) {
   const { colors, resolved } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -63,6 +66,29 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     () => members.filter((member) => member.user_id !== session.user.id).map((member) => localStates[member.user_id]?.alias.trim() || member.display_name),
     [members, localStates, session.user.id],
   );
+  const premiumPartners = useMemo(
+    () => members.filter((member) => member.user_id !== session.user.id && !member.is_extra),
+    [members, session.user.id],
+  );
+
+  function buyTwoPersonPremium(member: RelationshipMember, productKey: 'premium_two_monthly' | 'premium_two_annual') {
+    const displayName = localStates[member.user_id]?.alias.trim() || member.display_name;
+    const annual = productKey === 'premium_two_annual';
+    Alert.alert(
+      annual ? 'Two-person Premium · 799 kr/year' : 'Two-person Premium · 99 kr/month',
+      `This plan covers your TalkTwo account and ${displayName}'s account. ${annual ? 'It renews annually.' : 'It renews monthly.'} Access starts only after the store purchase is verified.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Continue to store',
+          onPress: () => {
+            void onPurchasePremium(productKey, relationship.id, member.user_id)
+              .catch((error) => Alert.alert('Purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+          },
+        },
+      ],
+    );
+  }
 
   async function chooseBackground(theme: BackgroundThemeName) {
     try {
@@ -189,6 +215,23 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
             <Text numberOfLines={2} ellipsizeMode="tail" style={styles.subtitle}>{memberNames.length ? memberNames.join(', ') : 'TalkTwo conversation'}</Text>
           </View>
         </View>
+
+        {premiumPartners.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Premium for two</Text>
+            <Text style={styles.help}>One subscription can cover you and one core chat partner. The selected person is fixed to the verified subscription; changing person or tier requires a new checkout.</Text>
+            {premiumPartners.map((member) => {
+              const displayName = localStates[member.user_id]?.alias.trim() || member.display_name;
+              return (
+                <View key={member.user_id} style={styles.memberCard}>
+                  <Text numberOfLines={2} ellipsizeMode="tail" style={styles.memberName}>Premium with {displayName}</Text>
+                  <Button styles={styles} title="99 kr/month" onPress={() => buyTwoPersonPremium(member, 'premium_two_monthly')} disabled={busy || storePurchaseBusy} />
+                  <Button styles={styles} title="799 kr/year" onPress={() => buyTwoPersonPremium(member, 'premium_two_annual')} secondary disabled={busy || storePurchaseBusy} />
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Background</Text>

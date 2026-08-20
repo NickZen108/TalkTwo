@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { detectedDeviceTimezone, normalizeIanaTimezone, normalizeMessageWindow } from '../domain/messageWindows';
 import { getMyTimezone, listMyWindows, saveMyWindow, setMyTimezone, type MessageWindow } from '../services/windows';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 
@@ -16,19 +17,11 @@ function initialDrafts(): Record<number, Draft> {
   return Object.fromEntries(DAYS.map((_, day) => [day, defaultDraft(day)])) as Record<number, Draft>;
 }
 
-function normalizeTime(value: string) {
-  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
-}
-
 export default function MessageWindowsScreen({ onBack }: { onBack: () => void }) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [timezone, setTimezone] = useState('UTC');
+  const [deviceTimezone] = useState(detectedDeviceTimezone);
   const [drafts, setDrafts] = useState<Record<number, Draft>>(initialDrafts);
   const [busyDay, setBusyDay] = useState<number | null>(null);
   const [timezoneBusy, setTimezoneBusy] = useState(false);
@@ -37,10 +30,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
     void (async () => {
       try {
         const [storedTimezone, windows] = await Promise.all([getMyTimezone(), listMyWindows()]);
-        const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-        const chosen = storedTimezone === 'UTC' && detected !== 'UTC' ? detected : storedTimezone;
-        setTimezone(chosen);
-        if (chosen !== storedTimezone) await setMyTimezone(chosen);
+        setTimezone(storedTimezone);
 
         const next = initialDrafts();
         for (const row of windows as MessageWindow[]) {
@@ -59,26 +49,27 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
 
   async function saveDay(day: number) {
     const draft = drafts[day] ?? defaultDraft(day);
-    const start = normalizeTime(draft.start);
-    const end = normalizeTime(draft.end);
-    if (!start || !end) {
-      Alert.alert('Check the time', 'Use 24-hour time such as 08:00 or 17:30.');
-      return;
-    }
     try {
+      const { start, end } = normalizeMessageWindow(draft.enabled, draft.start, draft.end);
       setBusyDay(day);
       await saveMyWindow(day, draft.enabled, start, end);
+      setDrafts((old) => ({ ...old, [day]: { ...draft, start: start.slice(0, 5), end: end.slice(0, 5) } }));
     } catch (error) {
-      Alert.alert('Could not save', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert('Check this window', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusyDay(null);
     }
   }
 
-  async function saveTimezone() {
+  async function saveTimezone(nextValue = timezone) {
     try {
+      const normalized = normalizeIanaTimezone(nextValue);
+      if (!normalized) {
+        Alert.alert('Check the timezone', 'Use a valid timezone such as Europe/Copenhagen.');
+        return;
+      }
       setTimezoneBusy(true);
-      const saved = await setMyTimezone(timezone);
+      const saved = await setMyTimezone(normalized);
       setTimezone(saved);
       Alert.alert('Timezone saved', 'TalkTwo will use this timezone when deciding when waiting messages become available.');
     } catch (error) {
@@ -92,15 +83,20 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onBack}><Text style={styles.back}>‹ Back</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to chats" onPress={onBack} style={styles.backButton}><Text style={styles.back}>‹ Back</Text></TouchableOpacity>
           <Text style={styles.title}>Message windows</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.heading}>Your timezone</Text>
-          <Text style={styles.help}>TalkTwo detects this automatically. Change it only if it is wrong.</Text>
-          <TextInput value={timezone} onChangeText={setTimezone} autoCapitalize="none" style={styles.input} placeholder="Europe/Copenhagen" placeholderTextColor={colors.subtle} />
-          <TouchableOpacity onPress={() => void saveTimezone()} disabled={timezoneBusy} style={[styles.button, timezoneBusy && styles.disabled]}>
+          <Text style={styles.help}>Phone timezone: {deviceTimezone}. TalkTwo keeps your saved choice until you change it.</Text>
+          <TextInput accessibilityLabel="Message window timezone" value={timezone} onChangeText={setTimezone} autoCapitalize="none" autoCorrect={false} style={styles.input} placeholder="Europe/Copenhagen" placeholderTextColor={colors.subtle} />
+          {timezone !== deviceTimezone ? (
+            <TouchableOpacity accessibilityRole="button" onPress={() => void saveTimezone(deviceTimezone)} disabled={timezoneBusy} style={[styles.secondaryButton, timezoneBusy && styles.disabled]}>
+              <Text style={styles.secondaryButtonText}>Use phone timezone</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity accessibilityRole="button" onPress={() => void saveTimezone()} disabled={timezoneBusy} style={[styles.button, timezoneBusy && styles.disabled]}>
             <Text style={styles.buttonText}>{timezoneBusy ? 'Saving…' : 'Save timezone'}</Text>
           </TouchableOpacity>
         </View>
@@ -115,16 +111,16 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
               <View key={name} style={styles.dayRow}>
                 <View style={styles.dayHeader}>
                   <Text style={styles.dayName}>{name}</Text>
-                  <Switch value={draft.enabled} onValueChange={(enabled) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), enabled } }))} />
+                  <Switch accessibilityLabel={`${name} message window`} accessibilityRole="switch" value={draft.enabled} onValueChange={(enabled) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), enabled } }))} />
                 </View>
                 {draft.enabled ? (
                   <View style={styles.timeRow}>
-                    <TextInput value={draft.start} onChangeText={(start) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), start } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" />
+                    <TextInput accessibilityLabel={`${name} opening time`} value={draft.start} onChangeText={(start) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), start } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
                     <Text style={styles.to}>to</Text>
-                    <TextInput value={draft.end} onChangeText={(end) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), end } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" />
+                    <TextInput accessibilityLabel={`${name} closing time`} value={draft.end} onChangeText={(end) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), end } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
                   </View>
                 ) : <Text style={styles.closed}>Closed</Text>}
-                <TouchableOpacity onPress={() => void saveDay(day)} disabled={busyDay === day} style={styles.saveDay}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Save ${name} message window`} onPress={() => void saveDay(day)} disabled={busyDay === day} style={styles.saveDay}>
                   <Text style={styles.saveDayText}>{busyDay === day ? 'Saving…' : 'Save'}</Text>
                 </TouchableOpacity>
               </View>
@@ -141,6 +137,7 @@ function makeStyles(colors: AppColors) {
     safeArea: { flex: 1, backgroundColor: colors.background },
     container: { padding: 22, gap: 16 },
     headerRow: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 16 },
+    backButton: { minHeight: 44, justifyContent: 'center' },
     back: { fontSize: 16, fontWeight: '800', color: colors.text },
     title: { fontSize: 24, fontWeight: '800', color: colors.text, flexShrink: 1 },
     card: { backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 12 },
@@ -149,6 +146,8 @@ function makeStyles(colors: AppColors) {
     input: { minHeight: 50, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, color: colors.text, backgroundColor: colors.input },
     button: { backgroundColor: colors.accentStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
     buttonText: { color: colors.accentText, fontWeight: '800' },
+    secondaryButton: { minHeight: 46, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+    secondaryButtonText: { color: colors.text, fontWeight: '800' },
     disabled: { opacity: 0.35 },
     dayRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14, gap: 10 },
     dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -157,7 +156,7 @@ function makeStyles(colors: AppColors) {
     timeInput: { width: 90, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 10, paddingVertical: 10, textAlign: 'center', fontSize: 16, color: colors.text, backgroundColor: colors.input },
     to: { color: colors.muted },
     closed: { color: colors.subtle },
-    saveDay: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 2 },
+    saveDay: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 2 },
     saveDayText: { fontWeight: '800', color: colors.accent },
   });
 }

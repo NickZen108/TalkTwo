@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   STORE_PRODUCTS,
+  PREMIUM_SUBSCRIPTION_PRODUCT_KEYS,
   oneTimeProductIdsFor,
   productIdFor,
   storeProductKeyForId,
@@ -32,4 +33,22 @@ test('subscription and one-time products stay separated', () => {
 test('account-wide extra access keeps the agreed Danish prices', () => {
   assert.equal(STORE_PRODUCTS.extra_observer_monthly.expectedDkk, 29);
   assert.equal(STORE_PRODUCTS.extra_participant_monthly.expectedDkk, 99);
+});
+
+test('Premium checkout exposes only the agreed subscription products', () => {
+  assert.deepEqual(PREMIUM_SUBSCRIPTION_PRODUCT_KEYS, [
+    'premium_individual_monthly',
+    'premium_two_monthly',
+    'premium_two_annual',
+  ]);
+  assert.deepEqual(
+    PREMIUM_SUBSCRIPTION_PRODUCT_KEYS.map((key) => STORE_PRODUCTS[key].expectedDkk),
+    [59, 99, 799],
+  );
+  assert.ok(PREMIUM_SUBSCRIPTION_PRODUCT_KEYS.every((key) => STORE_PRODUCTS[key].kind === 'subscription'));
+});
+
+test('Premium gift is a repeatable one-time store product at the agreed price', () => {
+  assert.equal(STORE_PRODUCTS.premium_gift_1m.kind, 'one_time');
+  assert.equal(STORE_PRODUCTS.premium_gift_1m.expectedDkk, 59);
 });

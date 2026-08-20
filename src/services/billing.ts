@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 
 export interface BillingIntentOffer {
   intent_id: string;
@@ -6,6 +7,11 @@ export interface BillingIntentOffer {
   currency: 'dkk';
   recurring: boolean;
   expires_at: string;
+}
+
+export interface PremiumBillingIntentOffer extends BillingIntentOffer {
+  kind: 'premium_individual' | 'premium_two';
+  product_key: PremiumSubscriptionProductKey;
 }
 
 function oneRow<T>(data: unknown, missingMessage: string) {
@@ -37,4 +43,18 @@ export async function createPremiumGiftCheckoutIntent(recipientEmail: string, mo
   });
   if (error) throw error;
   return oneRow<BillingIntentOffer>(data, 'Premium gift checkout could not be prepared.');
+}
+
+export async function createPremiumCheckoutIntent(
+  productKey: PremiumSubscriptionProductKey,
+  relationshipId?: string | null,
+  beneficiaryUserId?: string | null,
+) {
+  const { data, error } = await supabase.rpc('create_premium_checkout_intent', {
+    requested_product_key: productKey,
+    rel_id: relationshipId ?? null,
+    beneficiary_user: beneficiaryUserId ?? null,
+  });
+  if (error) throw error;
+  return oneRow<PremiumBillingIntentOffer>(data, 'Premium checkout could not be prepared.');
 }

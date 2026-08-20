@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
+import { useNativeStoreBilling } from '../hooks/useNativeStoreBilling';
 import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, installMyActiveMemberKeys, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { releaseWaitingMessages } from '../services/windows';
 import { useAppTheme, type AppColors, type AppearanceMode } from '../theme/AppTheme';
 import ChatScreen from './ChatScreen';
 import MessageWindowsScreen from './MessageWindowsScreen';
 import FeedbackScreen from './FeedbackScreen';
+import PremiumGiftsScreen from './PremiumGiftsScreen';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 
@@ -38,6 +40,22 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   const [selected, setSelected] = useState<RelationshipSummary | null>(null);
   const [showWindows, setShowWindows] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showPremiumGifts, setShowPremiumGifts] = useState(false);
+  const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
+  const storeBilling = useNativeStoreBilling(session.user.id, {
+    onError: (message) => Alert.alert('Store purchase unavailable', message),
+    onPurchaseVerified: async () => {
+      await refreshRelationships();
+      Alert.alert('Purchase verified', 'Your verified TalkTwo purchase has been processed.');
+    },
+    onRestoreFinished: async (count) => {
+      await refreshRelationships();
+      Alert.alert(
+        count > 0 ? 'Purchases restored' : 'Nothing to restore',
+        count > 0 ? `${count} verified purchase${count === 1 ? '' : 's'} were linked to this TalkTwo account.` : 'No verified purchases linked to this TalkTwo account were found.',
+      );
+    },
+  });
 
   async function refreshRelationships() {
     const keyResult = await installMyActiveMemberKeys();
@@ -100,7 +118,17 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
       }
       Alert.alert(
         `${offer.price_dkk} kr/month`,
-        `${offer.role === 'observer' ? 'Read-only access' : 'Participant access with writing'} renews one month at a time. Annual prepayment is not available for extra members. Store billing is the next integration step; this development build will not charge you.`,
+        `${offer.role === 'observer' ? 'Read-only access' : 'Participant access with writing'} renews one month at a time. Annual prepayment is not available for extra members. Access starts only after the store purchase is verified by TalkTwo.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: 'Continue to store',
+            onPress: () => {
+              void storeBilling.purchaseExtraMember(item.invitation_id, offer.role)
+                .catch((error) => Alert.alert('Purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+            },
+          },
+        ],
       );
     } catch (error) {
       Alert.alert('Payment offer unavailable', error instanceof Error ? error.message : 'Please try again.');
@@ -121,14 +149,55 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     }
   }
 
+  function buyIndividualPremium() {
+    Alert.alert(
+      'Individual Premium · 59 kr/month',
+      'Premium covers this TalkTwo account and renews monthly. Access starts only after the App Store or Google Play purchase is verified by TalkTwo.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Continue to store',
+          onPress: () => {
+            void storeBilling.purchasePremium('premium_individual_monthly')
+              .catch((error) => Alert.alert('Purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+          },
+        },
+      ],
+    );
+  }
+
+  function buyPremiumGift() {
+    const recipient = giftRecipientEmail.trim();
+    if (!recipient) {
+      Alert.alert('Recipient needed', 'Enter the email address the recipient uses or will use for TalkTwo.');
+      return;
+    }
+    Alert.alert(
+      'Give one month of Premium · 59 kr',
+      `The gift will be tied to ${recipient}, so the recipient does not lose it if an invitation link is misplaced. The store charge is a one-time purchase, not a subscription.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Continue to store',
+          onPress: () => {
+            void storeBilling.purchasePremiumGift(recipient)
+              .then(() => setGiftRecipientEmail(''))
+              .catch((error) => Alert.alert('Gift purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+          },
+        },
+      ],
+    );
+  }
+
   const approvedPending = useMemo(() => pendingMemberships.find((item) => item.status === 'awaiting_payment') ?? null, [pendingMemberships]);
   const pendingText = useMemo(() => approvedPending
     ? `Your extra membership is approved. ${approvedPending.role === 'observer' ? 'Read-only access costs 29 kr/month.' : 'Writing access costs 99 kr/month.'}`
     : pendingMemberships.length ? 'A group invitation is waiting for the other chat members to approve you. No payment can happen yet.' : null, [approvedPending, pendingMemberships]);
 
-  if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => { setSelected(null); void refreshRelationships(); }} />;
+  if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => { setSelected(null); void refreshRelationships(); }} onPurchasePremium={storeBilling.purchasePremium} storePurchaseBusy={storeBilling.processing || !storeBilling.connected} />;
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
   if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
+  if (showPremiumGifts) return <PremiumGiftsScreen onBack={() => setShowPremiumGifts(false)} />;
 
   const appearanceOptions: AppearanceMode[] = ['system', 'light', 'dark'];
 
@@ -153,7 +222,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
           </View>
         ) : null}
 
-        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title="View monthly membership" onPress={() => void showPaymentOffer(approvedPending)} disabled={busy} /></View> : null}</View> : null}
+        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'View monthly membership'} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
 
         {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>Encryption key needed on this device</Text><Text style={styles.securityText}>One or more chats are linked to your account, but this device no longer has the one-time secret needed to open their encrypted key envelope. TalkTwo will not ask the server to reveal the conversation key. Secure recovery sharing is being added before release.</Text></View> : null}
 
@@ -190,6 +259,31 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
         </View>
 
         <View style={styles.tools}>
+          <Text style={styles.sectionTitle}>Premium</Text>
+          <Text style={styles.toolHelp}>Individual Premium adds AI message review, longer messages, Coach and the other Premium tools to your account.</Text>
+          <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Individual Premium · 59 kr/month'} onPress={buyIndividualPremium} disabled={storeBilling.processing || !storeBilling.connected} />
+          <Text style={styles.privacy}>A two-person plan can be bought for you and one core chat partner from that chat's settings.</Text>
+          <View style={styles.giftDivider} />
+          <Text style={styles.giftTitle}>Give one month of Premium</Text>
+          <Text style={styles.toolHelp}>The 59 kr one-time gift is bound to the recipient's TalkTwo email, including if they create their account later.</Text>
+          <TextInput
+            accessibilityLabel="Premium gift recipient email"
+            autoCapitalize="none"
+            autoComplete="email"
+            autoCorrect={false}
+            editable={!storeBilling.processing}
+            keyboardType="email-address"
+            onChangeText={setGiftRecipientEmail}
+            placeholder="recipient@example.com"
+            placeholderTextColor={colors.subtle}
+            style={styles.input}
+            value={giftRecipientEmail}
+          />
+          <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Give Premium · 59 kr once'} onPress={buyPremiumGift} disabled={storeBilling.processing || !storeBilling.connected} quiet />
+          <Action styles={styles} title="Manage Premium gifts" onPress={() => setShowPremiumGifts(true)} quiet />
+        </View>
+
+        <View style={styles.tools}>
           <Text style={styles.sectionTitle}>Quiet controls</Text>
           <Text style={styles.toolHelp}>Choose when messages may appear. TalkTwo does not treat every message like a fire alarm.</Text>
           <Action styles={styles} title="Message windows" onPress={() => setShowWindows(true)} quiet />
@@ -210,6 +304,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
 
         <View style={styles.tools}>
           <Text style={styles.sectionTitle}>TalkTwo</Text>
+          <Action styles={styles} title={storeBilling.processing ? 'Checking purchases…' : 'Restore purchases'} onPress={() => void storeBilling.restore().catch((error) => Alert.alert('Restore unavailable', error instanceof Error ? error.message : 'Please try again.'))} disabled={storeBilling.processing || !storeBilling.connected} quiet />
           <Action styles={styles} title="Send feedback" onPress={() => setShowFeedback(true)} quiet />
           <Text style={styles.privacy}>No profile photos. No contacts, camera, microphone or location access. Chat appearance is stored only on this device.</Text>
         </View>
@@ -255,6 +350,9 @@ function makeStyles(colors: AppColors) {
     tools: { marginTop: 16, marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     toolHelp: { color: colors.muted, lineHeight: 20, flexShrink: 1 },
     privacy: { color: colors.subtle, fontSize: 12, lineHeight: 17, flexShrink: 1 },
+    giftDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 2 },
+    giftTitle: { color: colors.text, fontWeight: '800', fontSize: 15, flexShrink: 1 },
+    input: { minHeight: 46, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: colors.text, backgroundColor: colors.surfaceSoft },
     action: { minHeight: 44, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentStrong, flexShrink: 0 },
     quietAction: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
     actionText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },

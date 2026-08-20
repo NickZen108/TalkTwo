@@ -8,8 +8,10 @@ This is the external-account work required before native purchases can be tested
 - Paid Applications agreement accepted, with banking and tax information completed.
 - In-App Purchase products created with the IDs in `src/domain/storeProducts.ts`.
 - Subscription products placed into appropriate subscription groups.
-- App Store Server Notifications configured to point to the TalkTwo backend verification endpoint once deployed.
-- App Store Server API key created for server-side verification.
+- App Store Server Notifications configured to call `apple-store-events` once deployed.
+- Apple root CA certificates stored as DER/base64 JSON in `APPLE_ROOT_CA_DER_BASE64_JSON`.
+- `APPLE_ENVIRONMENT`, `APPLE_BUNDLE_ID` and production `APPLE_APP_ID` configured as Supabase secrets.
+- StoreKit client sets `appAccountToken` to the authenticated TalkTwo user UUID.
 - Sandbox tester account available for test purchases.
 
 ## Google
@@ -18,9 +20,20 @@ This is the external-account work required before native purchases can be tested
 - Payments profile / merchant setup completed.
 - Products and subscriptions created with the IDs in `src/domain/storeProducts.ts`.
 - Monthly extra-member products must not offer annual prepayment.
-- Google Play Developer API service account configured for server-side verification.
-- Real-time developer notifications configured once the TalkTwo verification endpoint is deployed.
+- Google Play Developer API service account configured in `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`.
+- Real-time developer notifications configured to call `google-store-events` once deployed.
+- Pub/Sub push authentication configured with `GOOGLE_PUBSUB_AUDIENCE` and `GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL`.
+- `GOOGLE_PACKAGE_NAME` configured as `com.talktwo.app`.
+- Play Billing client sets `obfuscatedAccountId` to SHA-256(`talktwo:<TalkTwo user UUID>`).
+- Each extra-member subscription product exposes exactly one eligible monthly Google Play offer; ambiguous offers fail closed in the client.
 - Internal testing track and licensed tester account available.
+
+## Deployment gate
+- Apply the account-wide lifecycle migration before `20260820112904_store_notification_event_ingestion.sql`.
+- Configure all provider secrets before deploying the functions; they fail closed when configuration is absent.
+- Deploy `verify-store-purchase` with Supabase JWT verification enabled.
+- Deploy Apple and Google webhook functions with platform-specific verification enabled in their function code.
+- Do not enable recurring Premium products until Premium subscription lifecycle processing is implemented.
 
 ## TalkTwo product rules to preserve
 - Extra-member payment is account-wide, not per chat.
@@ -43,6 +56,8 @@ This is the external-account work required before native purchases can be tested
 9. Store cancellation preserves access until the paid period ends.
 10. Refund/revocation removes entitlement according to store status.
 11. Duplicate store notifications do not duplicate access.
-12. Premium gift can be recovered after losing the original link.
-13. Restore purchases works after reinstall / new device.
-14. Dark mode purchase screens retain readable contrast.
+12. A receipt bound to another TalkTwo account is rejected.
+13. Premium gift can be recovered after losing the original link.
+14. Restore purchases works after reinstall / new device.
+15. Dark mode purchase screens retain readable contrast.
+16. Restore refuses a valid store receipt that belongs to another TalkTwo account or has no existing verified TalkTwo ledger entry.

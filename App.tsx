@@ -3,6 +3,15 @@ import { ActivityIndicator, Alert, Linking, SafeAreaView, StyleSheet, Text } fro
 import * as SecureStore from 'expo-secure-store';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './src/lib/supabase';
+import {
+  invitationFromUrl,
+  isAuthCallbackUrl,
+  isInvitationUrl,
+  isPremiumGiftUrl,
+  premiumGiftFromUrl,
+  type PendingInvite,
+  type PendingPremiumGift,
+} from './src/domain/deepLinks';
 import { createSessionFromMagicLink } from './src/services/auth';
 import { claimPremiumGift, listMyPendingPremiumGifts } from './src/services/premiumGifts';
 import { storePendingInviteSecret } from './src/services/threadKeys';
@@ -15,38 +24,6 @@ const PENDING_GIFT_KEY = 'talktwo.pendingPremiumGift.v1';
 const secureOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
-
-export interface PendingInvite {
-  kind: 'invite' | 'member';
-  token: string;
-}
-
-interface PendingPremiumGift {
-  giftId: string;
-  token: string;
-}
-
-function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
-  const match = url.match(/^talktwo:\/\/(invite|member)\/([^?#]+)(?:\?[^#]*)?(?:#(.*))?$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const fragment = match[3] ?? '';
-  const secretMatch = fragment.match(/(?:^|&)s=([0-9a-f]{64})(?:&|$)/i);
-  if (!secretMatch?.[1]) return null;
-  return {
-    kind: match[1].toLowerCase() === 'member' ? 'member' : 'invite',
-    token: decodeURIComponent(match[2]),
-    secret: secretMatch[1].toLowerCase(),
-  };
-}
-
-function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
-  const match = url.match(/^talktwo:\/\/premium-gift\/([^?#]+)\?([^#]+)$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const params = new URLSearchParams(match[2]);
-  const token = params.get('token');
-  if (!token) return null;
-  return { giftId: decodeURIComponent(match[1]), token };
-}
 
 function parseStoredInvite(value: string | null): PendingInvite | null {
   if (!value) return null;
@@ -80,7 +57,7 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
   const [pendingGift, setPendingGift] = useState<PendingPremiumGift | null>(null);
-  const [giftPrompted, setGiftPrompted] = useState(false);
+  const [giftPromptedForUserId, setGiftPromptedForUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -99,7 +76,11 @@ function AppContent() {
       if (!url) return;
       const gift = premiumGiftFromUrl(url);
       if (gift) {
-        await savePendingGift(gift);
+        try {
+          await savePendingGift(gift);
+        } catch (error) {
+          Alert.alert('Premium gift could not be stored securely', error instanceof Error ? error.message : 'Please open the link again.');
+        }
         return;
       }
       const invite = invitationFromUrl(url);
@@ -112,11 +93,15 @@ function AppContent() {
         }
         return;
       }
-      if (/^talktwo:\/\/(invite|member)\//i.test(url)) {
+      if (isInvitationUrl(url)) {
         Alert.alert('Invitation is incomplete', 'This link is missing its one-time encryption secret. Ask the sender for a new invitation.');
         return;
       }
-      if (url.toLowerCase().startsWith('talktwo://auth')) {
+      if (isPremiumGiftUrl(url)) {
+        Alert.alert('Premium gift link is incomplete', 'Ask the purchaser to share a new gift link. A damaged or ambiguous link is never accepted.');
+        return;
+      }
+      if (isAuthCallbackUrl(url)) {
         try {
           await createSessionFromMagicLink(url);
         } catch (error) {
@@ -142,7 +127,9 @@ function AppContent() {
       if (mounted) setLoading(false);
     })();
 
-    const linking = Linking.addEventListener('url', ({ url }) => { void handleUrl(url); });
+    const linking = Linking.addEventListener('url', ({ url }) => {
+      void handleUrl(url).catch(() => Alert.alert('Link could not be opened', 'Please try opening the TalkTwo link again.'));
+    });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
 
     return () => {
@@ -153,13 +140,13 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!session || giftPrompted) return;
+    if (!session || giftPromptedForUserId === session.user.id) return;
     let cancelled = false;
 
     void (async () => {
       try {
         if (pendingGift) {
-          setGiftPrompted(true);
+          setGiftPromptedForUserId(session.user.id);
           Alert.alert('Premium gift', 'A Premium gift is ready for this account.', [
             { text: 'Later', style: 'cancel' },
             {
@@ -181,7 +168,7 @@ function AppContent() {
         const gifts = await listMyPendingPremiumGifts();
         const gift = gifts[0];
         if (cancelled || !gift) return;
-        setGiftPrompted(true);
+        setGiftPromptedForUserId(session.user.id);
         Alert.alert('Premium gift waiting', 'A paid Premium gift was found for your signed-in email. You do not need the original link.', [
           { text: 'Later', style: 'cancel' },
           {
@@ -199,7 +186,7 @@ function AppContent() {
     })();
 
     return () => { cancelled = true; };
-  }, [session, pendingGift, giftPrompted]);
+  }, [session, pendingGift, giftPromptedForUserId]);
 
   function clearPendingInvite() {
     setPendingInvite(null);

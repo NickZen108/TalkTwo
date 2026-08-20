@@ -1,5 +1,12 @@
 import { supabase } from '../lib/supabase';
-import { consumePendingInviteKey, ensureThreadKey } from './threadKeys';
+import {
+  bindPendingMemberInviteSecret,
+  consumeInitialInviteEnvelope,
+  createInvitationEnvelope,
+  ensureThreadKey,
+  getThreadKey,
+  installActiveMemberEnvelope,
+} from './threadKeys';
 
 export type MemberRole = 'participant' | 'observer';
 
@@ -23,8 +30,17 @@ export interface RelationshipMember {
   renewal_approved_by_me: boolean | null;
 }
 
-function invitationUrl(path: 'invite' | 'member', token: string, key: string) {
-  return `talktwo://${path}/${encodeURIComponent(token)}#k=${key}`;
+function invitationUrl(path: 'invite' | 'member', token: string, secret: string) {
+  return `talktwo://${path}/${encodeURIComponent(token)}#s=${secret}`;
+}
+
+async function prepareInvitationEnvelope(token: string, relationshipId: string) {
+  const threadKey = await ensureThreadKey(relationshipId);
+  const { secret, envelope } = await createInvitationEnvelope(token, threadKey);
+  const { data, error } = await supabase.rpc('set_invitation_key_envelope', { invite_token: token, envelope });
+  if (error) throw error;
+  if (!data) throw new Error('The secure invitation envelope could not be stored.');
+  return secret;
 }
 
 export async function createInvitation() {
@@ -33,8 +49,8 @@ export async function createInvitation() {
   const invitation = Array.isArray(data) ? data[0] : data;
   if (!invitation) throw new Error('Invitation could not be created.');
   const typed = invitation as { relationship_id: string; token: string; expires_at: string };
-  const key = await ensureThreadKey(typed.relationship_id);
-  return { ...typed, url: invitationUrl('invite', typed.token, key) };
+  const secret = await prepareInvitationEnvelope(typed.token, typed.relationship_id);
+  return { ...typed, url: invitationUrl('invite', typed.token, secret) };
 }
 
 export async function acceptInvitation(token: string) {
@@ -42,8 +58,27 @@ export async function acceptInvitation(token: string) {
   const { data, error } = await supabase.rpc('accept_relationship_invitation', { invite_token: clean });
   if (error) throw error;
   const relationshipId = data as string;
-  await consumePendingInviteKey(clean, relationshipId);
+  const { data: envelopeRows, error: envelopeError } = await supabase.rpc('get_accepted_relationship_key_envelope', { invite_token: clean });
+  if (envelopeError) throw envelopeError;
+  const envelopeRow = Array.isArray(envelopeRows) ? envelopeRows[0] : envelopeRows;
+  if (!envelopeRow?.key_envelope) throw new Error('The secure conversation key envelope is unavailable.');
+  await consumeInitialInviteEnvelope(clean, relationshipId, String(envelopeRow.key_envelope));
   return relationshipId;
+}
+
+export async function installMyActiveMemberKeys() {
+  const { data, error } = await supabase.rpc('list_my_active_member_key_envelopes');
+  if (error) throw error;
+  let installed = 0;
+  const missing: string[] = [];
+  for (const item of data ?? []) {
+    const relationshipId = String(item.relationship_id);
+    if (await getThreadKey(relationshipId)) continue;
+    const ok = await installActiveMemberEnvelope(String(item.invitation_id), relationshipId, String(item.key_envelope));
+    if (ok) installed += 1;
+    else missing.push(relationshipId);
+  }
+  return { installed, missing };
 }
 
 export async function listRelationships() {
@@ -77,8 +112,8 @@ export async function createMemberInvitation(relationshipId: string, role: Membe
   const invitation = Array.isArray(data) ? data[0] : data;
   if (!invitation) throw new Error('Invitation could not be created.');
   const typed = invitation as { invitation_id: string; token: string; expires_at: string; role: MemberRole };
-  const key = await ensureThreadKey(relationshipId);
-  return { ...typed, url: invitationUrl('member', typed.token, key) };
+  const secret = await prepareInvitationEnvelope(typed.token, relationshipId);
+  return { ...typed, url: invitationUrl('member', typed.token, secret) };
 }
 
 export async function acceptMemberInvitation(token: string) {
@@ -88,7 +123,7 @@ export async function acceptMemberInvitation(token: string) {
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error('Invitation could not be accepted.');
   const typed = row as { relationship_id: string; invitation_id: string; status: string };
-  await consumePendingInviteKey(clean, typed.relationship_id);
+  await bindPendingMemberInviteSecret(clean, typed.invitation_id);
   return typed;
 }
 

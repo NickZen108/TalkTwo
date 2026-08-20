@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorCode, getAvailablePurchases, useIAP, type Purchase, type ProductSubscription } from 'expo-iap';
 import { Platform } from 'react-native';
-import { createExtraMemberCheckoutIntent, createPremiumCheckoutIntent, type BillingIntentOffer } from '../services/billing';
+import { createExtraMemberCheckoutIntent, createPremiumCheckoutIntent, createPremiumGiftCheckoutIntent, type BillingIntentOffer } from '../services/billing';
 import {
   clearPendingStorePurchase,
   loadPendingStorePurchase,
@@ -17,7 +17,7 @@ import {
   pendingPurchaseMatches,
   type ExtraMemberRole,
 } from '../domain/storePurchase';
-import { productIdFor, STORE_PRODUCTS, subscriptionProductIdsFor, type PremiumSubscriptionProductKey, type StoreProductKey } from '../domain/storeProducts';
+import { oneTimeProductIdsFor, productIdFor, STORE_PRODUCTS, storeProductKeyForId, subscriptionProductIdsFor, type PremiumGiftProductKey, type PremiumSubscriptionProductKey, type StoreProductKey } from '../domain/storeProducts';
 
 interface NativeStoreBillingCallbacks {
   onError: (message: string) => void;
@@ -68,7 +68,11 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
       isPendingPurchase ? 'purchase' : 'restore',
       isPendingPurchase ? pending.checkoutIntentId : null,
     );
-    await iap.finishTransaction({ purchase, isConsumable: false });
+    const productKey = storeProductKeyForId(platform, purchase.productId);
+    await iap.finishTransaction({
+      purchase,
+      isConsumable: productKey ? STORE_PRODUCTS[productKey].kind === 'one_time' : false,
+    });
     if (isPendingPurchase) await clearPendingStorePurchase();
     completedRef.current.add(key);
     return true;
@@ -91,8 +95,10 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
   useEffect(() => {
     if (!iap.connected || Platform.OS === 'web') return;
     const platform = nativeStorePlatform();
-    void iap.fetchProducts({ skus: subscriptionProductIdsFor(platform), type: 'subs' })
-      .catch((error) => callbacksRef.current.onError(messageFor(error)));
+    void Promise.all([
+      iap.fetchProducts({ skus: subscriptionProductIdsFor(platform), type: 'subs' }),
+      iap.fetchProducts({ skus: oneTimeProductIdsFor(platform), type: 'in-app' }),
+    ]).catch((error) => callbacksRef.current.onError(messageFor(error)));
   }, [iap.connected, iap.fetchProducts]);
 
   const requestSubscriptionPurchase = useCallback(async (
@@ -132,6 +138,28 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
     }
   }, [iap.requestPurchase, iap.subscriptions, userId]);
 
+  const requestOneTimePurchase = useCallback(async (
+    productKey: PremiumGiftProductKey,
+    offer: BillingIntentOffer,
+  ) => {
+    const platform = nativeStorePlatform();
+    const productId = productIdFor(platform, productKey);
+    await savePendingStorePurchase({
+      checkoutIntentId: offer.intent_id,
+      expiresAt: offer.expires_at,
+      productKey,
+      userId,
+    });
+    const binding = await storeAccountBinding(platform, userId);
+
+    await iap.requestPurchase({
+      type: 'in-app',
+      request: platform === 'apple'
+        ? { apple: { sku: productId, appAccountToken: binding } }
+        : { google: { skus: [productId], obfuscatedAccountId: binding } },
+    });
+  }, [iap.requestPurchase, userId]);
+
   const purchaseExtraMember = useCallback(async (invitationId: string, role: ExtraMemberRole) => {
     if (!iap.connected) throw new Error('The App Store connection is not ready yet.');
     setProcessing(true);
@@ -151,6 +179,26 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
       throw error;
     }
   }, [iap.connected, requestSubscriptionPurchase]);
+
+  const purchasePremiumGift = useCallback(async (recipientEmail: string) => {
+    if (!iap.connected) throw new Error('The App Store connection is not ready yet.');
+    setProcessing(true);
+    try {
+      const productKey: PremiumGiftProductKey = 'premium_gift_1m';
+      const offer = await createPremiumGiftCheckoutIntent(recipientEmail.trim(), 1);
+      const expectedMinor = STORE_PRODUCTS[productKey].expectedDkk * 100;
+      if (offer.recurring || offer.currency !== 'dkk' || offer.amount_minor !== expectedMinor) {
+        throw new Error('The server returned an unexpected Premium gift offer.');
+      }
+      await requestOneTimePurchase(productKey, offer);
+    } catch (error) {
+      setProcessing(false);
+      if (error && typeof error === 'object' && 'code' in error && error.code === ErrorCode.UserCancelled) {
+        await clearPendingStorePurchase().catch(() => undefined);
+      }
+      throw error;
+    }
+  }, [iap.connected, requestOneTimePurchase]);
 
   const purchasePremium = useCallback(async (
     productKey: PremiumSubscriptionProductKey,
@@ -207,6 +255,7 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
     processing,
     purchaseExtraMember,
     purchasePremium,
+    purchasePremiumGift,
     restore,
   };
 }

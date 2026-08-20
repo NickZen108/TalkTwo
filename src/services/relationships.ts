@@ -17,6 +17,10 @@ export interface RelationshipMember {
   role: MemberRole;
   joined_at: string;
   blocked_by_me: boolean;
+  is_extra: boolean;
+  subscription_status: 'active' | 'cancel_at_period_end' | null;
+  current_period_end: string | null;
+  renewal_approved_by_me: boolean | null;
 }
 
 function invitationUrl(path: 'invite' | 'member', token: string, key: string) {

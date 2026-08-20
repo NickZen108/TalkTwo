@@ -64,6 +64,9 @@ test('chat settings localize safety, payment, boundary and appearance controls',
   assert.doesNotMatch(settingsScreen, />Chat settings</);
   assert.doesNotMatch(settingsScreen, /title="Invite participant/);
   assert.doesNotMatch(settingsScreen, /Alert\.alert\('Block setting/);
+  assert.match(settingsScreen, /shareConversationPdf\(/);
+  assert.match(settingsScreen, /t\('export\.premiumRequired'\)/);
+  assert.match(settingsScreen, /disabled=\{busy \|\| !premiumActive\}/);
 });
 
 test('account confirmations and Free-filter guidance use the locale catalogue', () => {

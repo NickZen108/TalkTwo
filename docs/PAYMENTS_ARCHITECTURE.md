@@ -35,7 +35,9 @@ Every provider event is reduced to non-secret verified metadata and passed to th
 
 Client purchase binding is mandatory. StoreKit purchases must set `appAccountToken` to the authenticated TalkTwo user UUID. Play Billing purchases must set `obfuscatedAccountId` to the lowercase hex SHA-256 of `talktwo:<TalkTwo user UUID>`. A verified receipt with a missing or different binding is rejected.
 
-The server-owned `store_product_catalog` is the only source for product price, currency and billing-intent kind. The database rejects inactive/unknown products, intent mismatches and amount mismatches. Premium subscription lifecycle events intentionally fail closed until the recurring Premium entitlement model is implemented.
+The server-owned `store_product_catalog` is the only source for product price, currency and billing-intent kind. The database rejects inactive/unknown products, intent mismatches and amount mismatches.
+
+Recurring Premium uses a separate server-only subscription ledger. Individual Premium covers only the purchaser. A two-person plan covers the purchaser plus one explicitly selected user who must share an active TalkTwo relationship with the purchaser when checkout is created. Store cancellation preserves access until the paid boundary; renewal is monotonic; expiry, refund and revocation resynchronise every covered user's effective plan without deleting a later gift or another independent Premium entitlement.
 
 ## Payment completion
 A provider webhook/server notification must be the source of truth. After provider verification, backend code completes the matching billing intent.

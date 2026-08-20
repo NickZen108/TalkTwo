@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { getMyTimezone, listMyWindows, saveMyWindow, setMyTimezone, type MessageWindow } from '../services/windows';
+import { useAppTheme, type AppColors } from '../theme/AppTheme';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -25,6 +26,8 @@ function normalizeTime(value: string) {
 }
 
 export default function MessageWindowsScreen({ onBack }: { onBack: () => void }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [timezone, setTimezone] = useState('UTC');
   const [drafts, setDrafts] = useState<Record<number, Draft>>(initialDrafts);
   const [busyDay, setBusyDay] = useState<number | null>(null);
@@ -96,7 +99,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
         <View style={styles.card}>
           <Text style={styles.heading}>Your timezone</Text>
           <Text style={styles.help}>TalkTwo detects this automatically. Change it only if it is wrong.</Text>
-          <TextInput value={timezone} onChangeText={setTimezone} autoCapitalize="none" style={styles.input} placeholder="Europe/Copenhagen" />
+          <TextInput value={timezone} onChangeText={setTimezone} autoCapitalize="none" style={styles.input} placeholder="Europe/Copenhagen" placeholderTextColor={colors.subtle} />
           <TouchableOpacity onPress={() => void saveTimezone()} disabled={timezoneBusy} style={[styles.button, timezoneBusy && styles.disabled]}>
             <Text style={styles.buttonText}>{timezoneBusy ? 'Saving…' : 'Save timezone'}</Text>
           </TouchableOpacity>
@@ -133,26 +136,28 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F5F5F2' },
-  container: { padding: 22, gap: 16 },
-  headerRow: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 16 },
-  back: { fontSize: 16, fontWeight: '800', color: '#333' },
-  title: { fontSize: 24, fontWeight: '800', color: '#161616' },
-  card: { backgroundColor: '#FFF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E5E5E0', gap: 12 },
-  heading: { fontSize: 20, fontWeight: '800', color: '#161616' },
-  help: { color: '#666', lineHeight: 20 },
-  input: { minHeight: 50, borderWidth: 1, borderColor: '#DADAD5', borderRadius: 12, paddingHorizontal: 14, fontSize: 16 },
-  button: { backgroundColor: '#171717', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  buttonText: { color: '#FFF', fontWeight: '800' },
-  disabled: { opacity: 0.35 },
-  dayRow: { borderTopWidth: 1, borderTopColor: '#ECECE8', paddingTop: 14, gap: 10 },
-  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dayName: { fontSize: 16, fontWeight: '800', color: '#222' },
-  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  timeInput: { width: 90, borderWidth: 1, borderColor: '#DADAD5', borderRadius: 10, paddingVertical: 10, textAlign: 'center', fontSize: 16 },
-  to: { color: '#666' },
-  closed: { color: '#777' },
-  saveDay: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 2 },
-  saveDayText: { fontWeight: '800', color: '#333' },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: colors.background },
+    container: { padding: 22, gap: 16 },
+    headerRow: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 16 },
+    back: { fontSize: 16, fontWeight: '800', color: colors.text },
+    title: { fontSize: 24, fontWeight: '800', color: colors.text, flexShrink: 1 },
+    card: { backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 12 },
+    heading: { fontSize: 20, fontWeight: '800', color: colors.text },
+    help: { color: colors.muted, lineHeight: 20 },
+    input: { minHeight: 50, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, color: colors.text, backgroundColor: colors.input },
+    button: { backgroundColor: colors.accentStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+    buttonText: { color: colors.accentText, fontWeight: '800' },
+    disabled: { opacity: 0.35 },
+    dayRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14, gap: 10 },
+    dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    dayName: { fontSize: 16, fontWeight: '800', color: colors.text },
+    timeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+    timeInput: { width: 90, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 10, paddingVertical: 10, textAlign: 'center', fontSize: 16, color: colors.text, backgroundColor: colors.input },
+    to: { color: colors.muted },
+    closed: { color: colors.subtle },
+    saveDay: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 2 },
+    saveDayText: { fontWeight: '800', color: colors.accent },
+  });
+}

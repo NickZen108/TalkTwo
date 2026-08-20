@@ -26,6 +26,8 @@ test('new and edited messages enforce complete normalized recipient phrases', ()
   assert.match(migration, /create or replace function public\.send_message[\s\S]*private\.matching_personal_boundary\(rec\.user_id, rel_id, msg\)/i);
   assert.match(migration, /create or replace function public\.edit_unopened_message[\s\S]*private\.matching_personal_boundary\(rec\.recipient_id, rel, msg\)/i);
   assert.match(migration, /recipient''s blocked word or phrase/i);
+  assert.match(migration, /array_agg\(pm\.relationship_id order by pm\.created_at\)\)\[1\]/i);
+  assert.doesNotMatch(migration, /min\(pm\.relationship_id\)/i);
 });
 
 test('public security-definer RPCs fix search paths and restrict execute grants', () => {

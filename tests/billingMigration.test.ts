@@ -21,6 +21,8 @@ test('renewal is monotonic and only extends chats with unanimous approval', () =
   assert.match(migration, /return 'ignored_stale'/i);
   assert.match(migration, /a\.decision is distinct from true/i);
   assert.match(migration, /s\.status = 'active'/i);
+  assert.match(migration, /status = 'cancel_at_period_end'[\s\S]*?current_period_end <= period_start/i);
+  assert.match(migration, /delete from public\.relationship_members rm/i);
 });
 
 test('provider cancellation, expiry, and revocation stay server-only', () => {

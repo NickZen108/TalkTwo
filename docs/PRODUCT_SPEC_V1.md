@@ -89,12 +89,15 @@ The message cannot be sent. The sender receives a clear explanation. If Coach is
 Free: no attachments.
 
 Premium:
-- Text-based documents only in the first attachment release.
+- UTF-8 plain-text `.txt`, `.md`, `.markdown` and `.csv` documents only in the first attachment release.
 - No images, audio or video.
-- Entire extracted document text is scanned.
+- The original file must be at most 5 MB. Normalized readable text is limited to 60,000 Unicode characters and 20 logical pages, calculated as 3,000 characters per page or explicit form-feed page breaks, whichever is greater.
+- Entire extracted document text is scanned in one server review. Document content is treated as untrusted data, not AI instructions.
 - If any disallowed passage is found, the entire document is blocked.
 - The triggering passage is shown to the sender.
-- Initial limits: 5 MB and 20 pages.
+- Approved text is encrypted with the conversation key and follows the same communication-window, unopened-rejection, withdrawal and local-cache lifecycle as a message. The original file is not uploaded to object storage.
+- Documents cannot be edited after sending. A sender can withdraw one only while it remains unopened.
+- Recipients do not see the file name or text before opening. Personal Boundaries are enforced over the full document at send time.
 
 ## Personal Boundaries
 Premium only.

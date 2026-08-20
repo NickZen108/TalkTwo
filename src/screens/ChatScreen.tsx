@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, RefreshControl, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
 import { countMessageCharacters, evaluateFreeMessage, MAX_FREE_LENGTH } from '../filter/freeFilter';
 import { getConversationTheme, listMemberPreferences } from '../services/localDb';
-import { editUnopenedMessage, listMessages, openMessage, rejectMessageWithoutOpening, sendMessage, withdrawMessage, type ChatMessage } from '../services/messages';
+import { editUnopenedMessage, listMessages, openMessage, rejectMessageWithoutOpening, sendMessage, sendTextAttachment, withdrawMessage, type ChatMessage } from '../services/messages';
 import { analyzePremiumMessage, getMyPlan, startPremiumTrial, type AiReview, type UserPlan } from '../services/premium';
+import { analyzeTextAttachment, pickTextAttachment, type AttachmentReview } from '../services/textAttachments';
+import { attachmentExcerpt, attachmentSizeLabel, type PreparedTextAttachment } from '../domain/textAttachments';
 import { listRelationshipMembers, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { getPartnerWindows } from '../services/windows';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
@@ -84,6 +86,10 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   const [reviewedText, setReviewedText] = useState('');
   const [trialFallback, setTrialFallback] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [attachment, setAttachment] = useState<PreparedTextAttachment | null>(null);
+  const [attachmentReview, setAttachmentReview] = useState<AttachmentReview | null>(null);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [viewingAttachment, setViewingAttachment] = useState<ChatMessage | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   const freeResult = useMemo(() => evaluateFreeMessage(message), [message]);
@@ -137,6 +143,13 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   }
 
   useEffect(() => {
+    setAttachment(null);
+    setAttachmentReview(null);
+    setViewingAttachment(null);
+    setEditing(null);
+    setMessage('');
+    setReview(null);
+    setReviewedText('');
     void refreshAll().catch((error) => Alert.alert('Could not open chat', error instanceof Error ? error.message : 'Please try again.'));
   }, [relationship.id]);
 
@@ -207,8 +220,60 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     }
   }
 
+  async function chooseAttachment() {
+    if (!premiumEntitled) {
+      Alert.alert('Premium document attachments', 'Start the Premium trial or subscribe to attach plain-text documents.');
+      return;
+    }
+    if (!premiumAi) {
+      Alert.alert('AI review unavailable', 'Document attachments require an available Premium AI review.');
+      return;
+    }
+    try {
+      setAttachmentBusy(true);
+      const selected = await pickTextAttachment();
+      if (!selected) return;
+      setAttachment(selected);
+      setAttachmentReview(null);
+      const nextReview = await analyzeTextAttachment(relationship.id, selected);
+      setAttachmentReview(nextReview);
+      if (!nextReview.can_send && nextReview.usage?.plan === 'trial' && nextReview.usage.analyses_remaining === 0) {
+        setTrialFallback(true);
+      }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : 'Please try again.';
+      if (text.toLowerCase().includes('daily trial limit')) setTrialFallback(true);
+      setAttachment(null);
+      setAttachmentReview(null);
+      Alert.alert('Document could not be reviewed', text);
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }
+
+  function cancelAttachment() {
+    setAttachment(null);
+    setAttachmentReview(null);
+  }
+
+  async function sendAttachment() {
+    if (!attachment || !attachmentReview?.can_send) return;
+    const lastTrialReview = attachmentReview.usage?.plan === 'trial' && attachmentReview.usage.analyses_remaining === 0;
+    try {
+      setBusy(true);
+      await sendTextAttachment(relationship.id, attachment);
+      cancelAttachment();
+      if (lastTrialReview) setTrialFallback(true);
+      await refreshMessages();
+    } catch (error) {
+      Alert.alert('Document was not sent', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function startEdit(item: ChatMessage) {
-    if (!item.body) return;
+    if (!item.body || item.message_kind === 'text_attachment') return;
     setEditing(item);
     setMessage(item.body);
     setReview(null);
@@ -260,6 +325,28 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       : partnerTimezone
         ? `Timezone: ${partnerTimezone}`
         : 'Private conversation';
+
+  if (viewingAttachment) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to conversation" onPress={() => setViewingAttachment(null)} style={styles.headerIcon}>
+            <Text style={styles.back}>‹</Text>
+          </TouchableOpacity>
+          <View style={styles.headerText}>
+            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.headerTitle}>{viewingAttachment.attachment_name ?? 'Text document'}</Text>
+            <Text style={styles.headerSubtitle}>
+              {viewingAttachment.attachment_size_bytes !== null ? attachmentSizeLabel(viewingAttachment.attachment_size_bytes) : 'Text document'}
+              {viewingAttachment.attachment_page_count ? ` · ${viewingAttachment.attachment_page_count} logical page${viewingAttachment.attachment_page_count === 1 ? '' : 's'}` : ''}
+            </Text>
+          </View>
+        </View>
+        <ScrollView contentContainerStyle={styles.documentViewer}>
+          <Text selectable style={styles.documentText}>{viewingAttachment.body ?? 'This encrypted document is unavailable on this device.'}</Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (showSettings) {
     return (
@@ -334,6 +421,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
               const unopened = !mine && !item.opened_at;
               const blocked = !mine && item.blocked_for_recipient;
               const rejectedCount = mine ? item.rejected_count : 0;
+              const isAttachment = item.message_kind === 'text_attachment';
 
               return (
                 <>
@@ -349,13 +437,23 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                         </>
                       ) : unopened ? (
                         <>
-                          <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? 'Potentially sensitive message' : 'New message'}</Text>
-                          <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? 'TalkTwo marked this as potentially conflict-escalating.' : 'The text stays hidden until you choose to open it.'}</Text>
+                          <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? `Potentially sensitive ${isAttachment ? 'document' : 'message'}` : `New ${isAttachment ? 'document' : 'message'}`}</Text>
+                          <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? 'TalkTwo marked this as potentially conflict-escalating.' : `The ${isAttachment ? 'document' : 'text'} stays hidden until you choose to open it.`}</Text>
                           <View style={styles.bubbleActions}>
                             <CompactButton styles={styles} title="Open" onPress={() => void openIncoming(item)} secondary />
                             {item.risk_level === 'yellow' ? <CompactButton styles={styles} title="Reject unread" onPress={() => void rejectIncoming(item)} secondary /> : null}
                           </View>
                         </>
+                      ) : isAttachment ? (
+                        <View style={styles.documentCard}>
+                          <Text numberOfLines={2} ellipsizeMode="middle" style={[styles.documentName, { color: textColor }]}>▤ {item.attachment_name ?? 'Text document'}</Text>
+                          <Text style={[styles.documentMeta, { color: textColor }]}>
+                            {item.attachment_size_bytes !== null ? attachmentSizeLabel(item.attachment_size_bytes) : 'Plain text'}
+                            {item.attachment_page_count ? ` · ${item.attachment_page_count} page${item.attachment_page_count === 1 ? '' : 's'}` : ''}
+                          </Text>
+                          {item.body ? <Text numberOfLines={4} style={[styles.documentExcerpt, { color: textColor }]}>{attachmentExcerpt(item.body)}</Text> : null}
+                          {item.body ? <CompactButton styles={styles} title="View document" onPress={() => setViewingAttachment(item)} secondary /> : null}
+                        </View>
                       ) : (
                         <Text selectable style={[styles.messageText, { color: textColor }]}>{item.body ?? 'Encrypted message unavailable on this device.'}</Text>
                       )}
@@ -370,7 +468,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                         <View style={styles.senderControls}>
                           <Text style={[styles.sentStatus, { color: textColor }]}>{rejectedCount > 0 ? `${rejectedCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''} rejected unread` : 'Sent'}</Text>
                           <View style={styles.inlineActions}>
-                            {item.body ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>Edit</Text></TouchableOpacity> : null}
+                            {item.body && !isAttachment ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>Edit</Text></TouchableOpacity> : null}
                             <TouchableOpacity accessibilityRole="button" onPress={() => void withdraw(item)}><Text style={[styles.inlineAction, { color: textColor }]}>Withdraw</Text></TouchableOpacity>
                           </View>
                         </View>
@@ -416,24 +514,50 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                 </View>
               </View>
             ) : null}
-            <View style={styles.composerRow}>
-              <View style={styles.inputShell}>
-                <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder="Message" placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel="Message" />
-                <View style={styles.counterRow}>
-                  <Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text>
-                  <Text style={styles.filterLabel}>{premiumAi ? 'AI review' : 'Free filter'}</Text>
+            {attachment ? (
+              <View style={styles.attachmentComposer}>
+                <View style={styles.attachmentComposerText}>
+                  <Text numberOfLines={2} ellipsizeMode="middle" style={styles.attachmentComposerName}>{attachment.name}</Text>
+                  <Text style={styles.attachmentComposerMeta}>{attachmentSizeLabel(attachment.sizeBytes)} · {attachment.pageCount} page{attachment.pageCount === 1 ? '' : 's'}</Text>
+                  <Text style={[styles.attachmentReviewText, attachmentReview?.level === 'red' && styles.attachmentReviewDanger]}>
+                    {attachmentBusy ? 'Reviewing the complete document…' : attachmentReview?.reason ?? 'Waiting for review'}
+                  </Text>
+                  {attachmentReview?.problematic_text[0] ? <Text numberOfLines={3} style={styles.attachmentProblem}>“{attachmentReview.problematic_text[0]}”</Text> : null}
+                </View>
+                <View style={styles.attachmentComposerActions}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel document attachment" onPress={cancelAttachment} style={styles.cancelAttachmentButton}>
+                    <Text style={styles.cancelAttachmentText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Send document" disabled={busy || attachmentBusy || !attachmentReview?.can_send} onPress={() => void sendAttachment()} style={[styles.sendCircle, (busy || attachmentBusy || !attachmentReview?.can_send) && styles.disabled]}>
+                    <Text style={styles.sendGlyph}>➤</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-              {premiumAi && (!reviewCurrent || review?.level === 'red') ? (
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review message with AI" disabled={reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH} onPress={() => void reviewWithAi()} style={[styles.sendCircle, styles.reviewCircle, (reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH) && styles.disabled]}>
-                  <Text style={styles.sendGlyph}>{reviewBusy ? '…' : '✓'}</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? 'Save edited message' : 'Send message'} disabled={busy || !hasText || !canSend} onPress={() => void saveOrSend()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
-                  <Text style={styles.sendGlyph}>➤</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            ) : (
+              <View style={styles.composerRow}>
+                {!editing ? (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach a plain-text document" disabled={busy || attachmentBusy} onPress={() => void chooseAttachment()} style={[styles.attachCircle, (busy || attachmentBusy) && styles.disabled]}>
+                    <Text style={styles.attachGlyph}>{attachmentBusy ? '…' : '+'}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <View style={styles.inputShell}>
+                  <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder="Message" placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel="Message" />
+                  <View style={styles.counterRow}>
+                    <Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text>
+                    <Text style={styles.filterLabel}>{premiumAi ? 'AI review' : 'Free filter'}</Text>
+                  </View>
+                </View>
+                {premiumAi && (!reviewCurrent || review?.level === 'red') ? (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review message with AI" disabled={reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH} onPress={() => void reviewWithAi()} style={[styles.sendCircle, styles.reviewCircle, (reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH) && styles.disabled]}>
+                    <Text style={styles.sendGlyph}>{reviewBusy ? '…' : '✓'}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? 'Save edited message' : 'Send message'} disabled={busy || !hasText || !canSend} onPress={() => void saveOrSend()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
+                    <Text style={styles.sendGlyph}>➤</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </View>
         ) : (
           <View style={styles.observerBar}><Text style={styles.observerText}>Observer · read only</Text></View>
@@ -476,6 +600,10 @@ function makeStyles(colors: AppColors) {
     bubbleTheirs: { borderBottomLeftRadius: 5 },
     senderName: { fontSize: 11, fontWeight: '800', opacity: 0.74, marginBottom: 3, flexShrink: 1 },
     messageText: { fontSize: 16, lineHeight: 21, flexShrink: 1 },
+    documentCard: { gap: 6 },
+    documentName: { fontSize: 15, lineHeight: 20, fontWeight: '800', flexShrink: 1 },
+    documentMeta: { fontSize: 11, opacity: 0.66, flexShrink: 1 },
+    documentExcerpt: { fontSize: 13, lineHeight: 18, opacity: 0.82, flexShrink: 1 },
     blockedTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', marginBottom: 3, flexShrink: 1 },
     bubbleActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
     compactButton: { minHeight: 36, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center', backgroundColor: colors.accentStrong },
@@ -493,6 +621,8 @@ function makeStyles(colors: AppColors) {
     emptyChatText: { lineHeight: 20, textAlign: 'center', flexShrink: 1, opacity: 0.78 },
     composerWrap: { backgroundColor: colors.surface, paddingHorizontal: 8, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 8 : 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 },
+    attachCircle: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSoft, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+    attachGlyph: { color: colors.accent, fontSize: 25, lineHeight: 28, fontWeight: '500' },
     inputShell: { flex: 1, minWidth: 0, borderRadius: 20, backgroundColor: colors.surfaceSoft, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, paddingHorizontal: 12, paddingTop: 7, paddingBottom: 5 },
     input: { minHeight: 28, maxHeight: 112, fontSize: 16, lineHeight: 21, color: colors.text, padding: 0, textAlignVertical: 'top' },
     counterRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 3 },
@@ -514,6 +644,18 @@ function makeStyles(colors: AppColors) {
     editingStrip: { minHeight: 34, paddingHorizontal: 4, paddingBottom: 5, flexDirection: 'row', gap: 8, alignItems: 'center' },
     editingText: { flex: 1, minWidth: 0, color: colors.muted, fontSize: 11, lineHeight: 15 },
     cancelEdit: { color: colors.danger, fontWeight: '800', fontSize: 12, flexShrink: 0 },
+    attachmentComposer: { minHeight: 92, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSoft, padding: 10, flexDirection: 'row', gap: 10, alignItems: 'center' },
+    attachmentComposerText: { flex: 1, minWidth: 0 },
+    attachmentComposerName: { color: colors.text, fontWeight: '800', fontSize: 14, flexShrink: 1 },
+    attachmentComposerMeta: { color: colors.subtle, fontSize: 11, marginTop: 2 },
+    attachmentReviewText: { color: colors.muted, fontSize: 11, lineHeight: 15, marginTop: 5, flexShrink: 1 },
+    attachmentReviewDanger: { color: colors.danger, fontWeight: '700' },
+    attachmentProblem: { color: colors.danger, fontSize: 11, lineHeight: 15, marginTop: 3, fontStyle: 'italic', flexShrink: 1 },
+    attachmentComposerActions: { alignItems: 'center', gap: 7, flexShrink: 0 },
+    cancelAttachmentButton: { minHeight: 32, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
+    cancelAttachmentText: { color: colors.danger, fontSize: 11, fontWeight: '800' },
+    documentViewer: { padding: 18, paddingBottom: 40 },
+    documentText: { color: colors.text, fontSize: 16, lineHeight: 24 },
     observerBar: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: colors.surfaceSoft, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     observerText: { color: colors.muted, fontWeight: '800', textAlign: 'center' },
   });

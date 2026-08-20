@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { cacheMessage, listCachedMessages, removeCachedMessage } from './localDb';
 import { decryptMessageBody, encryptMessageBody, hashMessageBody } from './messageCrypto';
+import type { PreparedTextAttachment } from '../domain/textAttachments';
 
 export interface ChatMessage {
   id: string;
@@ -22,6 +23,20 @@ export interface ChatMessage {
   blocked_for_recipient: boolean;
   recipient_count: number;
   rejected_count: number;
+  message_kind: 'text' | 'text_attachment';
+  attachment_name: string | null;
+  attachment_mime_type: string | null;
+  attachment_size_bytes: number | null;
+  attachment_page_count: number | null;
+}
+
+interface AttachmentMetadataRow {
+  message_key: string;
+  message_kind: 'text_attachment';
+  attachment_name: string | null;
+  attachment_mime_type: string | null;
+  attachment_size_bytes: number | null;
+  attachment_page_count: number | null;
 }
 
 async function currentUserId() {
@@ -66,12 +81,28 @@ async function persistVisibleMessage(ownerUserId: string, message: ChatMessage) 
 
 export async function listMessages(relationshipId: string) {
   const ownerUserId = await currentUserId();
-  const [{ data, error }, cached] = await Promise.all([
+  const [{ data, error }, cached, metadataResult] = await Promise.all([
     supabase.rpc('list_relationship_messages', { rel_id: relationshipId }),
     listCachedMessages(ownerUserId, relationshipId),
+    supabase.rpc('list_relationship_attachment_metadata', { rel_id: relationshipId }),
   ]);
   if (error) throw error;
-  const remote = (data ?? []) as ChatMessage[];
+  if (metadataResult.error) throw metadataResult.error;
+  const metadata = new Map(
+    ((metadataResult.data ?? []) as AttachmentMetadataRow[]).map((row) => [row.message_key, row]),
+  );
+  const remote: ChatMessage[] = ((data ?? []) as ChatMessage[]).map((row) => {
+    const mine = row.sender_id === ownerUserId;
+    const attachment = metadata.get(mine ? row.logical_id : row.id);
+    return {
+      ...row,
+      message_kind: attachment?.message_kind ?? ('text' as const),
+      attachment_name: attachment?.attachment_name ?? null,
+      attachment_mime_type: attachment?.attachment_mime_type ?? null,
+      attachment_size_bytes: attachment?.attachment_size_bytes ?? null,
+      attachment_page_count: attachment?.attachment_page_count ?? null,
+    };
+  });
   const localByKey = new Map(cached.map((row) => [row.message_key, row]));
 
   const hydrated: ChatMessage[] = [];
@@ -123,10 +154,55 @@ export async function sendMessage(relationshipId: string, body: string) {
   if (!row) throw new Error('Message was not created.');
   const expectedHash = await hashMessageBody(clean);
   if (row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) throw new Error('Server message verification failed.');
-  await persistVisibleMessage(ownerUserId, { ...row, ciphertext: encryptedBody, body: clean });
+  const complete: ChatMessage = {
+    ...row,
+    body: clean,
+    ciphertext: encryptedBody,
+    message_kind: 'text',
+    attachment_name: null,
+    attachment_mime_type: null,
+    attachment_size_bytes: null,
+    attachment_page_count: null,
+  };
+  await persistVisibleMessage(ownerUserId, complete);
   const { error: ackError } = await supabase.rpc('ack_sent_message_cached', { message_id: row.logical_id });
   if (ackError) throw ackError;
-  return { ...row, ciphertext: encryptedBody, body: clean };
+  return complete;
+}
+
+export async function sendTextAttachment(relationshipId: string, attachment: PreparedTextAttachment) {
+  const ownerUserId = await currentUserId();
+  const encryptedBody = await encryptMessageBody(relationshipId, attachment.text);
+  const { data, error } = await supabase.rpc('send_text_attachment', {
+    rel_id: relationshipId,
+    attachment_text: attachment.text,
+    encrypted_body: encryptedBody,
+    file_name: attachment.name,
+    mime_type: attachment.mimeType,
+    size_bytes: attachment.sizeBytes,
+    page_count: attachment.pageCount,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as ChatMessage | null;
+  if (!row) throw new Error('The document was not sent.');
+  const expectedHash = await hashMessageBody(attachment.text);
+  if (row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) {
+    throw new Error('Server document verification failed.');
+  }
+  const complete: ChatMessage = {
+    ...row,
+    body: attachment.text,
+    ciphertext: encryptedBody,
+    message_kind: 'text_attachment',
+    attachment_name: attachment.name,
+    attachment_mime_type: attachment.mimeType,
+    attachment_size_bytes: attachment.sizeBytes,
+    attachment_page_count: attachment.pageCount,
+  };
+  await persistVisibleMessage(ownerUserId, complete);
+  const { error: ackError } = await supabase.rpc('ack_sent_message_cached', { message_id: row.logical_id });
+  if (ackError) throw ackError;
+  return complete;
 }
 
 export async function openMessage(messageId: string) {
@@ -171,8 +247,18 @@ export async function editUnopenedMessage(logicalId: string, relationshipId: str
   if (!row) throw new Error('Message could not be edited.');
   const expectedHash = await hashMessageBody(clean);
   if (row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) throw new Error('Server message verification failed.');
-  await persistVisibleMessage(ownerUserId, { ...row, ciphertext: encryptedBody, body: clean });
+  const complete: ChatMessage = {
+    ...row,
+    body: clean,
+    ciphertext: encryptedBody,
+    message_kind: 'text',
+    attachment_name: null,
+    attachment_mime_type: null,
+    attachment_size_bytes: null,
+    attachment_page_count: null,
+  };
+  await persistVisibleMessage(ownerUserId, complete);
   const { error: ackError } = await supabase.rpc('ack_sent_message_cached', { message_id: row.logical_id });
   if (ackError) throw ackError;
-  return { ...row, ciphertext: encryptedBody, body: clean };
+  return complete;
 }

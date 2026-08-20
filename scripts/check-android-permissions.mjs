@@ -1,21 +1,5 @@
 import fs from 'node:fs';
-
-const manifestPath = 'android/app/src/main/AndroidManifest.xml';
-if (!fs.existsSync(manifestPath)) {
-  console.error(`Missing ${manifestPath}. Run Expo prebuild first.`);
-  process.exit(1);
-}
-
-const xml = fs.readFileSync(manifestPath, 'utf8');
-const tags = [...xml.matchAll(/<uses-permission(?:-sdk-23)?\b[^>]*\/?>/g)].map((match) => match[0]);
-const entries = tags.map((tag) => {
-  const name = tag.match(/android:name="([^"]+)"/)?.[1] ?? '';
-  const nodeAction = tag.match(/tools:node="([^"]+)"/)?.[1] ?? '';
-  return { name, removed: nodeAction.toLowerCase() === 'remove', tag };
-}).filter((entry) => entry.name);
-
-const activePermissions = [...new Set(entries.filter((entry) => !entry.removed).map((entry) => entry.name))].sort();
-const explicitlyRemoved = [...new Set(entries.filter((entry) => entry.removed).map((entry) => entry.name))].sort();
+import path from 'node:path';
 
 const forbidden = new Set([
   'android.permission.CAMERA',
@@ -51,17 +35,50 @@ const forbidden = new Set([
   'android.permission.SYSTEM_ALERT_WINDOW',
 ]);
 
-const foundForbidden = activePermissions.filter((permission) => forbidden.has(permission));
-console.log(`Active Android permissions: ${activePermissions.length ? activePermissions.join(', ') : '(none)'}`);
-console.log(`Explicitly removed permissions: ${explicitlyRemoved.length ? explicitlyRemoved.join(', ') : '(none)'}`);
-
-if (!activePermissions.includes('android.permission.INTERNET')) {
-  console.error('Expected INTERNET permission is missing; TalkTwo cannot function without network access.');
-  process.exit(1);
-}
-if (foundForbidden.length) {
-  console.error(`Sensitive permissions are ACTIVE in the generated manifest: ${foundForbidden.join(', ')}`);
-  process.exit(1);
+function manifestsUnder(root) {
+  if (!fs.existsSync(root)) return [];
+  const stat = fs.statSync(root);
+  if (stat.isFile()) return path.basename(root) === 'AndroidManifest.xml' ? [root] : [];
+  return fs.readdirSync(root).flatMap((entry) => manifestsUnder(path.join(root, entry)));
 }
 
-console.log('Android sensitive-permission gate passed. Removal directives are not counted as active permissions.');
+function checkManifest(manifestPath, expectRemovalDirectives) {
+  const xml = fs.readFileSync(manifestPath, 'utf8');
+  const tags = [...xml.matchAll(/<uses-permission(?:-sdk-23)?\b[^>]*\/?>/g)].map((match) => match[0]);
+  const entries = tags.map((tag) => {
+    const name = tag.match(/android:name="([^"]+)"/)?.[1] ?? '';
+    const nodeAction = tag.match(/tools:node="([^"]+)"/)?.[1] ?? '';
+    return { name, removed: nodeAction.toLowerCase() === 'remove' };
+  }).filter((entry) => entry.name);
+
+  const active = [...new Set(entries.filter((entry) => !entry.removed).map((entry) => entry.name))].sort();
+  const removed = [...new Set(entries.filter((entry) => entry.removed).map((entry) => entry.name))].sort();
+  const sensitive = active.filter((permission) => forbidden.has(permission));
+
+  console.log(`${manifestPath}: active permissions = ${active.length ? active.join(', ') : '(none)'}`);
+  if (expectRemovalDirectives) console.log(`${manifestPath}: explicit removal directives = ${removed.length ? removed.join(', ') : '(none)'}`);
+
+  if (!active.includes('android.permission.INTERNET')) return [`${manifestPath}: INTERNET permission is missing`];
+  if (sensitive.length) return [`${manifestPath}: sensitive permissions are ACTIVE: ${sensitive.join(', ')}`];
+  return [];
+}
+
+const mergedMode = process.argv.includes('--merged');
+const paths = mergedMode
+  ? manifestsUnder('android/app/build/intermediates/merged_manifests').filter((item) => /debug/i.test(item))
+  : ['android/app/src/main/AndroidManifest.xml'];
+
+if (!paths.length || paths.some((item) => !fs.existsSync(item))) {
+  console.error(mergedMode
+    ? 'No merged debug AndroidManifest.xml found. Build the Android debug app first.'
+    : 'Missing android/app/src/main/AndroidManifest.xml. Run Expo prebuild first.');
+  process.exit(1);
+}
+
+const failures = paths.flatMap((manifestPath) => checkManifest(manifestPath, !mergedMode));
+if (failures.length) {
+  console.error('Android permission gate failed:\n- ' + failures.join('\n- '));
+  process.exit(1);
+}
+
+console.log(`${mergedMode ? 'Merged Android' : 'Prebuild Android'} sensitive-permission gate passed.`);

@@ -68,7 +68,7 @@ export function googleSubscriptionOffer(
     .map((offer) => offer.offerTokenAndroid?.trim() ?? '')
     .filter(Boolean);
   if (offers.length !== 1) {
-    throw new Error('The Google Play subscription must have exactly one eligible monthly offer.');
+    throw new Error('The Google Play subscription must have exactly one eligible offer.');
   }
   return { sku: expectedProductId, offerToken: offers[0] as string };
 }

@@ -6,6 +6,7 @@ export type FilterReasonCode =
   | 'emoji'
   | 'profanity'
   | 'generalisation'
+  | 'fault_reminder'
   | 'personal_attack'
   | 'accusatory_question'
   | 'emotion_dumping'

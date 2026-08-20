@@ -1,17 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, RefreshControl, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
-import { evaluateFreeMessage, MAX_FREE_LENGTH } from '../filter/freeFilter';
+import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
+import { countMessageCharacters, evaluateFreeMessage, MAX_FREE_LENGTH } from '../filter/freeFilter';
+import { getConversationTheme, listMemberPreferences } from '../services/localDb';
 import { editUnopenedMessage, listMessages, openMessage, rejectMessageWithoutOpening, sendMessage, withdrawMessage, type ChatMessage } from '../services/messages';
 import { analyzePremiumMessage, getMyPlan, startPremiumTrial, type AiReview, type UserPlan } from '../services/premium';
-import type { RelationshipSummary } from '../services/relationships';
+import { listRelationshipMembers, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { getPartnerWindows } from '../services/windows';
+import ChatSettingsScreen from './ChatSettingsScreen';
 
 const MAX_PREMIUM_LENGTH = 480;
 
-function Button({ title, onPress, disabled = false, secondary = false }: { title: string; onPress: () => void; disabled?: boolean; secondary?: boolean }) {
-  return <TouchableOpacity disabled={disabled} onPress={onPress} style={[styles.button, secondary && styles.secondary, disabled && styles.disabled]}><Text style={[styles.buttonText, secondary && styles.secondaryText]}>{title}</Text></TouchableOpacity>;
-}
+type MemberLook = { name: string; bubble: BubbleThemeName };
 
 function isPremiumActive(plan: UserPlan | null) {
   if (!plan) return false;
@@ -21,10 +22,36 @@ function isPremiumActive(plan: UserPlan | null) {
   return false;
 }
 
+function sameDay(a: string, b: string) {
+  return new Date(a).toDateString() === new Date(b).toDateString();
+}
+
+function dateLabel(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+
+function PatternBackdrop({ theme }: { theme: BackgroundThemeName }) {
+  if (BACKGROUND_THEMES[theme].pattern !== 'dots') return null;
+  return <View pointerEvents="none" style={styles.pattern}>{Array.from({ length: 54 }, (_, index) => <View key={index} style={styles.patternDot} />)}</View>;
+}
+
+function CompactButton({ title, onPress, disabled = false, secondary = false }: { title: string; onPress: () => void; disabled?: boolean; secondary?: boolean }) {
+  return <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.compactButton, secondary && styles.compactSecondary, disabled && styles.disabled]}><Text style={[styles.compactButtonText, secondary && styles.compactSecondaryText]}>{title}</Text></TouchableOpacity>;
+}
+
 export default function ChatScreen({ relationship, session, onBack }: { relationship: RelationshipSummary; session: Session; onBack: () => void }) {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [members, setMembers] = useState<RelationshipMember[]>([]);
+  const [memberLooks, setMemberLooks] = useState<Record<string, MemberLook>>({});
+  const [background, setBackground] = useState<BackgroundThemeName>('paper');
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [partnerTimezone, setPartnerTimezone] = useState<string | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
@@ -32,32 +59,61 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
   const [review, setReview] = useState<AiReview | null>(null);
   const [reviewedText, setReviewedText] = useState('');
   const [trialFallback, setTrialFallback] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+
   const freeResult = useMemo(() => evaluateFreeMessage(message), [message]);
   const hasText = message.trim().length > 0;
+  const messageLength = countMessageCharacters(message.trim());
   const premiumEntitled = isPremiumActive(plan);
   const premiumAi = premiumEntitled && !trialFallback;
   const maxLength = premiumAi ? MAX_PREMIUM_LENGTH : MAX_FREE_LENGTH;
-  const reviewCurrent = premiumAi && review && reviewedText === message.trim();
-  const canSendPremium = Boolean(reviewCurrent && review?.can_send && message.trim().length <= MAX_PREMIUM_LENGTH);
-  const canSend = premiumAi ? canSendPremium : freeResult.canSend;
+  const reviewCurrent = Boolean(premiumAi && review && reviewedText === message.trim());
+  const canSendPremium = Boolean(reviewCurrent && review?.can_send && messageLength <= MAX_PREMIUM_LENGTH);
+  const canCompose = relationship.my_role === 'participant';
+  const canSend = canCompose && (premiumAi ? canSendPremium : freeResult.canSend) && messageLength <= maxLength;
 
-  async function refresh() {
-    try { setMessages(await listMessages(relationship.id)); }
-    catch (error) { Alert.alert('Could not load messages', error instanceof Error ? error.message : 'Please try again.'); }
+  async function refreshMessages() {
+    setMessages(await listMessages(relationship.id));
   }
 
   async function refreshPlan() {
-    try {
-      const next = await getMyPlan();
-      setPlan(next);
-      if (next.plan === 'trial' && next.analyses_remaining_today === 0) setTrialFallback(true);
-    } catch { setPlan(null); }
+    const next = await getMyPlan();
+    setPlan(next);
+    setTrialFallback(next.plan === 'trial' && next.analyses_remaining_today === 0);
+  }
+
+  async function refreshAppearance() {
+    const [nextMembers, preferences, theme] = await Promise.all([
+      listRelationshipMembers(relationship.id),
+      listMemberPreferences(session.user.id, relationship.id),
+      getConversationTheme(session.user.id, relationship.id),
+    ]);
+    const prefMap = new Map(preferences.map((item) => [item.member_user_id, item]));
+    const looks: Record<string, MemberLook> = {};
+    for (const member of nextMembers) {
+      const preference = prefMap.get(member.user_id);
+      looks[member.user_id] = {
+        name: preference?.local_alias?.trim() || member.display_name || 'Member',
+        bubble: safeBubbleTheme(preference?.bubble_theme ?? (member.user_id === session.user.id ? 'sage' : 'grey')),
+      };
+    }
+    setMembers(nextMembers);
+    setMemberLooks(looks);
+    setBackground(safeBackgroundTheme(theme));
+  }
+
+  async function refreshAll() {
+    await Promise.all([
+      refreshMessages(),
+      refreshPlan(),
+      refreshAppearance(),
+      getPartnerWindows(relationship.id).then((rows) => setPartnerTimezone(rows[0]?.timezone ?? null)).catch(() => undefined),
+    ]);
   }
 
   useEffect(() => {
-    void refresh();
-    void refreshPlan();
-    void getPartnerWindows(relationship.id).then((rows) => setPartnerTimezone(rows[0]?.timezone ?? null)).catch(() => undefined);
+    void refreshAll().catch((error) => Alert.alert('Could not open chat', error instanceof Error ? error.message : 'Please try again.'));
   }, [relationship.id]);
 
   function changeMessage(text: string) {
@@ -76,7 +132,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
       const next = await startPremiumTrial();
       setPlan(next);
       setTrialFallback(false);
-      Alert.alert('Premium trial started', 'You have 7 days of Premium, including AI review. Trial AI use is capped at 25 analyses per day.');
+      Alert.alert('Premium trial started', 'You have 7 days of Premium. Trial AI review is limited to 25 analyses per local day.');
     } catch (error) {
       Alert.alert('Trial could not start', error instanceof Error ? error.message : 'Please try again.');
     } finally { setBusy(false); }
@@ -84,7 +140,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
 
   async function reviewWithAi() {
     const draft = message.trim();
-    if (!draft || draft.length > MAX_PREMIUM_LENGTH) return;
+    if (!draft || messageLength > MAX_PREMIUM_LENGTH) return;
     try {
       setReviewBusy(true);
       const next = await analyzePremiumMessage(relationship.id, draft);
@@ -96,138 +152,158 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
         setTrialFallback(true);
         setReview(null);
         setReviewedText('');
-        Alert.alert('Daily AI limit reached', 'For the rest of today, TalkTwo automatically falls back to the Free filter. Messages are limited to 160 characters.');
-      } else {
-        Alert.alert('AI review unavailable', text);
-      }
+        Alert.alert('Daily AI limit reached', 'TalkTwo now uses the Free filter until your next local day.');
+      } else Alert.alert('AI review unavailable', text);
     } finally { setReviewBusy(false); }
   }
 
-  async function send() {
+  async function saveOrSend() {
     if (!canSend) return;
     const lastTrialReview = plan?.plan === 'trial' && reviewCurrent && review?.usage?.analyses_remaining === 0;
     try {
       setBusy(true);
-      if (editing) await editUnopenedMessage(editing.id, message.trim());
+      if (editing) await editUnopenedMessage(editing.logical_id, relationship.id, message.trim());
       else await sendMessage(relationship.id, message.trim());
-      setMessage('');
-      setEditing(null);
-      setReview(null);
-      setReviewedText('');
+      setMessage(''); setEditing(null); setReview(null); setReviewedText('');
       if (lastTrialReview) setTrialFallback(true);
-      await refresh();
+      await refreshMessages();
     } catch (error) {
-      Alert.alert(editing ? 'Message could not be edited' : 'Message was not sent', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(editing ? 'Message can no longer be edited' : 'Message was not sent', error instanceof Error ? error.message : 'Please try again.');
     } finally { setBusy(false); }
   }
 
   function startEdit(item: ChatMessage) {
-    setEditing(item);
-    setMessage(item.body ?? '');
-    setReview(null);
-    setReviewedText('');
+    if (!item.body) return;
+    setEditing(item); setMessage(item.body); setReview(null); setReviewedText('');
+    setTimeout(() => inputRef.current?.focus(), 50);
   }
 
   async function openIncoming(item: ChatMessage) {
-    try { await openMessage(item.id); await refresh(); }
-    catch (error) { Alert.alert('Message cannot be opened yet', error instanceof Error ? error.message : 'Please try again.'); }
+    try { await openMessage(item.id); await refreshMessages(); }
+    catch (error) { Alert.alert('Message cannot be opened', error instanceof Error ? error.message : 'Please try again.'); }
   }
 
   async function rejectIncoming(item: ChatMessage) {
     try {
       const rejected = await rejectMessageWithoutOpening(item.id);
       if (!rejected) Alert.alert('Message could not be rejected', 'It may already have been opened or withdrawn.');
-      await refresh();
+      await refreshMessages();
     } catch (error) { Alert.alert('Message could not be rejected', error instanceof Error ? error.message : 'Please try again.'); }
   }
 
   async function withdraw(item: ChatMessage) {
     try {
-      const changed = await withdrawMessage(item.id);
-      if (!changed) Alert.alert('Message can no longer be withdrawn', 'The recipient may already have opened it. TalkTwo does not otherwise show read receipts.');
-      if (editing?.id === item.id && changed) { setEditing(null); setMessage(''); }
-      await refresh();
+      const changed = await withdrawMessage(item.logical_id, relationship.id);
+      if (!changed) Alert.alert('Message can no longer be withdrawn', 'At least one recipient may already have opened or rejected it. TalkTwo does not otherwise reveal read status.');
+      if (editing?.logical_id === item.logical_id && changed) { setEditing(null); setMessage(''); }
+      await refreshMessages();
     } catch (error) { Alert.alert('Could not withdraw message', error instanceof Error ? error.message : 'Please try again.'); }
   }
 
+  const otherNames = members.filter((member) => member.user_id !== session.user.id).map((member) => memberLooks[member.user_id]?.name || member.display_name);
+  const title = otherNames.length <= 2 ? otherNames.join(', ') || 'Conversation' : `${otherNames.slice(0, 2).join(', ')} +${otherNames.length - 2}`;
+  const headerSubtitle = relationship.my_role === 'observer' ? `Observer · ${members.length} people` : members.length > 2 ? `${members.length} people` : partnerTimezone ? `Timezone: ${partnerTimezone}` : 'Private conversation';
+
+  if (showSettings) return <ChatSettingsScreen relationship={relationship} session={session} onBack={() => { setShowSettings(false); void refreshAppearance(); void refreshMessages(); }} onAppearanceChanged={() => void refreshAppearance()} />;
+
+  const firstProblem = !premiumAi ? freeResult.reasons[0] : null;
+  const backgroundColor = BACKGROUND_THEMES[background].background;
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onBack}><Text style={styles.back}>‹ Connections</Text></TouchableOpacity>
-          <Text style={styles.plan}>{premiumEntitled ? 'PREMIUM' : 'FREE'}</Text>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
+        <View style={styles.header}>
+          <TouchableOpacity accessibilityRole="button" onPress={onBack} style={styles.headerIcon}><Text style={styles.back}>‹</Text></TouchableOpacity>
+          <View style={styles.headerAvatar}><Text style={styles.headerAvatarText}>{initialsForName(title)}</Text></View>
+          <View style={styles.headerText}><Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerTitle}>{title}</Text><Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerSubtitle}>{headerSubtitle}</Text></View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Chat settings" onPress={() => setShowSettings(true)} style={styles.headerIcon}><Text style={styles.settingsGlyph}>•••</Text></TouchableOpacity>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.title}>Conversation</Text>
-          <Text style={styles.help}>Only messages that pass TalkTwo's communication rules can be sent.</Text>
-          {partnerTimezone ? <Text style={styles.tz}>Other person's timezone: {partnerTimezone}</Text> : null}
-          {!premiumEntitled && plan?.plan === 'free' ? <Button title="Start 7-day Premium trial" onPress={() => void startTrial()} disabled={busy} secondary /> : null}
-          {plan?.plan === 'trial' && plan.trial_ends_at ? <Text style={styles.tz}>Trial ends {new Date(plan.trial_ends_at).toLocaleDateString()}.</Text> : null}
-          {trialFallback ? <Text style={styles.help}>Today's 25 AI reviews are used. Free filtering is active until the daily allowance resets.</Text> : null}
+        {!premiumEntitled && plan?.plan === 'free' && canCompose ? <TouchableOpacity accessibilityRole="button" onPress={() => void startTrial()} disabled={busy} style={styles.trialStrip}><Text style={styles.trialText}>Try Premium AI review for 7 days</Text></TouchableOpacity> : null}
+        {trialFallback ? <View style={styles.infoStrip}><Text style={styles.infoText}>Daily trial AI allowance used · Free filter active</Text></View> : null}
+
+        <View style={[styles.chatArea, { backgroundColor }]}>
+          <PatternBackdrop theme={background} />
+          <FlatList
+            data={messages}
+            keyExtractor={(item) => item.sender_id === session.user.id ? item.logical_id : item.id}
+            contentContainerStyle={styles.messageContent}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void refreshAll().catch(() => undefined).finally(() => setRefreshing(false)); }} />}
+            renderItem={({ item, index }) => {
+              const mine = item.sender_id === session.user.id;
+              const sender = memberLooks[item.sender_id] ?? { name: mine ? 'You' : 'Member', bubble: mine ? 'sage' : 'grey' as BubbleThemeName };
+              const bubble = BUBBLE_THEMES[sender.bubble];
+              const textColor = textColorForBackground(bubble.background);
+              const previous = index > 0 ? messages[index - 1] : null;
+              const showDate = !previous || !sameDay(previous.created_at, item.created_at);
+              const unopened = !mine && !item.opened_at;
+              const blocked = !mine && item.blocked_for_recipient;
+              const rejectedCount = mine ? item.rejected_count : 0;
+              return <>
+                {showDate ? <View style={styles.datePill}><Text style={styles.datePillText}>{dateLabel(item.created_at)}</Text></View> : null}
+                <View style={[styles.messageRow, mine ? styles.messageRowMine : styles.messageRowTheirs]}>
+                  {!mine && members.length > 2 ? <View style={styles.smallAvatar}><Text style={styles.smallAvatarText}>{initialsForName(sender.name)}</Text></View> : null}
+                  <View style={[styles.bubble, { backgroundColor: bubble.background }, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                    {!mine && members.length > 2 ? <Text numberOfLines={1} style={[styles.senderName, { color: textColor }]}>{sender.name}</Text> : null}
+                    {blocked ? <>
+                      <Text style={[styles.blockedTitle, { color: textColor }]}>Message unavailable</Text>
+                      <Text style={[styles.messageText, { color: textColor }]}>This message cannot be read because you blocked this person. Unblock them in Chat settings to read future messages from this person.</Text>
+                    </> : unopened ? <>
+                      <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? 'Potentially sensitive message' : 'New message'}</Text>
+                      <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? 'TalkTwo marked this as potentially conflict-escalating.' : 'The text stays hidden until you choose to open it.'}</Text>
+                      <View style={styles.bubbleActions}><CompactButton title="Open" onPress={() => void openIncoming(item)} secondary />{item.risk_level === 'yellow' ? <CompactButton title="Reject unread" onPress={() => void rejectIncoming(item)} secondary /> : null}</View>
+                    </> : <Text selectable style={[styles.messageText, { color: textColor }]}>{item.body ?? 'Encrypted message unavailable on this device.'}</Text>}
+                    <View style={styles.messageMetaRow}><Text style={[styles.messageMeta, { color: textColor }]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{item.edited_at ? ' · edited' : ''}{item.risk_level === 'yellow' ? ' · caution' : ''}</Text></View>
+                    {mine ? <View style={styles.senderControls}>
+                      <Text style={[styles.sentStatus, { color: textColor }]}>{rejectedCount > 0 ? `${rejectedCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''} rejected unread` : 'Sent'}</Text>
+                      <View style={styles.inlineActions}>{item.body ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>Edit</Text></TouchableOpacity> : null}<TouchableOpacity accessibilityRole="button" onPress={() => void withdraw(item)}><Text style={[styles.inlineAction, { color: textColor }]}>Withdraw</Text></TouchableOpacity></View>
+                    </View> : null}
+                  </View>
+                </View>
+              </>;
+            }}
+            ListEmptyComponent={<View style={styles.emptyChat}><Text style={styles.emptyChatTitle}>A quieter place to talk</Text><Text style={styles.emptyChatText}>{relationship.my_role === 'observer' ? 'You are a read-only observer. You will see new messages from the time you were approved.' : 'Keep messages practical: facts, requests, agreements and necessary information.'}</Text></View>}
+          />
         </View>
 
-        <View style={styles.messageList}>
-          {messages.length === 0 ? <Text style={styles.empty}>No messages yet.</Text> : messages.map((item) => {
-            const mine = item.sender_id === session.user.id;
-            const opened = Boolean(item.opened_at);
-            const rejected = Boolean(item.rejected_at);
-            const hideIncomingBody = !mine && !opened;
-            return (
-              <View key={item.id} style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
-                <Text style={styles.meta}>{mine ? 'You' : 'Other person'} · {new Date(item.created_at).toLocaleString()}{item.edited_at ? ' · edited' : ''}{item.risk_level === 'yellow' ? ' · caution' : ''}</Text>
-                {mine ? <Text style={styles.body}>{item.body ?? ''}</Text> : hideIncomingBody ? <>
-                  <Text style={styles.waiting}>{item.risk_level === 'yellow' ? 'Potentially sensitive message' : 'New message'}</Text>
-                  <Text style={styles.help}>{item.risk_level === 'yellow' ? 'TalkTwo marked this message as potentially conflict-escalating. You can open it or reject it without reading.' : 'The message text has not been sent to this screen yet. It is revealed only when you choose to open it.'}</Text>
-                  <Button title="Open message" onPress={() => void openIncoming(item)} secondary />
-                  {item.risk_level === 'yellow' ? <Button title="Reject without reading" onPress={() => void rejectIncoming(item)} secondary /> : null}
-                </> : <Text style={styles.body}>{item.body ?? ''}</Text>}
-                {mine ? <View style={styles.footer}>
-                  <Text style={styles.delivery}>{rejected ? 'Rejected without opening' : 'Sent'}</Text>
-                  {!rejected ? <View style={styles.actions}><TouchableOpacity onPress={() => startEdit(item)}><Text style={styles.action}>Edit</Text></TouchableOpacity><TouchableOpacity onPress={() => void withdraw(item)}><Text style={styles.action}>Withdraw</Text></TouchableOpacity></View> : null}
-                </View> : null}
-              </View>
-            );
-          })}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>{editing ? 'Edit message' : 'New message'}</Text>
-          {editing ? <Text style={styles.help}>You may edit while the message is still unopened. TalkTwo does not reveal whether it has been opened; if it is already locked, the sent version stays unchanged.</Text> : null}
-          <TextInput multiline value={message} onChangeText={changeMessage} placeholder="Write a short practical message…" style={styles.input} maxLength={MAX_PREMIUM_LENGTH} />
-          <View style={styles.row}><Text style={[styles.counter, message.length > maxLength && styles.danger]}>{message.length}/{maxLength}</Text><Text style={styles.plan}>{premiumAi ? 'PREMIUM AI' : 'FREE FILTER'}</Text></View>
-
-          {premiumAi ? <>
-            {hasText && !reviewCurrent ? <Text style={styles.help}>Premium checks this exact text with AI before it can be sent.</Text> : null}
-            <Button title={reviewBusy ? 'Reviewing…' : 'Review with AI'} onPress={() => void reviewWithAi()} disabled={reviewBusy || busy || !hasText || message.length > MAX_PREMIUM_LENGTH} secondary />
-            {reviewCurrent ? <View style={[styles.reviewBox, review?.level === 'red' ? styles.reviewRed : review?.level === 'yellow' ? styles.reviewYellow : styles.reviewGreen]}>
-              <Text style={styles.reasonTitle}>{review?.level === 'green' ? 'Ready to send' : review?.level === 'yellow' ? 'Caution' : 'Message blocked'}</Text>
-              <Text style={styles.help}>{review?.reason}</Text>
-              {review?.problematic_text?.length ? <Text style={styles.suggestion}>Flagged: {review.problematic_text.join(' · ')}</Text> : null}
-              {review?.rewrite ? <TouchableOpacity onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>Use Coach rewrite</Text></TouchableOpacity> : null}
-              {review?.usage?.analyses_remaining !== undefined && review.usage.analyses_remaining >= 0 ? <Text style={styles.tz}>{review.usage.analyses_remaining} AI reviews left today in trial.</Text> : null}
-            </View> : null}
-          </> : <>
-            {hasText && !freeResult.canSend ? <View style={styles.blocked}><Text style={styles.reasonTitle}>Message blocked</Text>{freeResult.reasons.map((reason, index) => <View key={`${reason.code}-${index}`} style={styles.reason}><Text style={styles.reasonTitle}>{reason.title}</Text><Text style={styles.help}>{reason.explanation}</Text><Text style={styles.suggestion}>{reason.suggestion}</Text></View>)}</View> : null}
-            {hasText && freeResult.canSend ? <Text style={styles.approved}>Ready to send.</Text> : null}
-          </>}
-
-          <Button title={busy ? 'Saving…' : editing ? 'Save changes' : 'Send'} onPress={() => void send()} disabled={busy || !hasText || !canSend || message.length > maxLength} />
-          {editing ? <Button title="Cancel edit" onPress={() => { setEditing(null); setMessage(''); setReview(null); setReviewedText(''); }} secondary /> : null}
-        </View>
-        <Button title="Refresh messages" onPress={() => void refresh()} secondary />
-      </ScrollView>
+        {canCompose ? <View style={styles.composerWrap}>
+          {editing ? <View style={styles.editingStrip}><Text numberOfLines={1} style={styles.editingText}>Editing a sent message. If anyone has already opened it, the server will keep the original.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { setEditing(null); setMessage(''); setReview(null); setReviewedText(''); }}><Text style={styles.cancelEdit}>Cancel</Text></TouchableOpacity></View> : null}
+          {premiumAi && reviewCurrent ? <View style={[styles.reviewStrip, review?.level === 'red' ? styles.reviewRed : review?.level === 'yellow' ? styles.reviewYellow : styles.reviewGreen]}><View style={styles.reviewTextWrap}><Text style={styles.reviewTitle}>{review?.level === 'green' ? 'Ready to send' : review?.level === 'yellow' ? 'Caution' : 'Blocked'}</Text><Text numberOfLines={3} style={styles.reviewReason}>{review?.reason}</Text></View>{review?.rewrite ? <TouchableOpacity accessibilityRole="button" onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>Use rewrite</Text></TouchableOpacity> : null}</View> : null}
+          {!premiumAi && hasText && !freeResult.canSend && firstProblem ? <View style={styles.reviewStrip}><View style={styles.reviewTextWrap}><Text style={styles.reviewTitle}>{firstProblem.title}</Text><Text numberOfLines={3} style={styles.reviewReason}>{firstProblem.explanation}</Text></View></View> : null}
+          <View style={styles.composerRow}>
+            <View style={styles.inputShell}>
+              <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder="Message" placeholderTextColor="#85857F" style={styles.input} accessibilityLabel="Message" />
+              <View style={styles.counterRow}><Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text><Text style={styles.filterLabel}>{premiumAi ? 'AI review' : 'Free filter'}</Text></View>
+            </View>
+            {premiumAi && (!reviewCurrent || review?.level === 'red') ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review message with AI" disabled={reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH} onPress={() => void reviewWithAi()} style={[styles.sendCircle, styles.reviewCircle, (reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH) && styles.disabled]}><Text style={styles.sendGlyph}>{reviewBusy ? '…' : '✓'}</Text></TouchableOpacity> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? 'Save edited message' : 'Send message'} disabled={busy || !hasText || !canSend} onPress={() => void saveOrSend()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}><Text style={styles.sendGlyph}>➤</Text></TouchableOpacity>}
+          </View>
+        </View> : <View style={styles.observerBar}><Text style={styles.observerText}>Observer · read only</Text></View>}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F5F5F2' }, container: { padding: 22, gap: 16 },
-  headerRow: { marginTop: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, back: { fontWeight: '800', color: '#333', fontSize: 16 }, plan: { fontSize: 12, fontWeight: '800', letterSpacing: 1, color: '#555' },
-  card: { backgroundColor: '#FFF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E5E5E0', gap: 12 }, title: { fontSize: 20, fontWeight: '800', color: '#161616' }, help: { color: '#666', lineHeight: 20 }, tz: { fontSize: 12, color: '#777' },
-  messageList: { gap: 10 }, empty: { textAlign: 'center', color: '#777', paddingVertical: 18 }, bubble: { borderRadius: 16, padding: 14, borderWidth: 1, maxWidth: '92%' }, mine: { alignSelf: 'flex-end', backgroundColor: '#FFF', borderColor: '#D9D9D3' }, theirs: { alignSelf: 'flex-start', backgroundColor: '#F0F0EC', borderColor: '#D9D9D3' }, meta: { fontSize: 11, color: '#777', marginBottom: 6 }, waiting: { fontSize: 16, fontWeight: '800', color: '#222', marginBottom: 4 }, body: { fontSize: 16, lineHeight: 22, color: '#171717' },
-  footer: { marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 16 }, delivery: { fontSize: 12, color: '#777' }, actions: { flexDirection: 'row', gap: 14 }, action: { fontSize: 12, fontWeight: '800', color: '#555' },
-  label: { fontSize: 14, fontWeight: '700', color: '#333' }, input: { minHeight: 110, fontSize: 18, lineHeight: 25, textAlignVertical: 'top', color: '#111' }, row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, counter: { color: '#666' }, danger: { color: '#8A1C1C', fontWeight: '700' }, blocked: { borderTopWidth: 1, borderTopColor: '#E5E5E0', paddingTop: 12 }, reason: { marginTop: 10 }, reasonTitle: { fontSize: 16, fontWeight: '700', color: '#222' }, suggestion: { marginTop: 6, fontWeight: '600', color: '#303030' }, approved: { color: '#416747', fontWeight: '800' },
-  reviewBox: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 }, reviewGreen: { borderColor: '#9FB6A3' }, reviewYellow: { borderColor: '#B9A76A' }, reviewRed: { borderColor: '#B68A8A' }, rewrite: { fontWeight: '800', textDecorationLine: 'underline', color: '#333' },
-  button: { backgroundColor: '#171717', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center' }, secondary: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CFCFC9' }, disabled: { opacity: 0.3 }, buttonText: { color: '#FFF', fontWeight: '800', fontSize: 15 }, secondaryText: { color: '#222' },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' }, flex: { flex: 1 },
+  header: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingVertical: 7, backgroundColor: '#FFFFFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DADAD4' },
+  headerIcon: { width: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', flexShrink: 0 }, back: { fontSize: 36, lineHeight: 40, color: '#173F34' }, settingsGlyph: { fontSize: 20, color: '#36584D', letterSpacing: 1 },
+  headerAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DFE8E2', flexShrink: 0 }, headerAvatarText: { fontSize: 13, color: '#315245', fontWeight: '800' },
+  headerText: { flex: 1, minWidth: 0 }, headerTitle: { fontWeight: '800', fontSize: 16, color: '#191919', flexShrink: 1 }, headerSubtitle: { marginTop: 2, color: '#74746F', fontSize: 12, flexShrink: 1 },
+  trialStrip: { minHeight: 38, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EDF4F0', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D5E1DA' }, trialText: { color: '#1E654F', fontWeight: '750', textAlign: 'center', flexShrink: 1 },
+  infoStrip: { paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#F2E9D6' }, infoText: { color: '#695D42', textAlign: 'center', fontSize: 12, flexShrink: 1 },
+  chatArea: { flex: 1, overflow: 'hidden' }, pattern: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', flexWrap: 'wrap', gap: 28, padding: 20, opacity: 0.16 }, patternDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#66706A' },
+  messageContent: { paddingHorizontal: 10, paddingTop: 12, paddingBottom: 16, flexGrow: 1 }, datePill: { alignSelf: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.86)', marginVertical: 8 }, datePillText: { fontSize: 11, color: '#686863', fontWeight: '700' },
+  messageRow: { width: '100%', marginVertical: 3, flexDirection: 'row', alignItems: 'flex-end', gap: 6 }, messageRowMine: { justifyContent: 'flex-end' }, messageRowTheirs: { justifyContent: 'flex-start' },
+  smallAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', flexShrink: 0, borderWidth: StyleSheet.hairlineWidth, borderColor: '#D1D1CA' }, smallAvatarText: { fontSize: 9, fontWeight: '800', color: '#525750' },
+  bubble: { maxWidth: '82%', minWidth: 88, borderRadius: 16, paddingHorizontal: 11, paddingTop: 8, paddingBottom: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' }, bubbleMine: { borderBottomRightRadius: 5 }, bubbleTheirs: { borderBottomLeftRadius: 5 },
+  senderName: { fontSize: 11, fontWeight: '800', opacity: 0.74, marginBottom: 3, flexShrink: 1 }, messageText: { fontSize: 16, lineHeight: 21, flexShrink: 1 }, blockedTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', marginBottom: 3, flexShrink: 1 },
+  bubbleActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }, compactButton: { minHeight: 34, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, justifyContent: 'center', backgroundColor: '#1E5A48' }, compactSecondary: { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.18)' }, compactButtonText: { fontSize: 12, color: '#FFFFFF', fontWeight: '800', textAlign: 'center' }, compactSecondaryText: { color: '#242424' },
+  messageMetaRow: { alignItems: 'flex-end', marginTop: 4 }, messageMeta: { fontSize: 10, opacity: 0.58, flexShrink: 1 }, senderControls: { marginTop: 5, paddingTop: 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.10)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sentStatus: { fontSize: 10, opacity: 0.62, flexShrink: 1 }, inlineActions: { flexDirection: 'row', gap: 12, flexShrink: 0 }, inlineAction: { fontSize: 11, fontWeight: '800', textDecorationLine: 'underline' },
+  emptyChat: { flex: 1, minHeight: 220, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 8 }, emptyChatTitle: { fontSize: 18, fontWeight: '800', color: '#3F4945', textAlign: 'center' }, emptyChatText: { color: '#6B716E', lineHeight: 20, textAlign: 'center', flexShrink: 1 },
+  composerWrap: { backgroundColor: '#FFFFFF', paddingHorizontal: 8, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 8 : 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8D8D2' }, composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 }, inputShell: { flex: 1, minWidth: 0, borderRadius: 20, backgroundColor: '#F3F3F0', borderWidth: StyleSheet.hairlineWidth, borderColor: '#D4D4CE', paddingHorizontal: 12, paddingTop: 7, paddingBottom: 5 }, input: { minHeight: 28, maxHeight: 112, fontSize: 16, lineHeight: 21, color: '#171717', padding: 0, textAlignVertical: 'top' }, counterRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 3 }, counter: { color: '#85857F', fontSize: 10 }, counterDanger: { color: '#9C2E2E', fontWeight: '800' }, filterLabel: { color: '#85857F', fontSize: 10, flexShrink: 1 },
+  sendCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E6A52', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }, reviewCircle: { backgroundColor: '#3C5E78' }, sendGlyph: { color: '#FFFFFF', fontSize: 19, fontWeight: '800' }, disabled: { opacity: 0.35 },
+  reviewStrip: { marginBottom: 6, borderRadius: 12, backgroundColor: '#F2F2EE', borderWidth: StyleSheet.hairlineWidth, borderColor: '#D4D4CE', padding: 9, flexDirection: 'row', gap: 10, alignItems: 'center' }, reviewGreen: { backgroundColor: '#EAF2EB' }, reviewYellow: { backgroundColor: '#F4EDDA' }, reviewRed: { backgroundColor: '#F3E5E5' }, reviewTextWrap: { flex: 1, minWidth: 0 }, reviewTitle: { fontSize: 12, fontWeight: '800', color: '#272727', flexShrink: 1 }, reviewReason: { marginTop: 2, fontSize: 11, lineHeight: 15, color: '#62625D', flexShrink: 1 }, rewrite: { fontSize: 12, fontWeight: '800', color: '#285F4D', textDecorationLine: 'underline', flexShrink: 0 },
+  editingStrip: { minHeight: 34, paddingHorizontal: 4, paddingBottom: 5, flexDirection: 'row', gap: 8, alignItems: 'center' }, editingText: { flex: 1, minWidth: 0, color: '#6D6D67', fontSize: 11 }, cancelEdit: { color: '#8A3737', fontWeight: '800', fontSize: 12 },
+  observerBar: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: '#F2F2EF', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8D8D2' }, observerText: { color: '#696963', fontWeight: '800', textAlign: 'center' },
 });

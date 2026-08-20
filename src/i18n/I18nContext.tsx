@@ -10,6 +10,7 @@ const LOCALE_KEY = 'talktwo.localePreference.v1';
 
 interface I18nValue {
   locale: SupportedLocale;
+  systemLocale: SupportedLocale;
   preference: LocalePreference;
   t: (key: TranslationKey, values?: Record<string, string | number>) => string;
   setPreference: (preference: LocalePreference) => Promise<void>;
@@ -32,6 +33,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<I18nValue>(() => ({
     locale,
+    systemLocale,
     preference,
     t: (key, values) => translate(locale, key, values),
     setPreference: async (next) => {
@@ -44,9 +46,16 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       if (data === 'system' || data === 'en' || data === 'da') {
         setPreferenceState(data);
         await SecureStore.setItemAsync(LOCALE_KEY, data, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+        if (data === 'system') {
+          const { error: updateError } = await supabase.rpc('set_my_locale_preference', {
+            locale_preference: 'system',
+            resolved_locale: systemLocale,
+          });
+          if (updateError) throw updateError;
+        }
       }
     },
-  }), [locale, preference]);
+  }), [locale, preference, systemLocale]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

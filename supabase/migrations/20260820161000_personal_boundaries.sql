@@ -283,7 +283,7 @@ begin
   if uid is null then raise exception 'Authentication required'; end if;
   if msg = '' then raise exception 'Message cannot be empty'; end if;
   if encrypted_body is null or encrypted_body = '' or char_length(encrypted_body) > 4096 then raise exception 'Encrypted message payload is required'; end if;
-  select min(pm.relationship_id), min(pm.created_at), count(*)::integer into rel, created, cnt from public.messages pm where pm.logical_id = message_id and pm.sender_id = uid;
+  select (array_agg(pm.relationship_id order by pm.created_at))[1], min(pm.created_at), count(*)::integer into rel, created, cnt from public.messages pm where pm.logical_id = message_id and pm.sender_id = uid;
   if rel is null then raise exception 'Message can no longer be edited'; end if;
   if exists(select 1 from public.messages pm where pm.logical_id = message_id and pm.sender_id = uid and (pm.opened_at is not null or pm.rejected_at is not null or pm.withdrawn_at is not null)) then raise exception 'Message can no longer be edited'; end if;
   h := encode(extensions.digest(msg, 'sha256'), 'hex');

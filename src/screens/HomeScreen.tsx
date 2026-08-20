@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
@@ -39,6 +39,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   const [selected, setSelected] = useState<RelationshipSummary | null>(null);
   const [showWindows, setShowWindows] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
   const storeBilling = useNativeStoreBilling(session.user.id, {
     onError: (message) => Alert.alert('Store purchase unavailable', message),
     onPurchaseVerified: async () => {
@@ -163,6 +164,29 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     );
   }
 
+  function buyPremiumGift() {
+    const recipient = giftRecipientEmail.trim();
+    if (!recipient) {
+      Alert.alert('Recipient needed', 'Enter the email address the recipient uses or will use for TalkTwo.');
+      return;
+    }
+    Alert.alert(
+      'Give one month of Premium · 59 kr',
+      `The gift will be tied to ${recipient}, so the recipient does not lose it if an invitation link is misplaced. The store charge is a one-time purchase, not a subscription.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Continue to store',
+          onPress: () => {
+            void storeBilling.purchasePremiumGift(recipient)
+              .then(() => setGiftRecipientEmail(''))
+              .catch((error) => Alert.alert('Gift purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+          },
+        },
+      ],
+    );
+  }
+
   const approvedPending = useMemo(() => pendingMemberships.find((item) => item.status === 'awaiting_payment') ?? null, [pendingMemberships]);
   const pendingText = useMemo(() => approvedPending
     ? `Your extra membership is approved. ${approvedPending.role === 'observer' ? 'Read-only access costs 29 kr/month.' : 'Writing access costs 99 kr/month.'}`
@@ -236,6 +260,23 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
           <Text style={styles.toolHelp}>Individual Premium adds AI message review, longer messages, Coach and the other Premium tools to your account.</Text>
           <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Individual Premium · 59 kr/month'} onPress={buyIndividualPremium} disabled={storeBilling.processing || !storeBilling.connected} />
           <Text style={styles.privacy}>A two-person plan can be bought for you and one core chat partner from that chat's settings.</Text>
+          <View style={styles.giftDivider} />
+          <Text style={styles.giftTitle}>Give one month of Premium</Text>
+          <Text style={styles.toolHelp}>The 59 kr one-time gift is bound to the recipient's TalkTwo email, including if they create their account later.</Text>
+          <TextInput
+            accessibilityLabel="Premium gift recipient email"
+            autoCapitalize="none"
+            autoComplete="email"
+            autoCorrect={false}
+            editable={!storeBilling.processing}
+            keyboardType="email-address"
+            onChangeText={setGiftRecipientEmail}
+            placeholder="recipient@example.com"
+            placeholderTextColor={colors.subtle}
+            style={styles.input}
+            value={giftRecipientEmail}
+          />
+          <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Give Premium · 59 kr once'} onPress={buyPremiumGift} disabled={storeBilling.processing || !storeBilling.connected} quiet />
         </View>
 
         <View style={styles.tools}>
@@ -305,6 +346,9 @@ function makeStyles(colors: AppColors) {
     tools: { marginTop: 16, marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     toolHelp: { color: colors.muted, lineHeight: 20, flexShrink: 1 },
     privacy: { color: colors.subtle, fontSize: 12, lineHeight: 17, flexShrink: 1 },
+    giftDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 2 },
+    giftTitle: { color: colors.text, fontWeight: '800', fontSize: 15, flexShrink: 1 },
+    input: { minHeight: 46, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: colors.text, backgroundColor: colors.surfaceSoft },
     action: { minHeight: 44, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentStrong, flexShrink: 0 },
     quietAction: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
     actionText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },

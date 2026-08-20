@@ -11,6 +11,8 @@ import { getMyPlan, type UserPlan } from '../services/premium';
 import { addMyPersonalBoundary, listMyPersonalBoundaries, removeMyPersonalBoundary, type PersonalBoundaryRow } from '../services/personalBoundaries';
 import { useI18n } from '../i18n/I18nContext';
 import type { TranslationKey } from '../i18n/translations';
+import type { ChatMessage } from '../services/messages';
+import { shareConversationPdf } from '../services/conversationExport';
 
 const BACKGROUND_THEME_KEYS: Record<BackgroundThemeName, TranslationKey> = {
   paper: 'settings.themePaper', sage: 'settings.themeSage', sand: 'settings.themeSand',
@@ -42,9 +44,10 @@ interface LocalMemberState {
   bubble: BubbleThemeName;
 }
 
-export default function ChatSettingsScreen({ relationship, session, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
+export default function ChatSettingsScreen({ relationship, session, exportMessages, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
   relationship: RelationshipSummary;
   session: Session;
+  exportMessages: ChatMessage[];
   onBack: () => void;
   onAppearanceChanged: () => void;
   onPurchasePremium: (productKey: PremiumSubscriptionProductKey, relationshipId?: string | null, beneficiaryUserId?: string | null) => Promise<void>;
@@ -108,6 +111,48 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
         : boundaryValidation.error === 'Use at least two letters or numbers.' ? t('settings.boundaryMin')
           : boundaryValidation.error === 'Use at most five words.' ? t('settings.boundaryMaxWords')
             : t('settings.boundaryEssential');
+
+  function confirmExport() {
+    if (!premiumActive || busy) return;
+    const exportableCount = exportMessages.filter((message) => Boolean(message.body) && !message.withdrawn_at && !message.blocked_for_recipient).length;
+    Alert.alert(
+      t('export.confirmTitle'),
+      t(exportableCount === 1 ? 'export.confirmOne' : 'export.confirmMany', { count: exportableCount }),
+      [
+        { text: t('chat.cancel'), style: 'cancel' },
+        {
+          text: t('export.create'),
+          onPress: () => void (async () => {
+            try {
+              setBusy(true);
+              const title = memberNames.length ? memberNames.join(', ') : t('settings.conversation');
+              await shareConversationPdf(
+                title,
+                members.map((member) => ({ id: member.user_id, name: localStates[member.user_id]?.alias.trim() || member.display_name })),
+                exportMessages,
+                {
+                  locale: locale === 'da' ? 'da-DK' : 'en',
+                  copy: {
+                    memberLabel: t('export.member'),
+                    privateExportLabel: t('export.private'),
+                    createdLabel: t('export.created'),
+                    visibleMessagesLabel: t(exportableCount === 1 ? 'export.visibleOne' : 'export.visibleMany', { count: exportableCount }),
+                    noVisibleMessagesLabel: t('export.noneVisible'),
+                  },
+                  sharingUnavailable: t('export.sharingUnavailable'),
+                  dialogTitle: t('export.dialogTitle', { title }),
+                },
+              );
+            } catch (error) {
+              Alert.alert(t('export.error'), error instanceof Error ? error.message : t('common.tryAgain'));
+            } finally {
+              setBusy(false);
+            }
+          })(),
+        },
+      ],
+    );
+  }
 
   async function addBoundary() {
     if (!premiumActive || !boundaryValidation.valid || busy) return;
@@ -404,6 +449,13 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
           <Button styles={styles} title={t('settings.inviteParticipant')} onPress={() => void invite('participant')} disabled={busy} />
           <Button styles={styles} title={t('settings.inviteObserver')} onPress={() => void invite('observer')} secondary disabled={busy} />
           <Text style={styles.privacyNote}>{t('settings.extraPrivacy')}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('export.title')}</Text>
+          <Text style={styles.help}>{t('export.help')}</Text>
+          {!premiumActive ? <Text accessibilityLiveRegion="polite" style={styles.premiumNote}>{t('export.premiumRequired')}</Text> : null}
+          <Button styles={styles} title={t('export.action')} onPress={confirmExport} secondary disabled={busy || !premiumActive} />
         </View>
       </ScrollView>
     </SafeAreaView>

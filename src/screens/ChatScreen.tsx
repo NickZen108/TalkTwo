@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { evaluateFreeMessage, MAX_FREE_LENGTH } from '../filter/freeFilter';
-import { editUnopenedMessage, listMessages, openMessage, sendMessage, withdrawMessage, type ChatMessage } from '../services/messages';
+import { editUnopenedMessage, listMessages, openMessage, rejectMessageWithoutOpening, sendMessage, withdrawMessage, type ChatMessage } from '../services/messages';
 import { analyzePremiumMessage, getMyPlan, startPremiumTrial, type AiReview, type UserPlan } from '../services/premium';
 import type { RelationshipSummary } from '../services/relationships';
 import { getPartnerWindows } from '../services/windows';
@@ -31,13 +31,15 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
   const [plan, setPlan] = useState<UserPlan | null>(null);
   const [review, setReview] = useState<AiReview | null>(null);
   const [reviewedText, setReviewedText] = useState('');
+  const [trialFallback, setTrialFallback] = useState(false);
   const freeResult = useMemo(() => evaluateFreeMessage(message), [message]);
   const hasText = message.trim().length > 0;
-  const premium = isPremiumActive(plan);
-  const maxLength = premium ? MAX_PREMIUM_LENGTH : MAX_FREE_LENGTH;
-  const reviewCurrent = premium && review && reviewedText === message.trim();
+  const premiumEntitled = isPremiumActive(plan);
+  const premiumAi = premiumEntitled && !trialFallback;
+  const maxLength = premiumAi ? MAX_PREMIUM_LENGTH : MAX_FREE_LENGTH;
+  const reviewCurrent = premiumAi && review && reviewedText === message.trim();
   const canSendPremium = Boolean(reviewCurrent && review?.can_send && message.trim().length <= MAX_PREMIUM_LENGTH);
-  const canSend = premium ? canSendPremium : freeResult.canSend;
+  const canSend = premiumAi ? canSendPremium : freeResult.canSend;
 
   async function refresh() {
     try { setMessages(await listMessages(relationship.id)); }
@@ -65,6 +67,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
       setBusy(true);
       const next = await startPremiumTrial();
       setPlan(next);
+      setTrialFallback(false);
       Alert.alert('Premium trial started', 'You have 7 days of Premium, including AI review. Trial AI use is capped at 25 analyses per day.');
     } catch (error) {
       Alert.alert('Trial could not start', error instanceof Error ? error.message : 'Please try again.');
@@ -73,8 +76,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
 
   async function reviewWithAi() {
     const draft = message.trim();
-    if (!draft) return;
-    if (draft.length > MAX_PREMIUM_LENGTH) return;
+    if (!draft || draft.length > MAX_PREMIUM_LENGTH) return;
     try {
       setReviewBusy(true);
       const next = await analyzePremiumMessage(relationship.id, draft);
@@ -82,7 +84,14 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
       setReviewedText(draft);
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Please try again.';
-      Alert.alert('AI review unavailable', `${text}\n\nYou can still use the Free filter for messages up to 160 characters if Premium analysis is unavailable.`);
+      if (text.toLowerCase().includes('daily trial limit')) {
+        setTrialFallback(true);
+        setReview(null);
+        setReviewedText('');
+        Alert.alert('Daily AI limit reached', 'For the rest of today, TalkTwo automatically falls back to the Free filter. Messages are limited to 160 characters.');
+      } else {
+        Alert.alert('AI review unavailable', text);
+      }
     } finally { setReviewBusy(false); }
   }
 
@@ -90,15 +99,8 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
     if (!canSend) return;
     try {
       setBusy(true);
-      if (editing) {
-        if (premium) {
-          Alert.alert('Premium editing is being finished', 'For now, send a new reviewed message instead of editing an unopened Premium message.');
-          return;
-        }
-        await editUnopenedMessage(editing.id, message);
-      } else {
-        await sendMessage(relationship.id, message.trim());
-      }
+      if (editing) await editUnopenedMessage(editing.id, message.trim());
+      else await sendMessage(relationship.id, message.trim());
       setMessage('');
       setEditing(null);
       setReview(null);
@@ -121,10 +123,18 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
     catch (error) { Alert.alert('Message cannot be opened yet', error instanceof Error ? error.message : 'Please try again.'); }
   }
 
+  async function rejectIncoming(item: ChatMessage) {
+    try {
+      const rejected = await rejectMessageWithoutOpening(item.id);
+      if (!rejected) Alert.alert('Message could not be rejected', 'It may already have been opened or withdrawn.');
+      await refresh();
+    } catch (error) { Alert.alert('Message could not be rejected', error instanceof Error ? error.message : 'Please try again.'); }
+  }
+
   async function withdraw(item: ChatMessage) {
     try {
       const changed = await withdrawMessage(item.id);
-      if (!changed) Alert.alert('Too late to withdraw', 'The recipient has already opened this message.');
+      if (!changed) Alert.alert('Too late to withdraw', 'The message can no longer be withdrawn.');
       if (editing?.id === item.id) { setEditing(null); setMessage(''); }
       await refresh();
     } catch (error) { Alert.alert('Could not withdraw message', error instanceof Error ? error.message : 'Please try again.'); }
@@ -135,33 +145,36 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={onBack}><Text style={styles.back}>‹ Connections</Text></TouchableOpacity>
-          <Text style={styles.plan}>{premium ? 'PREMIUM' : 'FREE'}</Text>
+          <Text style={styles.plan}>{premiumEntitled ? 'PREMIUM' : 'FREE'}</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.title}>Conversation</Text>
           <Text style={styles.help}>Only messages that pass TalkTwo's communication rules can be sent.</Text>
           {partnerTimezone ? <Text style={styles.tz}>Other person's timezone: {partnerTimezone}</Text> : null}
-          {!premium && plan?.plan === 'free' ? <Button title="Start 7-day Premium trial" onPress={() => void startTrial()} disabled={busy} secondary /> : null}
+          {!premiumEntitled && plan?.plan === 'free' ? <Button title="Start 7-day Premium trial" onPress={() => void startTrial()} disabled={busy} secondary /> : null}
           {plan?.plan === 'trial' && plan.trial_ends_at ? <Text style={styles.tz}>Trial ends {new Date(plan.trial_ends_at).toLocaleDateString()}.</Text> : null}
+          {trialFallback ? <Text style={styles.help}>Today's 25 AI reviews are used. Free filtering is active until the daily allowance resets.</Text> : null}
         </View>
 
         <View style={styles.messageList}>
           {messages.length === 0 ? <Text style={styles.empty}>No messages yet.</Text> : messages.map((item) => {
             const mine = item.sender_id === session.user.id;
             const opened = Boolean(item.opened_at);
+            const rejected = Boolean(item.rejected_at);
             const hideIncomingBody = !mine && !opened;
             return (
               <View key={item.id} style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
                 <Text style={styles.meta}>{mine ? 'You' : 'Other person'} · {new Date(item.created_at).toLocaleString()}{item.edited_at ? ' · edited' : ''}{item.risk_level === 'yellow' ? ' · caution' : ''}</Text>
-                {hideIncomingBody ? <>
+                {mine && rejected ? <Text style={styles.waiting}>Rejected without opening</Text> : hideIncomingBody ? <>
                   <Text style={styles.waiting}>{item.risk_level === 'yellow' ? 'Potentially sensitive message' : 'New message'}</Text>
-                  <Text style={styles.help}>{item.risk_level === 'yellow' ? 'TalkTwo marked this message as potentially conflict-escalating. You can choose whether to open it.' : 'The message text stays hidden until you choose to open it.'}</Text>
+                  <Text style={styles.help}>{item.risk_level === 'yellow' ? 'TalkTwo marked this message as potentially conflict-escalating. You can open it or reject it without reading.' : 'The message text stays hidden until you choose to open it.'}</Text>
                   <Button title="Open message" onPress={() => void openIncoming(item)} secondary />
+                  {item.risk_level === 'yellow' ? <Button title="Reject without reading" onPress={() => void rejectIncoming(item)} secondary /> : null}
                 </> : <Text style={styles.body}>{item.body}</Text>}
                 {mine ? <View style={styles.footer}>
-                  <Text style={styles.delivery}>{opened ? 'Opened' : 'Sent'}</Text>
-                  {!opened ? <View style={styles.actions}><TouchableOpacity onPress={() => startEdit(item)}><Text style={styles.action}>Edit</Text></TouchableOpacity><TouchableOpacity onPress={() => void withdraw(item)}><Text style={styles.action}>Withdraw</Text></TouchableOpacity></View> : null}
+                  <Text style={styles.delivery}>{rejected ? 'Rejected without opening' : 'Sent'}</Text>
+                  {!opened && !rejected ? <View style={styles.actions}><TouchableOpacity onPress={() => startEdit(item)}><Text style={styles.action}>Edit</Text></TouchableOpacity><TouchableOpacity onPress={() => void withdraw(item)}><Text style={styles.action}>Withdraw</Text></TouchableOpacity></View> : null}
                 </View> : null}
               </View>
             );
@@ -170,26 +183,26 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
 
         <View style={styles.card}>
           <Text style={styles.label}>{editing ? 'Edit message' : 'New message'}</Text>
-          {editing ? <Text style={styles.help}>You can change this because the recipient has not opened it.</Text> : null}
+          {editing ? <Text style={styles.help}>You can change this because the recipient has not opened it. Edited Premium messages are reviewed again.</Text> : null}
           <TextInput multiline value={message} onChangeText={changeMessage} placeholder="Write a short practical message…" style={styles.input} maxLength={MAX_PREMIUM_LENGTH} />
-          <View style={styles.row}><Text style={[styles.counter, message.length > maxLength && styles.danger]}>{message.length}/{maxLength}</Text><Text style={styles.plan}>{premium ? 'PREMIUM' : 'FREE'}</Text></View>
+          <View style={styles.row}><Text style={[styles.counter, message.length > maxLength && styles.danger]}>{message.length}/{maxLength}</Text><Text style={styles.plan}>{premiumAi ? 'PREMIUM AI' : 'FREE FILTER'}</Text></View>
 
-          {premium ? <>
-            {hasText && !reviewCurrent ? <Text style={styles.help}>Premium checks the message with AI before it can be sent.</Text> : null}
-            <Button title={reviewBusy ? 'Reviewing…' : 'Review with AI'} onPress={() => void reviewWithAi()} disabled={reviewBusy || busy || !hasText || message.length > MAX_PREMIUM_LENGTH || Boolean(editing)} secondary />
+          {premiumAi ? <>
+            {hasText && !reviewCurrent ? <Text style={styles.help}>Premium checks this exact text with AI before it can be sent.</Text> : null}
+            <Button title={reviewBusy ? 'Reviewing…' : 'Review with AI'} onPress={() => void reviewWithAi()} disabled={reviewBusy || busy || !hasText || message.length > MAX_PREMIUM_LENGTH} secondary />
             {reviewCurrent ? <View style={[styles.reviewBox, review?.level === 'red' ? styles.reviewRed : review?.level === 'yellow' ? styles.reviewYellow : styles.reviewGreen]}>
               <Text style={styles.reasonTitle}>{review?.level === 'green' ? 'Ready to send' : review?.level === 'yellow' ? 'Caution' : 'Message blocked'}</Text>
               <Text style={styles.help}>{review?.reason}</Text>
               {review?.problematic_text?.length ? <Text style={styles.suggestion}>Flagged: {review.problematic_text.join(' · ')}</Text> : null}
               {review?.rewrite ? <TouchableOpacity onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>Use Coach rewrite</Text></TouchableOpacity> : null}
-              {review?.usage?.analyses_remaining !== undefined ? <Text style={styles.tz}>{review.usage.analyses_remaining} AI reviews left today in trial.</Text> : null}
+              {review?.usage?.analyses_remaining !== undefined && review.usage.analyses_remaining >= 0 ? <Text style={styles.tz}>{review.usage.analyses_remaining} AI reviews left today in trial.</Text> : null}
             </View> : null}
           </> : <>
             {hasText && !freeResult.canSend ? <View style={styles.blocked}><Text style={styles.reasonTitle}>Message blocked</Text>{freeResult.reasons.map((reason, index) => <View key={`${reason.code}-${index}`} style={styles.reason}><Text style={styles.reasonTitle}>{reason.title}</Text><Text style={styles.help}>{reason.explanation}</Text><Text style={styles.suggestion}>{reason.suggestion}</Text></View>)}</View> : null}
             {hasText && freeResult.canSend ? <Text style={styles.approved}>Ready to send.</Text> : null}
           </>}
 
-          <Button title={busy ? 'Saving…' : editing ? 'Save changes' : 'Send'} onPress={() => void send()} disabled={busy || !hasText || !canSend || message.length > maxLength || (premium && Boolean(editing))} />
+          <Button title={busy ? 'Saving…' : editing ? 'Save changes' : 'Send'} onPress={() => void send()} disabled={busy || !hasText || !canSend || message.length > maxLength} />
           {editing ? <Button title="Cancel edit" onPress={() => { setEditing(null); setMessage(''); setReview(null); setReviewedText(''); }} secondary /> : null}
         </View>
         <Button title="Refresh messages" onPress={() => void refresh()} secondary />

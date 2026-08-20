@@ -34,6 +34,7 @@ export async function analyzePremiumMessage(relationshipId: string, message: str
     body: { relationship_id: relationshipId, message },
   });
   if (error) throw error;
+  if (data?.fallback_free) throw new Error('Daily trial limit reached');
   if (data?.error) throw new Error(data.error);
   return data as AiReview;
 }

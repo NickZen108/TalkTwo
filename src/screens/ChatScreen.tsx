@@ -15,6 +15,8 @@ import ChatSettingsScreen from './ChatSettingsScreen';
 import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 import { useI18n } from '../i18n/I18nContext';
 import type { SupportedLocale } from '../i18n/translations';
+import type { TranslationKey } from '../i18n/translations';
+import type { FilterReason } from '../filter/types';
 
 const MAX_PREMIUM_LENGTH = 480;
 
@@ -62,6 +64,24 @@ function CompactButton({ title, onPress, styles, disabled = false, secondary = f
       <Text style={[styles.compactButtonText, secondary && styles.compactSecondaryText]}>{title}</Text>
     </TouchableOpacity>
   );
+}
+
+function localizedFilterProblem(problem: FilterReason | null | undefined, t: (key: TranslationKey, values?: Record<string, string | number>) => string) {
+  if (!problem) return null;
+  const keys: Partial<Record<FilterReason['code'], [TranslationKey, TranslationKey]>> = {
+    too_long: ['filter.tooLongTitle', 'filter.tooLongBody'],
+    exclamation_mark: ['filter.exclamationTitle', 'filter.exclamationBody'],
+    emoji: ['filter.emojiTitle', 'filter.emojiBody'],
+    profanity: ['filter.profanityTitle', 'filter.profanityBody'],
+    generalisation: ['filter.generalisationTitle', 'filter.generalisationBody'],
+    fault_reminder: ['filter.faultTitle', 'filter.faultBody'],
+    criticism: ['filter.criticismTitle', 'filter.criticismBody'],
+    emotion_dumping: ['filter.emotionTitle', 'filter.emotionBody'],
+    caps_lock: ['filter.capsTitle', 'filter.capsBody'],
+  };
+  const pair = keys[problem.code];
+  if (!pair) return { title: problem.title, explanation: problem.explanation };
+  return { title: t(pair[0]), explanation: t(pair[1], { match: problem.matchedText ?? '' }) };
 }
 
 export default function ChatScreen({ relationship, session, onBack, onPurchasePremium, storePurchaseBusy }: {
@@ -369,6 +389,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   }
 
   const firstProblem = !premiumAi ? freeResult.reasons[0] : null;
+  const translatedProblem = localizedFilterProblem(firstProblem, t);
   const backgroundColor = BACKGROUND_THEMES[background].background;
   const chatTextColor = textColorForBackground(backgroundColor);
 
@@ -509,11 +530,11 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                 {review?.rewrite ? <TouchableOpacity accessibilityRole="button" onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>{t('chat.useRewrite')}</Text></TouchableOpacity> : null}
               </View>
             ) : null}
-            {!premiumAi && hasText && !freeResult.canSend && firstProblem ? (
+            {!premiumAi && hasText && !freeResult.canSend && translatedProblem ? (
               <View style={styles.reviewStrip}>
                 <View style={styles.reviewTextWrap}>
-                  <Text style={styles.reviewTitle}>{firstProblem.title}</Text>
-                  <Text numberOfLines={3} style={styles.reviewReason}>{firstProblem.explanation}</Text>
+                  <Text style={styles.reviewTitle}>{translatedProblem.title}</Text>
+                  <Text numberOfLines={3} style={styles.reviewReason}>{translatedProblem.explanation}</Text>
                 </View>
               </View>
             ) : null}

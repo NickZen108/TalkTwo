@@ -52,7 +52,9 @@ Chat approval and billing entitlement are deliberately separate:
 - an existing qualifying account-wide subscription means a newly approved chat can activate without another purchase;
 - a user is never charged again merely because they are extra member in another chat.
 
-If one chat withdraws approval, access to that chat ends at the paid period boundary. This does not cancel the user's account-wide subscription and does not affect unrelated chats.
+If one chat withdraws approval, access to that chat ends at the paid period boundary and unrelated chats are unaffected. If the user still has at least one approved paid extra-member chat, the account-wide subscription keeps renewing. If no approved extra-member chat remains, TalkTwo marks the account-wide subscription to stop at the end of the current paid period so the user is not charged for access that no chat will accept.
+
+If approval is restored before the paid period ends, renewal can resume as long as at least one eligible chat remains and the store subscription has not already become irreversibly expired.
 
 ## Extra-member approval rule
 An extra-member purchase cannot be offered until the invitation is in `awaiting_payment`, which only happens after every required current member in that chat has approved the candidate.
@@ -70,6 +72,11 @@ An account-wide participant entitlement does not itself override a chat's local 
 A one-month Premium gift is modelled as a one-time digital purchase, not an auto-renewing subscription on the recipient's account.
 
 After server verification, TalkTwo creates a durable recipient entitlement bound to the intended recipient identity. The invitation/deep link is only a recovery convenience. Losing the link does not lose the paid entitlement.
+
+## Native build requirements
+TalkTwo uses `expo-iap` and therefore requires a native development build for purchase testing. Expo Go is not sufficient.
+
+The current native baseline is iOS 15+ and Android minSdk 23 with a Kotlin 2.2 toolchain. Development, internal preview and production EAS build profiles are defined in `eas.json`.
 
 ## EU alternative billing
 Apple and Google provide special EU/EEA programs that can permit external or alternative payment flows subject to enrollment, technical APIs, disclosures, reporting and fees. TalkTwo does not depend on those programs for v1. Native store billing is the default so the first release can also operate outside the EU without maintaining two different purchase systems from day one.

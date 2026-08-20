@@ -47,8 +47,11 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
   }
 
   async function refreshPlan() {
-    try { setPlan(await getMyPlan()); }
-    catch { setPlan(null); }
+    try {
+      const next = await getMyPlan();
+      setPlan(next);
+      if (next.plan === 'trial' && next.analyses_remaining_today === 0) setTrialFallback(true);
+    } catch { setPlan(null); }
   }
 
   useEffect(() => {
@@ -58,8 +61,13 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
   }, [relationship.id]);
 
   function changeMessage(text: string) {
+    const changedFromReviewedText = text.trim() !== reviewedText;
+    const previousReviewUsedLastTrialAnalysis = plan?.plan === 'trial' && review?.usage?.analyses_remaining === 0;
     setMessage(text);
-    if (text.trim() !== reviewedText) setReview(null);
+    if (changedFromReviewedText) {
+      setReview(null);
+      if (previousReviewUsedLastTrialAnalysis) setTrialFallback(true);
+    }
   }
 
   async function startTrial() {
@@ -97,6 +105,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
 
   async function send() {
     if (!canSend) return;
+    const lastTrialReview = plan?.plan === 'trial' && reviewCurrent && review?.usage?.analyses_remaining === 0;
     try {
       setBusy(true);
       if (editing) await editUnopenedMessage(editing.id, message.trim());
@@ -105,6 +114,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
       setEditing(null);
       setReview(null);
       setReviewedText('');
+      if (lastTrialReview) setTrialFallback(true);
       await refresh();
     } catch (error) {
       Alert.alert(editing ? 'Message could not be edited' : 'Message was not sent', error instanceof Error ? error.message : 'Please try again.');
@@ -113,7 +123,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
 
   function startEdit(item: ChatMessage) {
     setEditing(item);
-    setMessage(item.body);
+    setMessage(item.body ?? '');
     setReview(null);
     setReviewedText('');
   }
@@ -134,8 +144,8 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
   async function withdraw(item: ChatMessage) {
     try {
       const changed = await withdrawMessage(item.id);
-      if (!changed) Alert.alert('Too late to withdraw', 'The message can no longer be withdrawn.');
-      if (editing?.id === item.id) { setEditing(null); setMessage(''); }
+      if (!changed) Alert.alert('Message can no longer be withdrawn', 'The recipient may already have opened it. TalkTwo does not otherwise show read receipts.');
+      if (editing?.id === item.id && changed) { setEditing(null); setMessage(''); }
       await refresh();
     } catch (error) { Alert.alert('Could not withdraw message', error instanceof Error ? error.message : 'Please try again.'); }
   }
@@ -166,15 +176,15 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
             return (
               <View key={item.id} style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
                 <Text style={styles.meta}>{mine ? 'You' : 'Other person'} · {new Date(item.created_at).toLocaleString()}{item.edited_at ? ' · edited' : ''}{item.risk_level === 'yellow' ? ' · caution' : ''}</Text>
-                {mine && rejected ? <Text style={styles.waiting}>Rejected without opening</Text> : hideIncomingBody ? <>
+                {mine ? <Text style={styles.body}>{item.body ?? ''}</Text> : hideIncomingBody ? <>
                   <Text style={styles.waiting}>{item.risk_level === 'yellow' ? 'Potentially sensitive message' : 'New message'}</Text>
-                  <Text style={styles.help}>{item.risk_level === 'yellow' ? 'TalkTwo marked this message as potentially conflict-escalating. You can open it or reject it without reading.' : 'The message text stays hidden until you choose to open it.'}</Text>
+                  <Text style={styles.help}>{item.risk_level === 'yellow' ? 'TalkTwo marked this message as potentially conflict-escalating. You can open it or reject it without reading.' : 'The message text has not been sent to this screen yet. It is revealed only when you choose to open it.'}</Text>
                   <Button title="Open message" onPress={() => void openIncoming(item)} secondary />
                   {item.risk_level === 'yellow' ? <Button title="Reject without reading" onPress={() => void rejectIncoming(item)} secondary /> : null}
-                </> : <Text style={styles.body}>{item.body}</Text>}
+                </> : <Text style={styles.body}>{item.body ?? ''}</Text>}
                 {mine ? <View style={styles.footer}>
                   <Text style={styles.delivery}>{rejected ? 'Rejected without opening' : 'Sent'}</Text>
-                  {!opened && !rejected ? <View style={styles.actions}><TouchableOpacity onPress={() => startEdit(item)}><Text style={styles.action}>Edit</Text></TouchableOpacity><TouchableOpacity onPress={() => void withdraw(item)}><Text style={styles.action}>Withdraw</Text></TouchableOpacity></View> : null}
+                  {!rejected ? <View style={styles.actions}><TouchableOpacity onPress={() => startEdit(item)}><Text style={styles.action}>Edit</Text></TouchableOpacity><TouchableOpacity onPress={() => void withdraw(item)}><Text style={styles.action}>Withdraw</Text></TouchableOpacity></View> : null}
                 </View> : null}
               </View>
             );
@@ -183,7 +193,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
 
         <View style={styles.card}>
           <Text style={styles.label}>{editing ? 'Edit message' : 'New message'}</Text>
-          {editing ? <Text style={styles.help}>You can change this because the recipient has not opened it. Edited Premium messages are reviewed again.</Text> : null}
+          {editing ? <Text style={styles.help}>You may edit while the message is still unopened. TalkTwo does not reveal whether it has been opened; if it is already locked, the sent version stays unchanged.</Text> : null}
           <TextInput multiline value={message} onChangeText={changeMessage} placeholder="Write a short practical message…" style={styles.input} maxLength={MAX_PREMIUM_LENGTH} />
           <View style={styles.row}><Text style={[styles.counter, message.length > maxLength && styles.danger]}>{message.length}/{maxLength}</Text><Text style={styles.plan}>{premiumAi ? 'PREMIUM AI' : 'FREE FILTER'}</Text></View>
 

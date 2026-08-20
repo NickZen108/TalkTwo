@@ -3,6 +3,7 @@ import { ACCOUNT_DELETE_CONFIRMATION } from '../domain/accountDeletion';
 import { clearLocalAccountData } from './localDb';
 import { clearPendingStorePurchase } from './storeBilling';
 import { removeThreadKeys } from './threadKeys';
+import { disablePushNotifications } from './pushNotifications';
 
 export const AUTH_REDIRECT_URL = 'talktwo://auth';
 
@@ -40,6 +41,7 @@ export async function createSessionFromMagicLink(url: string) {
 }
 
 export async function signOut() {
+  await disablePushNotifications().catch(() => undefined);
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }

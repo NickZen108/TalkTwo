@@ -21,6 +21,7 @@
     "expo": "~57.0.13",
     "expo-constants": "~57.0.12",
     "expo-crypto": "~57.0.1",
+    "expo-iap": "^5.3.0",
     "expo-linking": "~57.0.6",
     "expo-secure-store": "~57.0.1",
     "expo-sqlite": "~57.0.1",

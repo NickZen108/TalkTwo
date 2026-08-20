@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorCode, getAvailablePurchases, useIAP, type Purchase, type ProductSubscription } from 'expo-iap';
 import { Platform } from 'react-native';
-import { createExtraMemberCheckoutIntent } from '../services/billing';
+import { createExtraMemberCheckoutIntent, createPremiumCheckoutIntent, type BillingIntentOffer } from '../services/billing';
 import {
   clearPendingStorePurchase,
   loadPendingStorePurchase,
@@ -17,7 +17,7 @@ import {
   pendingPurchaseMatches,
   type ExtraMemberRole,
 } from '../domain/storePurchase';
-import { productIdFor, subscriptionProductIdsFor } from '../domain/storeProducts';
+import { productIdFor, STORE_PRODUCTS, subscriptionProductIdsFor, type PremiumSubscriptionProductKey, type StoreProductKey } from '../domain/storeProducts';
 
 interface NativeStoreBillingCallbacks {
   onError: (message: string) => void;
@@ -95,47 +95,54 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
       .catch((error) => callbacksRef.current.onError(messageFor(error)));
   }, [iap.connected, iap.fetchProducts]);
 
+  const requestSubscriptionPurchase = useCallback(async (
+    productKey: StoreProductKey,
+    offer: BillingIntentOffer,
+  ) => {
+    const platform = nativeStorePlatform();
+    const productId = productIdFor(platform, productKey);
+    await savePendingStorePurchase({
+      checkoutIntentId: offer.intent_id,
+      expiresAt: offer.expires_at,
+      productKey,
+      userId,
+    });
+    const binding = await storeAccountBinding(platform, userId);
+
+    if (platform === 'apple') {
+      await iap.requestPurchase({
+        type: 'subs',
+        request: { apple: { sku: productId, appAccountToken: binding } },
+      });
+    } else {
+      const selected = googleSubscriptionOffer(
+        iap.subscriptions.find((item) => item.id === productId) as ProductSubscription | undefined,
+        productId,
+      );
+      await iap.requestPurchase({
+        type: 'subs',
+        request: {
+          google: {
+            skus: [productId],
+            obfuscatedAccountId: binding,
+            subscriptionOffers: [selected],
+          },
+        },
+      });
+    }
+  }, [iap.requestPurchase, iap.subscriptions, userId]);
+
   const purchaseExtraMember = useCallback(async (invitationId: string, role: ExtraMemberRole) => {
     if (!iap.connected) throw new Error('The App Store connection is not ready yet.');
     setProcessing(true);
     try {
-      const platform = nativeStorePlatform();
       const productKey = extraMemberProductKey(role);
-      const productId = productIdFor(platform, productKey);
       const offer = await createExtraMemberCheckoutIntent(invitationId);
       const expectedMinor = role === 'observer' ? 2900 : 9900;
       if (!offer.recurring || offer.currency !== 'dkk' || offer.amount_minor !== expectedMinor) {
         throw new Error('The server returned an unexpected membership offer.');
       }
-      await savePendingStorePurchase({
-        checkoutIntentId: offer.intent_id,
-        expiresAt: offer.expires_at,
-        productKey,
-        userId,
-      });
-      const binding = await storeAccountBinding(platform, userId);
-
-      if (platform === 'apple') {
-        await iap.requestPurchase({
-          type: 'subs',
-          request: { apple: { sku: productId, appAccountToken: binding } },
-        });
-      } else {
-        const selected = googleSubscriptionOffer(
-          iap.subscriptions.find((item) => item.id === productId) as ProductSubscription | undefined,
-          productId,
-        );
-        await iap.requestPurchase({
-          type: 'subs',
-          request: {
-            google: {
-              skus: [productId],
-              obfuscatedAccountId: binding,
-              subscriptionOffers: [selected],
-            },
-          },
-        });
-      }
+      await requestSubscriptionPurchase(productKey, offer);
     } catch (error) {
       setProcessing(false);
       if (error && typeof error === 'object' && 'code' in error && error.code === ErrorCode.UserCancelled) {
@@ -143,7 +150,33 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
       }
       throw error;
     }
-  }, [iap.connected, iap.requestPurchase, iap.subscriptions, userId]);
+  }, [iap.connected, requestSubscriptionPurchase]);
+
+  const purchasePremium = useCallback(async (
+    productKey: PremiumSubscriptionProductKey,
+    relationshipId?: string | null,
+    beneficiaryUserId?: string | null,
+  ) => {
+    if (!iap.connected) throw new Error('The App Store connection is not ready yet.');
+    setProcessing(true);
+    try {
+      const offer = await createPremiumCheckoutIntent(productKey, relationshipId, beneficiaryUserId);
+      const expectedMinor = STORE_PRODUCTS[productKey].expectedDkk * 100;
+      if (
+        !offer.recurring || offer.currency !== 'dkk'
+        || offer.amount_minor !== expectedMinor || offer.product_key !== productKey
+      ) {
+        throw new Error('The server returned an unexpected Premium offer.');
+      }
+      await requestSubscriptionPurchase(productKey, offer);
+    } catch (error) {
+      setProcessing(false);
+      if (error && typeof error === 'object' && 'code' in error && error.code === ErrorCode.UserCancelled) {
+        await clearPendingStorePurchase().catch(() => undefined);
+      }
+      throw error;
+    }
+  }, [iap.connected, requestSubscriptionPurchase]);
 
   const restore = useCallback(async () => {
     if (!iap.connected) throw new Error('The App Store connection is not ready yet.');
@@ -173,6 +206,7 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
     connected: iap.connected,
     processing,
     purchaseExtraMember,
+    purchasePremium,
     restore,
   };
 }

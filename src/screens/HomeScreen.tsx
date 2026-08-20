@@ -3,7 +3,7 @@ import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TouchableOpac
 import type { Session } from '@supabase/supabase-js';
 import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
-import { acceptInvitation, acceptMemberInvitation, createInvitation, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
+import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { releaseWaitingMessages } from '../services/windows';
 import ChatScreen from './ChatScreen';
 import MessageWindowsScreen from './MessageWindowsScreen';
@@ -74,11 +74,30 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
         clearPendingInvite();
         await refreshRelationships();
         if (result.status === 'active') Alert.alert('Added', 'You can now see messages sent from this point forward.');
-        else if (result.status === 'awaiting_seat') Alert.alert('Waiting for a group seat', 'Everyone has approved you, but the chat needs one more paid group seat before access begins.');
-        else Alert.alert('Waiting for approval', 'Everyone already in the chat must approve you before you get access. You will not receive earlier chat history.');
+        else if (result.status === 'awaiting_payment') Alert.alert('Approved', 'Everyone has approved you. Your monthly membership can now be purchased. You are not charged before this point.');
+        else Alert.alert('Waiting for approval', 'Everyone already in the chat must approve you before payment is available. You will not receive earlier chat history.');
       }
     } catch (error) {
       Alert.alert('Invitation not accepted', error instanceof Error ? error.message : 'Ask the sender for a new invitation.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function showPaymentOffer(item: PendingMembership) {
+    try {
+      setBusy(true);
+      const offer = await getMemberPaymentOffer(item.invitation_id);
+      if (!offer.ready_to_pay) {
+        Alert.alert('Not ready for payment', 'All current chat members must approve you before payment can begin.');
+        return;
+      }
+      Alert.alert(
+        `${offer.price_dkk} kr/month`,
+        `${offer.role === 'observer' ? 'Read-only access' : 'Participant access with writing'} renews one month at a time. Annual prepayment is not available for extra members. Store billing is the next integration step; this development build will not charge you.`,
+      );
+    } catch (error) {
+      Alert.alert('Payment offer unavailable', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusy(false);
     }
@@ -96,9 +115,10 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     }
   }
 
-  const pendingText = useMemo(() => pendingMemberships.some((item) => item.status === 'awaiting_seat')
-    ? 'A group invitation is approved but waiting for an extra seat.'
-    : pendingMemberships.length ? 'A group invitation is waiting for the other participants to approve you.' : null, [pendingMemberships]);
+  const approvedPending = useMemo(() => pendingMemberships.find((item) => item.status === 'awaiting_payment') ?? null, [pendingMemberships]);
+  const pendingText = useMemo(() => approvedPending
+    ? `Your extra membership is approved. ${approvedPending.role === 'observer' ? 'Read-only access costs 29 kr/month.' : 'Writing access costs 99 kr/month.'}`
+    : pendingMemberships.length ? 'A group invitation is waiting for the other chat members to approve you. No payment can happen yet.' : null, [approvedPending, pendingMemberships]);
 
   if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => { setSelected(null); void refreshRelationships(); }} />;
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
@@ -119,13 +139,13 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
           <View style={styles.invitationBanner}>
             <View style={styles.bannerText}>
               <Text style={styles.bannerTitle}>{pendingInvite.kind === 'member' ? 'Group invitation' : 'Conversation invitation'}</Text>
-              <Text style={styles.bannerHelp}>{pendingInvite.kind === 'member' ? 'Accepting only requests access. Everyone already in the chat must approve before you can see new messages.' : 'Accept to start this private TalkTwo chat.'}</Text>
+              <Text style={styles.bannerHelp}>{pendingInvite.kind === 'member' ? 'Accepting only requests access. Everyone already in the chat must approve before payment is available or you can see new messages.' : 'Accept to start this private TalkTwo chat.'}</Text>
             </View>
             <Action title={busy ? 'Please wait…' : 'Accept'} onPress={() => void acceptPendingInvite()} disabled={busy} />
           </View>
         ) : null}
 
-        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text></View> : null}
+        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action title="View monthly membership" onPress={() => void showPaymentOffer(approvedPending)} disabled={busy} /></View> : null}</View> : null}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Chats</Text>
@@ -188,8 +208,9 @@ const styles = StyleSheet.create({
   bannerText: { flex: 1, minWidth: 190 },
   bannerTitle: { fontWeight: '800', color: '#173F34', fontSize: 16, flexShrink: 1 },
   bannerHelp: { marginTop: 4, color: '#56615D', lineHeight: 18, flexShrink: 1 },
-  pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: '#F2E9D6', padding: 12 },
+  pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: '#F2E9D6', padding: 12, gap: 10 },
   pendingNoticeText: { color: '#665B43', lineHeight: 19, flexShrink: 1 },
+  pendingAction: { alignSelf: 'stretch' },
   sectionHeader: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#202020', flexShrink: 1 },
   newChat: { color: '#1E6A52', fontWeight: '800', paddingVertical: 10 },

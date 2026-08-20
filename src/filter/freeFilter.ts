@@ -4,12 +4,12 @@ const MAX_FREE_LENGTH = 160;
 
 const PROFANITY = [
   'fuck', 'fucking', 'shit', 'bitch', 'idiot', 'asshole',
-  'fuck dig', 'fucking', 'lort', 'idiot', 'røvhul', 'kælling', 'fandme'
+  'fuck dig', 'lort', 'røvhul', 'kælling', 'fandme'
 ];
 
 const GENERALISATIONS = [
-  'always', 'never', 'every time', 'constantly',
-  'altid', 'aldrig', 'hver gang', 'konstant'
+  'always', 'never', 'every time', 'constantly', 'again',
+  'altid', 'aldrig', 'hver gang', 'konstant', 'igen'
 ];
 
 const CRITICISM_PATTERNS = [
@@ -94,7 +94,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
       addReason(reasons, {
         code: 'generalisation',
         title: 'Remove the generalisation',
-        explanation: `“${phrase}” turns one situation into a broad judgment and can increase conflict.`,
+        explanation: `“${phrase}” turns one situation into a broad judgment or reminder of past faults and can increase conflict.`,
         suggestion: 'Describe only the specific practical situation that matters now.',
         matchedText: phrase,
       });

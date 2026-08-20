@@ -7,20 +7,24 @@ import {
   invitationFromUrl,
   isAuthCallbackUrl,
   isInvitationUrl,
+  isKeyRecoveryUrl,
   isPremiumGiftUrl,
+  keyRecoveryFromUrl,
   premiumGiftFromUrl,
   type PendingInvite,
+  type PendingKeyRecoveryApproval,
   type PendingPremiumGift,
 } from './src/domain/deepLinks';
 import { createSessionFromMagicLink } from './src/services/auth';
 import { claimPremiumGift, listMyPendingPremiumGifts } from './src/services/premiumGifts';
-import { storePendingInviteSecret } from './src/services/threadKeys';
+import { storePendingInviteSecret, storePendingKeyRecoveryApproval } from './src/services/threadKeys';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import { AppThemeProvider, useAppTheme } from './src/theme/AppTheme';
 
 const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v4';
 const PENDING_GIFT_KEY = 'talktwo.pendingPremiumGift.v1';
+const PENDING_RECOVERY_KEY = 'talktwo.pendingKeyRecoveryApproval.v1';
 const secureOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
@@ -51,12 +55,24 @@ function parseStoredGift(value: string | null): PendingPremiumGift | null {
   return null;
 }
 
+function parseStoredRecovery(value: string | null): PendingKeyRecoveryApproval | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<PendingKeyRecoveryApproval>;
+    if (typeof parsed.token === 'string' && parsed.token) return { token: parsed.token };
+  } catch {
+    // Damaged secure state is ignored.
+  }
+  return null;
+}
+
 function AppContent() {
   const { colors } = useAppTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
   const [pendingGift, setPendingGift] = useState<PendingPremiumGift | null>(null);
+  const [pendingRecovery, setPendingRecovery] = useState<PendingKeyRecoveryApproval | null>(null);
   const [giftPromptedForUserId, setGiftPromptedForUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,8 +88,23 @@ function AppContent() {
       if (mounted) setPendingGift(gift);
     }
 
+    async function savePendingRecovery(recovery: PendingKeyRecoveryApproval) {
+      await SecureStore.setItemAsync(PENDING_RECOVERY_KEY, JSON.stringify(recovery), secureOptions);
+      if (mounted) setPendingRecovery(recovery);
+    }
+
     async function handleUrl(url: string | null) {
       if (!url) return;
+      const recovery = keyRecoveryFromUrl(url);
+      if (recovery) {
+        try {
+          await storePendingKeyRecoveryApproval(recovery.token, recovery.secret);
+          await savePendingRecovery({ token: recovery.token });
+        } catch (error) {
+          Alert.alert('Recovery request could not be stored securely', error instanceof Error ? error.message : 'Ask for a new recovery link.');
+        }
+        return;
+      }
       const gift = premiumGiftFromUrl(url);
       if (gift) {
         try {
@@ -101,6 +132,10 @@ function AppContent() {
         Alert.alert('Premium gift link is incomplete', 'Ask the purchaser to share a new gift link. A damaged or ambiguous link is never accepted.');
         return;
       }
+      if (isKeyRecoveryUrl(url)) {
+        Alert.alert('Recovery link is incomplete', 'Ask the requester to create and share a new secure recovery link.');
+        return;
+      }
       if (isAuthCallbackUrl(url)) {
         try {
           await createSessionFromMagicLink(url);
@@ -112,10 +147,11 @@ function AppContent() {
 
     void (async () => {
       try {
-        const [{ data }, storedInvite, storedGift, initialUrl] = await Promise.all([
+        const [{ data }, storedInvite, storedGift, storedRecovery, initialUrl] = await Promise.all([
           supabase.auth.getSession(),
           SecureStore.getItemAsync(PENDING_INVITE_KEY, secureOptions).catch(() => null),
           SecureStore.getItemAsync(PENDING_GIFT_KEY, secureOptions).catch(() => null),
+          SecureStore.getItemAsync(PENDING_RECOVERY_KEY, secureOptions).catch(() => null),
           Linking.getInitialURL(),
         ]);
         if (!mounted) return;
@@ -124,6 +160,8 @@ function AppContent() {
         if (parsed) setPendingInvite(parsed);
         const parsedGift = parseStoredGift(storedGift);
         if (parsedGift) setPendingGift(parsedGift);
+        const parsedRecovery = parseStoredRecovery(storedRecovery);
+        if (parsedRecovery) setPendingRecovery(parsedRecovery);
         await handleUrl(initialUrl);
       } catch {
         if (mounted) Alert.alert('TalkTwo could not finish opening', 'Check your connection, then reopen the app.');
@@ -198,12 +236,17 @@ function AppContent() {
     void SecureStore.deleteItemAsync(PENDING_INVITE_KEY, secureOptions).catch(() => undefined);
   }
 
+  function clearPendingRecovery() {
+    setPendingRecovery(null);
+    void SecureStore.deleteItemAsync(PENDING_RECOVERY_KEY, secureOptions).catch(() => undefined);
+  }
+
   if (loading) {
     return <SafeAreaView style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.accent} /><Text style={[styles.note, { color: colors.muted }]}>Opening TalkTwo…</Text></SafeAreaView>;
   }
 
   return session
-    ? <HomeScreen session={session} pendingInvite={pendingInvite} clearPendingInvite={clearPendingInvite} />
+    ? <HomeScreen session={session} pendingInvite={pendingInvite} clearPendingInvite={clearPendingInvite} pendingRecovery={pendingRecovery} clearPendingRecovery={clearPendingRecovery} />
     : <LoginScreen />;
 }
 

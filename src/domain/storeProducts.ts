@@ -41,6 +41,16 @@ export const STORE_PRODUCTS = {
 } as const;
 
 export type StoreProductKey = keyof typeof STORE_PRODUCTS;
+export type PremiumSubscriptionProductKey =
+  | 'premium_individual_monthly'
+  | 'premium_two_monthly'
+  | 'premium_two_annual';
+
+export const PREMIUM_SUBSCRIPTION_PRODUCT_KEYS: readonly PremiumSubscriptionProductKey[] = [
+  'premium_individual_monthly',
+  'premium_two_monthly',
+  'premium_two_annual',
+];
 
 export function productIdFor(platform: StorePlatform, key: StoreProductKey) {
   const product = STORE_PRODUCTS[key];

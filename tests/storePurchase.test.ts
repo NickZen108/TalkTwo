@@ -77,3 +77,15 @@ test('restore request carries no checkout intent and grants nothing locally', ()
     purchaseKind: 'subscription',
   });
 });
+
+test('Google Premium gift verification is marked as a one-time purchase', () => {
+  assert.deepEqual(storeVerificationBody({
+    productId: 'premium_gift_1m', purchaseState: 'purchased', purchaseToken: 'gift-token', store: 'google',
+  }, 'purchase', 'gift-intent'), {
+    platform: 'google',
+    mode: 'purchase',
+    checkoutIntentId: 'gift-intent',
+    purchaseToken: 'gift-token',
+    purchaseKind: 'one_time',
+  });
+});

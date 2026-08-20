@@ -13,6 +13,10 @@ import { getPartnerWindows } from '../services/windows';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import ChatSettingsScreen from './ChatSettingsScreen';
 import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
+import { useI18n } from '../i18n/I18nContext';
+import type { SupportedLocale } from '../i18n/translations';
+import type { TranslationKey } from '../i18n/translations';
+import type { FilterReason } from '../filter/types';
 
 const MAX_PREMIUM_LENGTH = 480;
 
@@ -31,14 +35,14 @@ function sameDay(a: string, b: string) {
   return new Date(a).toDateString() === new Date(b).toDateString();
 }
 
-function dateLabel(value: string) {
+function dateLabel(value: string, locale: SupportedLocale, todayLabel: string, yesterdayLabel: string) {
   const date = new Date(value);
   const today = new Date();
-  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === today.toDateString()) return todayLabel;
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return date.toLocaleDateString(undefined, {
+  if (date.toDateString() === yesterday.toDateString()) return yesterdayLabel;
+  return date.toLocaleDateString(locale === 'da' ? 'da-DK' : 'en', {
     day: 'numeric',
     month: 'short',
     year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric',
@@ -62,6 +66,24 @@ function CompactButton({ title, onPress, styles, disabled = false, secondary = f
   );
 }
 
+function localizedFilterProblem(problem: FilterReason | null | undefined, t: (key: TranslationKey, values?: Record<string, string | number>) => string) {
+  if (!problem) return null;
+  const keys: Partial<Record<FilterReason['code'], [TranslationKey, TranslationKey]>> = {
+    too_long: ['filter.tooLongTitle', 'filter.tooLongBody'],
+    exclamation_mark: ['filter.exclamationTitle', 'filter.exclamationBody'],
+    emoji: ['filter.emojiTitle', 'filter.emojiBody'],
+    profanity: ['filter.profanityTitle', 'filter.profanityBody'],
+    generalisation: ['filter.generalisationTitle', 'filter.generalisationBody'],
+    fault_reminder: ['filter.faultTitle', 'filter.faultBody'],
+    criticism: ['filter.criticismTitle', 'filter.criticismBody'],
+    emotion_dumping: ['filter.emotionTitle', 'filter.emotionBody'],
+    caps_lock: ['filter.capsTitle', 'filter.capsBody'],
+  };
+  const pair = keys[problem.code];
+  if (!pair) return { title: problem.title, explanation: problem.explanation };
+  return { title: t(pair[0]), explanation: t(pair[1], { match: problem.matchedText ?? '' }) };
+}
+
 export default function ChatScreen({ relationship, session, onBack, onPurchasePremium, storePurchaseBusy }: {
   relationship: RelationshipSummary;
   session: Session;
@@ -70,6 +92,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   storePurchaseBusy: boolean;
 }) {
   const { colors } = useAppTheme();
+  const { locale, t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -124,7 +147,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     for (const member of nextMembers) {
       const preference = prefMap.get(member.user_id);
       looks[member.user_id] = {
-        name: preference?.local_alias?.trim() || member.display_name || 'Member',
+        name: preference?.local_alias?.trim() || member.display_name || t('chat.member'),
         bubble: safeBubbleTheme(preference?.bubble_theme ?? (member.user_id === session.user.id ? 'sage' : 'grey')),
       };
     }
@@ -150,7 +173,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     setMessage('');
     setReview(null);
     setReviewedText('');
-    void refreshAll().catch((error) => Alert.alert('Could not open chat', error instanceof Error ? error.message : 'Please try again.'));
+    void refreshAll().catch((error) => Alert.alert(t('chat.openError'), error instanceof Error ? error.message : t('common.tryAgain')));
   }, [relationship.id]);
 
   function changeMessage(text: string) {
@@ -169,9 +192,9 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       const next = await startPremiumTrial();
       setPlan(next);
       setTrialFallback(false);
-      Alert.alert('Premium trial started', 'You have 7 days of Premium. Trial AI review is limited to 25 analyses per local day.');
+      Alert.alert(t('chat.trialStarted'), t('chat.trialStartedBody'));
     } catch (error) {
-      Alert.alert('Trial could not start', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('chat.trialError'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -186,14 +209,14 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       setReview(next);
       setReviewedText(draft);
     } catch (error) {
-      const text = error instanceof Error ? error.message : 'Please try again.';
+      const text = error instanceof Error ? error.message : t('common.tryAgain');
       if (text.toLowerCase().includes('daily trial limit')) {
         setTrialFallback(true);
         setReview(null);
         setReviewedText('');
-        Alert.alert('Daily AI limit reached', 'TalkTwo now uses the Free filter until your next local day.');
+        Alert.alert(t('chat.dailyLimit'), t('chat.dailyLimitBody'));
       } else {
-        Alert.alert('AI review unavailable', text);
+        Alert.alert(t('chat.aiUnavailable'), text);
       }
     } finally {
       setReviewBusy(false);
@@ -214,7 +237,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       if (lastTrialReview) setTrialFallback(true);
       await refreshMessages();
     } catch (error) {
-      Alert.alert(editing ? 'Message can no longer be edited' : 'Message was not sent', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(editing ? t('chat.editError') : t('chat.sendError'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -222,11 +245,11 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
 
   async function chooseAttachment() {
     if (!premiumEntitled) {
-      Alert.alert('Premium document attachments', 'Start the Premium trial or subscribe to attach plain-text documents.');
+      Alert.alert(t('chat.premiumAttachments'), t('chat.premiumAttachmentsBody'));
       return;
     }
     if (!premiumAi) {
-      Alert.alert('AI review unavailable', 'Document attachments require an available Premium AI review.');
+      Alert.alert(t('chat.aiUnavailable'), t('chat.attachmentAiBody'));
       return;
     }
     try {
@@ -241,11 +264,11 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
         setTrialFallback(true);
       }
     } catch (error) {
-      const text = error instanceof Error ? error.message : 'Please try again.';
+      const text = error instanceof Error ? error.message : t('common.tryAgain');
       if (text.toLowerCase().includes('daily trial limit')) setTrialFallback(true);
       setAttachment(null);
       setAttachmentReview(null);
-      Alert.alert('Document could not be reviewed', text);
+      Alert.alert(t('chat.documentReviewError'), text);
     } finally {
       setAttachmentBusy(false);
     }
@@ -266,7 +289,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       if (lastTrialReview) setTrialFallback(true);
       await refreshMessages();
     } catch (error) {
-      Alert.alert('Document was not sent', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('chat.documentSendError'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -286,63 +309,63 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       await openMessage(item.id);
       await refreshMessages();
     } catch (error) {
-      Alert.alert('Message cannot be opened', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('chat.messageOpenError'), error instanceof Error ? error.message : t('common.tryAgain'));
     }
   }
 
   async function rejectIncoming(item: ChatMessage) {
     try {
       const rejected = await rejectMessageWithoutOpening(item.id);
-      if (!rejected) Alert.alert('Message could not be rejected', 'It may already have been opened or withdrawn.');
+      if (!rejected) Alert.alert(t('chat.messageRejectError'), t('chat.messageRejectBody'));
       await refreshMessages();
     } catch (error) {
-      Alert.alert('Message could not be rejected', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('chat.messageRejectError'), error instanceof Error ? error.message : t('common.tryAgain'));
     }
   }
 
   async function withdraw(item: ChatMessage) {
     try {
       const changed = await withdrawMessage(item.logical_id, relationship.id);
-      if (!changed) Alert.alert('Message can no longer be withdrawn', 'At least one recipient may already have opened or rejected it. TalkTwo does not otherwise reveal read status.');
+      if (!changed) Alert.alert(t('chat.messageWithdrawUnavailable'), t('chat.messageWithdrawBody'));
       if (editing?.logical_id === item.logical_id && changed) {
         setEditing(null);
         setMessage('');
       }
       await refreshMessages();
     } catch (error) {
-      Alert.alert('Could not withdraw message', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('chat.messageWithdrawError'), error instanceof Error ? error.message : t('common.tryAgain'));
     }
   }
 
   const otherNames = members
     .filter((member) => member.user_id !== session.user.id)
     .map((member) => memberLooks[member.user_id]?.name || member.display_name);
-  const title = otherNames.length <= 2 ? otherNames.join(', ') || 'Conversation' : `${otherNames.slice(0, 2).join(', ')} +${otherNames.length - 2}`;
+  const title = otherNames.length <= 2 ? otherNames.join(', ') || t('chat.conversation') : `${otherNames.slice(0, 2).join(', ')} +${otherNames.length - 2}`;
   const headerSubtitle = relationship.my_role === 'observer'
-    ? `Observer · ${members.length} people`
+    ? t('chat.observerPeople', { count: members.length })
     : members.length > 2
-      ? `${members.length} people`
+      ? t('chat.people', { count: members.length })
       : partnerTimezone
-        ? `Timezone: ${partnerTimezone}`
-        : 'Private conversation';
+        ? t('chat.timezone', { timezone: partnerTimezone })
+        : t('chat.privateConversation');
 
   if (viewingAttachment) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to conversation" onPress={() => setViewingAttachment(null)} style={styles.headerIcon}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.backConversation')} onPress={() => setViewingAttachment(null)} style={styles.headerIcon}>
             <Text style={styles.back}>‹</Text>
           </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.headerTitle}>{viewingAttachment.attachment_name ?? 'Text document'}</Text>
+            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.headerTitle}>{viewingAttachment.attachment_name ?? t('chat.textDocument')}</Text>
             <Text style={styles.headerSubtitle}>
-              {viewingAttachment.attachment_size_bytes !== null ? attachmentSizeLabel(viewingAttachment.attachment_size_bytes) : 'Text document'}
-              {viewingAttachment.attachment_page_count ? ` · ${viewingAttachment.attachment_page_count} logical page${viewingAttachment.attachment_page_count === 1 ? '' : 's'}` : ''}
+              {viewingAttachment.attachment_size_bytes !== null ? attachmentSizeLabel(viewingAttachment.attachment_size_bytes) : t('chat.textDocument')}
+              {viewingAttachment.attachment_page_count ? ` · ${t(viewingAttachment.attachment_page_count === 1 ? 'chat.logicalPage' : 'chat.logicalPages', { count: viewingAttachment.attachment_page_count })}` : ''}
             </Text>
           </View>
         </View>
         <ScrollView contentContainerStyle={styles.documentViewer}>
-          <Text selectable style={styles.documentText}>{viewingAttachment.body ?? 'This encrypted document is unavailable on this device.'}</Text>
+          <Text selectable style={styles.documentText}>{viewingAttachment.body ?? t('chat.documentUnavailable')}</Text>
         </ScrollView>
       </SafeAreaView>
     );
@@ -366,6 +389,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   }
 
   const firstProblem = !premiumAi ? freeResult.reasons[0] : null;
+  const translatedProblem = localizedFilterProblem(firstProblem, t);
   const backgroundColor = BACKGROUND_THEMES[background].background;
   const chatTextColor = textColorForBackground(backgroundColor);
 
@@ -373,7 +397,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to chats" onPress={onBack} style={styles.headerIcon}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.backChats')} onPress={onBack} style={styles.headerIcon}>
             <Text style={styles.back}>‹</Text>
           </TouchableOpacity>
           <View style={styles.headerAvatar}><Text style={styles.headerAvatarText}>{initialsForName(title)}</Text></View>
@@ -381,17 +405,17 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
             <Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerTitle}>{title}</Text>
             <Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerSubtitle}>{headerSubtitle}</Text>
           </View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Chat settings" onPress={() => setShowSettings(true)} style={styles.headerIcon}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.settings')} onPress={() => setShowSettings(true)} style={styles.headerIcon}>
             <Text style={styles.settingsGlyph}>•••</Text>
           </TouchableOpacity>
         </View>
 
         {!premiumEntitled && plan?.plan === 'free' && canCompose ? (
           <TouchableOpacity accessibilityRole="button" onPress={() => void startTrial()} disabled={busy} style={styles.trialStrip}>
-            <Text style={styles.trialText}>Try Premium AI review for 7 days</Text>
+            <Text style={styles.trialText}>{t('chat.tryTrial')}</Text>
           </TouchableOpacity>
         ) : null}
-        {trialFallback ? <View style={styles.infoStrip}><Text style={styles.infoText}>Daily trial AI allowance used · Free filter active</Text></View> : null}
+        {trialFallback ? <View style={styles.infoStrip}><Text style={styles.infoText}>{t('chat.trialFallback')}</Text></View> : null}
 
         <View style={[styles.chatArea, { backgroundColor }]}>
           <PatternBackdrop theme={background} styles={styles} dotColor={chatTextColor} />
@@ -413,7 +437,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
             )}
             renderItem={({ item, index }) => {
               const mine = item.sender_id === session.user.id;
-              const sender = memberLooks[item.sender_id] ?? { name: mine ? 'You' : 'Member', bubble: (mine ? 'sage' : 'grey') as BubbleThemeName };
+              const sender = memberLooks[item.sender_id] ?? { name: mine ? t('chat.you') : t('chat.member'), bubble: (mine ? 'sage' : 'grey') as BubbleThemeName };
               const bubble = BUBBLE_THEMES[sender.bubble];
               const textColor = textColorForBackground(bubble.background);
               const previous = index > 0 ? messages[index - 1] : null;
@@ -425,51 +449,51 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
 
               return (
                 <>
-                  {showDate ? <View style={styles.datePill}><Text style={styles.datePillText}>{dateLabel(item.created_at)}</Text></View> : null}
+                  {showDate ? <View style={styles.datePill}><Text style={styles.datePillText}>{dateLabel(item.created_at, locale, t('chat.today'), t('chat.yesterday'))}</Text></View> : null}
                   <View style={[styles.messageRow, mine ? styles.messageRowMine : styles.messageRowTheirs]}>
                     {!mine && members.length > 2 ? <View style={styles.smallAvatar}><Text style={styles.smallAvatarText}>{initialsForName(sender.name)}</Text></View> : null}
                     <View style={[styles.bubble, { backgroundColor: bubble.background }, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
                       {!mine && members.length > 2 ? <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.senderName, { color: textColor }]}>{sender.name}</Text> : null}
                       {blocked ? (
                         <>
-                          <Text style={[styles.blockedTitle, { color: textColor }]}>Message unavailable</Text>
-                          <Text style={[styles.messageText, { color: textColor }]}>This message cannot be read because you blocked this person. Unblock them in Chat settings to read future messages from this person.</Text>
+                          <Text style={[styles.blockedTitle, { color: textColor }]}>{t('chat.messageUnavailable')}</Text>
+                          <Text style={[styles.messageText, { color: textColor }]}>{t('chat.blockedBody')}</Text>
                         </>
                       ) : unopened ? (
                         <>
-                          <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? `Potentially sensitive ${isAttachment ? 'document' : 'message'}` : `New ${isAttachment ? 'document' : 'message'}`}</Text>
-                          <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? 'TalkTwo marked this as potentially conflict-escalating.' : `The ${isAttachment ? 'document' : 'text'} stays hidden until you choose to open it.`}</Text>
+                          <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? t(isAttachment ? 'chat.sensitiveDocument' : 'chat.sensitiveMessage') : t(isAttachment ? 'chat.newDocument' : 'chat.newMessage')}</Text>
+                          <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? t('chat.cautionBody') : t(isAttachment ? 'chat.hiddenDocument' : 'chat.hiddenText')}</Text>
                           <View style={styles.bubbleActions}>
-                            <CompactButton styles={styles} title="Open" onPress={() => void openIncoming(item)} secondary />
-                            {item.risk_level === 'yellow' ? <CompactButton styles={styles} title="Reject unread" onPress={() => void rejectIncoming(item)} secondary /> : null}
+                            <CompactButton styles={styles} title={t('chat.open')} onPress={() => void openIncoming(item)} secondary />
+                            {item.risk_level === 'yellow' ? <CompactButton styles={styles} title={t('chat.rejectUnread')} onPress={() => void rejectIncoming(item)} secondary /> : null}
                           </View>
                         </>
                       ) : isAttachment ? (
                         <View style={styles.documentCard}>
-                          <Text numberOfLines={2} ellipsizeMode="middle" style={[styles.documentName, { color: textColor }]}>▤ {item.attachment_name ?? 'Text document'}</Text>
+                          <Text numberOfLines={2} ellipsizeMode="middle" style={[styles.documentName, { color: textColor }]}>▤ {item.attachment_name ?? t('chat.textDocument')}</Text>
                           <Text style={[styles.documentMeta, { color: textColor }]}>
-                            {item.attachment_size_bytes !== null ? attachmentSizeLabel(item.attachment_size_bytes) : 'Plain text'}
-                            {item.attachment_page_count ? ` · ${item.attachment_page_count} page${item.attachment_page_count === 1 ? '' : 's'}` : ''}
+                            {item.attachment_size_bytes !== null ? attachmentSizeLabel(item.attachment_size_bytes) : t('chat.plainText')}
+                            {item.attachment_page_count ? ` · ${t(item.attachment_page_count === 1 ? 'chat.page' : 'chat.pages', { count: item.attachment_page_count })}` : ''}
                           </Text>
                           {item.body ? <Text numberOfLines={4} style={[styles.documentExcerpt, { color: textColor }]}>{attachmentExcerpt(item.body)}</Text> : null}
-                          {item.body ? <CompactButton styles={styles} title="View document" onPress={() => setViewingAttachment(item)} secondary /> : null}
+                          {item.body ? <CompactButton styles={styles} title={t('chat.viewDocument')} onPress={() => setViewingAttachment(item)} secondary /> : null}
                         </View>
                       ) : (
-                        <Text selectable style={[styles.messageText, { color: textColor }]}>{item.body ?? 'Encrypted message unavailable on this device.'}</Text>
+                        <Text selectable style={[styles.messageText, { color: textColor }]}>{item.body ?? t('chat.encryptedUnavailable')}</Text>
                       )}
                       <View style={styles.messageMetaRow}>
                         <Text style={[styles.messageMeta, { color: textColor }]}>
                           {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          {item.edited_at ? ' · edited' : ''}
-                          {item.risk_level === 'yellow' ? ' · caution' : ''}
+                          {item.edited_at ? ` · ${t('chat.edited')}` : ''}
+                          {item.risk_level === 'yellow' ? ` · ${t('chat.caution')}` : ''}
                         </Text>
                       </View>
                       {mine ? (
                         <View style={styles.senderControls}>
-                          <Text style={[styles.sentStatus, { color: textColor }]}>{rejectedCount > 0 ? `${rejectedCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''} rejected unread` : 'Sent'}</Text>
+                          <Text style={[styles.sentStatus, { color: textColor }]}>{rejectedCount > 0 ? t('chat.rejectedUnread', { count: `${rejectedCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''}` }) : t('chat.sent')}</Text>
                           <View style={styles.inlineActions}>
-                            {item.body && !isAttachment ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>Edit</Text></TouchableOpacity> : null}
-                            <TouchableOpacity accessibilityRole="button" onPress={() => void withdraw(item)}><Text style={[styles.inlineAction, { color: textColor }]}>Withdraw</Text></TouchableOpacity>
+                            {item.body && !isAttachment ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.edit')}</Text></TouchableOpacity> : null}
+                            <TouchableOpacity accessibilityRole="button" onPress={() => void withdraw(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.withdraw')}</Text></TouchableOpacity>
                           </View>
                         </View>
                       ) : null}
@@ -480,8 +504,8 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
             }}
             ListEmptyComponent={(
               <View style={styles.emptyChat}>
-                <Text style={[styles.emptyChatTitle, { color: chatTextColor }]}>A quieter place to talk</Text>
-                <Text style={[styles.emptyChatText, { color: chatTextColor }]}>{relationship.my_role === 'observer' ? 'You are a read-only observer. You will see new messages from the time you were approved.' : 'Keep messages practical: facts, requests, agreements and necessary information.'}</Text>
+                <Text style={[styles.emptyChatTitle, { color: chatTextColor }]}>{t('chat.emptyTitle')}</Text>
+                <Text style={[styles.emptyChatText, { color: chatTextColor }]}>{t(relationship.my_role === 'observer' ? 'chat.observerEmpty' : 'chat.participantEmpty')}</Text>
               </View>
             )}
           />
@@ -491,26 +515,26 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
           <View style={styles.composerWrap}>
             {editing ? (
               <View style={styles.editingStrip}>
-                <Text numberOfLines={2} style={styles.editingText}>Editing a sent message. If anyone has already opened it, the server will keep the original.</Text>
+                <Text numberOfLines={2} style={styles.editingText}>{t('chat.editingBody')}</Text>
                 <TouchableOpacity accessibilityRole="button" onPress={() => { setEditing(null); setMessage(''); setReview(null); setReviewedText(''); }}>
-                  <Text style={styles.cancelEdit}>Cancel</Text>
+                  <Text style={styles.cancelEdit}>{t('chat.cancel')}</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
             {premiumAi && reviewCurrent ? (
               <View style={[styles.reviewStrip, review?.level === 'red' ? styles.reviewRed : review?.level === 'yellow' ? styles.reviewYellow : styles.reviewGreen]}>
                 <View style={styles.reviewTextWrap}>
-                  <Text style={styles.reviewTitle}>{review?.level === 'green' ? 'Ready to send' : review?.level === 'yellow' ? 'Caution' : 'Blocked'}</Text>
+                  <Text style={styles.reviewTitle}>{review?.level === 'green' ? t('chat.ready') : review?.level === 'yellow' ? t('chat.caution') : t('chat.blocked')}</Text>
                   <Text numberOfLines={3} style={styles.reviewReason}>{review?.reason}</Text>
                 </View>
-                {review?.rewrite ? <TouchableOpacity accessibilityRole="button" onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>Use rewrite</Text></TouchableOpacity> : null}
+                {review?.rewrite ? <TouchableOpacity accessibilityRole="button" onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>{t('chat.useRewrite')}</Text></TouchableOpacity> : null}
               </View>
             ) : null}
-            {!premiumAi && hasText && !freeResult.canSend && firstProblem ? (
+            {!premiumAi && hasText && !freeResult.canSend && translatedProblem ? (
               <View style={styles.reviewStrip}>
                 <View style={styles.reviewTextWrap}>
-                  <Text style={styles.reviewTitle}>{firstProblem.title}</Text>
-                  <Text numberOfLines={3} style={styles.reviewReason}>{firstProblem.explanation}</Text>
+                  <Text style={styles.reviewTitle}>{translatedProblem.title}</Text>
+                  <Text numberOfLines={3} style={styles.reviewReason}>{translatedProblem.explanation}</Text>
                 </View>
               </View>
             ) : null}
@@ -518,17 +542,17 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
               <View style={styles.attachmentComposer}>
                 <View style={styles.attachmentComposerText}>
                   <Text numberOfLines={2} ellipsizeMode="middle" style={styles.attachmentComposerName}>{attachment.name}</Text>
-                  <Text style={styles.attachmentComposerMeta}>{attachmentSizeLabel(attachment.sizeBytes)} · {attachment.pageCount} page{attachment.pageCount === 1 ? '' : 's'}</Text>
+                  <Text style={styles.attachmentComposerMeta}>{attachmentSizeLabel(attachment.sizeBytes)} · {t(attachment.pageCount === 1 ? 'chat.page' : 'chat.pages', { count: attachment.pageCount })}</Text>
                   <Text style={[styles.attachmentReviewText, attachmentReview?.level === 'red' && styles.attachmentReviewDanger]}>
-                    {attachmentBusy ? 'Reviewing the complete document…' : attachmentReview?.reason ?? 'Waiting for review'}
+                    {attachmentBusy ? t('chat.reviewingDocument') : attachmentReview?.reason ?? t('chat.waitingReview')}
                   </Text>
                   {attachmentReview?.problematic_text[0] ? <Text numberOfLines={3} style={styles.attachmentProblem}>“{attachmentReview.problematic_text[0]}”</Text> : null}
                 </View>
                 <View style={styles.attachmentComposerActions}>
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel document attachment" onPress={cancelAttachment} style={styles.cancelAttachmentButton}>
-                    <Text style={styles.cancelAttachmentText}>Cancel</Text>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.cancelAttachment')} onPress={cancelAttachment} style={styles.cancelAttachmentButton}>
+                    <Text style={styles.cancelAttachmentText}>{t('chat.cancel')}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Send document" disabled={busy || attachmentBusy || !attachmentReview?.can_send} onPress={() => void sendAttachment()} style={[styles.sendCircle, (busy || attachmentBusy || !attachmentReview?.can_send) && styles.disabled]}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.sendDocument')} disabled={busy || attachmentBusy || !attachmentReview?.can_send} onPress={() => void sendAttachment()} style={[styles.sendCircle, (busy || attachmentBusy || !attachmentReview?.can_send) && styles.disabled]}>
                     <Text style={styles.sendGlyph}>➤</Text>
                   </TouchableOpacity>
                 </View>
@@ -536,23 +560,23 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
             ) : (
               <View style={styles.composerRow}>
                 {!editing ? (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach a plain-text document" disabled={busy || attachmentBusy} onPress={() => void chooseAttachment()} style={[styles.attachCircle, (busy || attachmentBusy) && styles.disabled]}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.attachDocument')} disabled={busy || attachmentBusy} onPress={() => void chooseAttachment()} style={[styles.attachCircle, (busy || attachmentBusy) && styles.disabled]}>
                     <Text style={styles.attachGlyph}>{attachmentBusy ? '…' : '+'}</Text>
                   </TouchableOpacity>
                 ) : null}
                 <View style={styles.inputShell}>
-                  <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder="Message" placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel="Message" />
+                  <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder={t('chat.message')} placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel={t('chat.message')} />
                   <View style={styles.counterRow}>
                     <Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text>
-                    <Text style={styles.filterLabel}>{premiumAi ? 'AI review' : 'Free filter'}</Text>
+                    <Text style={styles.filterLabel}>{premiumAi ? t('chat.aiReview') : t('chat.freeFilter')}</Text>
                   </View>
                 </View>
                 {premiumAi && (!reviewCurrent || review?.level === 'red') ? (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review message with AI" disabled={reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH} onPress={() => void reviewWithAi()} style={[styles.sendCircle, styles.reviewCircle, (reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH) && styles.disabled]}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.reviewMessage')} disabled={reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH} onPress={() => void reviewWithAi()} style={[styles.sendCircle, styles.reviewCircle, (reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH) && styles.disabled]}>
                     <Text style={styles.sendGlyph}>{reviewBusy ? '…' : '✓'}</Text>
                   </TouchableOpacity>
                 ) : (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? 'Save edited message' : 'Send message'} disabled={busy || !hasText || !canSend} onPress={() => void saveOrSend()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? t('chat.saveEdited') : t('chat.sendMessage')} disabled={busy || !hasText || !canSend} onPress={() => void saveOrSend()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
                     <Text style={styles.sendGlyph}>➤</Text>
                   </TouchableOpacity>
                 )}
@@ -560,7 +584,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
             )}
           </View>
         ) : (
-          <View style={styles.observerBar}><Text style={styles.observerText}>Observer · read only</Text></View>
+          <View style={styles.observerBar}><Text style={styles.observerText}>{t('chat.observerReadOnly')}</Text></View>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>

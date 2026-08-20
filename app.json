@@ -8,6 +8,7 @@
     "userInterfaceStyle": "automatic",
     "plugins": [
       "expo-iap",
+      "expo-localization",
       "expo-notifications",
       [
         "expo-build-properties",

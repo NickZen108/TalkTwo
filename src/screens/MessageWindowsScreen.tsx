@@ -3,8 +3,9 @@ import { Alert, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, T
 import { detectedDeviceTimezone, normalizeIanaTimezone, normalizeMessageWindow } from '../domain/messageWindows';
 import { getMyTimezone, listMyWindows, saveMyWindow, setMyTimezone, type MessageWindow } from '../services/windows';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
+import { useI18n } from '../i18n/I18nContext';
 
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_KEYS = ['windows.sunday', 'windows.monday', 'windows.tuesday', 'windows.wednesday', 'windows.thursday', 'windows.friday', 'windows.saturday'] as const;
 
 type Draft = { enabled: boolean; start: string; end: string };
 
@@ -14,11 +15,12 @@ function defaultDraft(day: number): Draft {
 }
 
 function initialDrafts(): Record<number, Draft> {
-  return Object.fromEntries(DAYS.map((_, day) => [day, defaultDraft(day)])) as Record<number, Draft>;
+  return Object.fromEntries(DAY_KEYS.map((_, day) => [day, defaultDraft(day)])) as Record<number, Draft>;
 }
 
 export default function MessageWindowsScreen({ onBack }: { onBack: () => void }) {
   const { colors } = useAppTheme();
+  const { t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [timezone, setTimezone] = useState('UTC');
   const [deviceTimezone] = useState(detectedDeviceTimezone);
@@ -42,7 +44,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
         }
         setDrafts(next);
       } catch (error) {
-        Alert.alert('Could not load message windows', error instanceof Error ? error.message : 'Please try again.');
+        Alert.alert(t('windows.loadError'), error instanceof Error ? error.message : t('common.tryAgain'));
       }
     })();
   }, []);
@@ -55,7 +57,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
       await saveMyWindow(day, draft.enabled, start, end);
       setDrafts((old) => ({ ...old, [day]: { ...draft, start: start.slice(0, 5), end: end.slice(0, 5) } }));
     } catch (error) {
-      Alert.alert('Check this window', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('windows.checkWindow'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusyDay(null);
     }
@@ -65,15 +67,15 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
     try {
       const normalized = normalizeIanaTimezone(nextValue);
       if (!normalized) {
-        Alert.alert('Check the timezone', 'Use a valid timezone such as Europe/Copenhagen.');
+        Alert.alert(t('windows.checkTimezone'), t('windows.validTimezone'));
         return;
       }
       setTimezoneBusy(true);
       const saved = await setMyTimezone(normalized);
       setTimezone(saved);
-      Alert.alert('Timezone saved', 'TalkTwo will use this timezone when deciding when waiting messages become available.');
+      Alert.alert(t('windows.timezoneSaved'), t('windows.timezoneSavedBody'));
     } catch (error) {
-      Alert.alert('Could not save timezone', error instanceof Error ? error.message : 'Please check the timezone name.');
+      Alert.alert(t('windows.timezoneSaveError'), error instanceof Error ? error.message : t('windows.timezoneSaveErrorBody'));
     } finally {
       setTimezoneBusy(false);
     }
@@ -83,45 +85,46 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.headerRow}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to chats" onPress={onBack} style={styles.backButton}><Text style={styles.back}>‹ Back</Text></TouchableOpacity>
-          <Text style={styles.title}>Message windows</Text>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('windows.backLabel')} onPress={onBack} style={styles.backButton}><Text style={styles.back}>{t('common.back')}</Text></TouchableOpacity>
+          <Text style={styles.title}>{t('windows.title')}</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.heading}>Your timezone</Text>
-          <Text style={styles.help}>Phone timezone: {deviceTimezone}. TalkTwo keeps your saved choice until you change it.</Text>
-          <TextInput accessibilityLabel="Message window timezone" value={timezone} onChangeText={setTimezone} autoCapitalize="none" autoCorrect={false} style={styles.input} placeholder="Europe/Copenhagen" placeholderTextColor={colors.subtle} />
+          <Text style={styles.heading}>{t('windows.timezoneTitle')}</Text>
+          <Text style={styles.help}>{t('windows.timezoneHelp', { timezone: deviceTimezone })}</Text>
+          <TextInput accessibilityLabel={t('windows.timezoneLabel')} value={timezone} onChangeText={setTimezone} autoCapitalize="none" autoCorrect={false} style={styles.input} placeholder="Europe/Copenhagen" placeholderTextColor={colors.subtle} />
           {timezone !== deviceTimezone ? (
             <TouchableOpacity accessibilityRole="button" onPress={() => void saveTimezone(deviceTimezone)} disabled={timezoneBusy} style={[styles.secondaryButton, timezoneBusy && styles.disabled]}>
-              <Text style={styles.secondaryButtonText}>Use phone timezone</Text>
+              <Text style={styles.secondaryButtonText}>{t('windows.usePhoneTimezone')}</Text>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity accessibilityRole="button" onPress={() => void saveTimezone()} disabled={timezoneBusy} style={[styles.button, timezoneBusy && styles.disabled]}>
-            <Text style={styles.buttonText}>{timezoneBusy ? 'Saving…' : 'Save timezone'}</Text>
+            <Text style={styles.buttonText}>{timezoneBusy ? t('windows.saving') : t('windows.saveTimezone')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.heading}>When messages may appear</Text>
-          <Text style={styles.help}>Messages can be sent at any time, but they stay hidden until one of your open windows begins. You can still check waiting messages whenever you choose.</Text>
+          <Text style={styles.heading}>{t('windows.scheduleTitle')}</Text>
+          <Text style={styles.help}>{t('windows.scheduleHelp')}</Text>
 
-          {DAYS.map((name, day) => {
+          {DAY_KEYS.map((key, day) => {
+            const name = t(key);
             const draft = drafts[day] ?? defaultDraft(day);
             return (
               <View key={name} style={styles.dayRow}>
                 <View style={styles.dayHeader}>
                   <Text style={styles.dayName}>{name}</Text>
-                  <Switch accessibilityLabel={`${name} message window`} accessibilityRole="switch" value={draft.enabled} onValueChange={(enabled) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), enabled } }))} />
+                  <Switch accessibilityLabel={t('windows.windowLabel', { day: name })} accessibilityRole="switch" value={draft.enabled} onValueChange={(enabled) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), enabled } }))} />
                 </View>
                 {draft.enabled ? (
                   <View style={styles.timeRow}>
-                    <TextInput accessibilityLabel={`${name} opening time`} value={draft.start} onChangeText={(start) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), start } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
-                    <Text style={styles.to}>to</Text>
-                    <TextInput accessibilityLabel={`${name} closing time`} value={draft.end} onChangeText={(end) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), end } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
+                    <TextInput accessibilityLabel={t('windows.openingLabel', { day: name })} value={draft.start} onChangeText={(start) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), start } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
+                    <Text style={styles.to}>{t('windows.to')}</Text>
+                    <TextInput accessibilityLabel={t('windows.closingLabel', { day: name })} value={draft.end} onChangeText={(end) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), end } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
                   </View>
-                ) : <Text style={styles.closed}>Closed</Text>}
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Save ${name} message window`} onPress={() => void saveDay(day)} disabled={busyDay === day} style={styles.saveDay}>
-                  <Text style={styles.saveDayText}>{busyDay === day ? 'Saving…' : 'Save'}</Text>
+                ) : <Text style={styles.closed}>{t('windows.closed')}</Text>}
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('windows.saveLabel', { day: name })} onPress={() => void saveDay(day)} disabled={busyDay === day} style={styles.saveDay}>
+                  <Text style={styles.saveDayText}>{busyDay === day ? t('windows.saving') : t('windows.save')}</Text>
                 </TouchableOpacity>
               </View>
             );

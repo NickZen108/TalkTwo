@@ -22,6 +22,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import { AppThemeProvider, useAppTheme } from './src/theme/AppTheme';
 import { addPushTokenRefreshListener, refreshPushRegistrationIfEnabled } from './src/services/pushNotifications';
+import { I18nProvider, useI18n } from './src/i18n/I18nContext';
 
 const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v4';
 const PENDING_GIFT_KEY = 'talktwo.pendingPremiumGift.v1';
@@ -69,6 +70,7 @@ function parseStoredRecovery(value: string | null): PendingKeyRecoveryApproval |
 
 function AppContent() {
   const { colors } = useAppTheme();
+  const { t, syncAccountPreference } = useI18n();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
@@ -234,6 +236,7 @@ function AppContent() {
 
   useEffect(() => {
     if (!session) return;
+    void syncAccountPreference().catch(() => undefined);
     void refreshPushRegistrationIfEnabled().catch(() => undefined);
     const listener = addPushTokenRefreshListener();
     return () => listener.remove();
@@ -250,7 +253,7 @@ function AppContent() {
   }
 
   if (loading) {
-    return <SafeAreaView style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.accent} /><Text style={[styles.note, { color: colors.muted }]}>Opening TalkTwo…</Text></SafeAreaView>;
+    return <SafeAreaView style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.accent} /><Text style={[styles.note, { color: colors.muted }]}>{t('app.loading')}</Text></SafeAreaView>;
   }
 
   return session
@@ -259,7 +262,7 @@ function AppContent() {
 }
 
 export default function App() {
-  return <AppThemeProvider><AppContent /></AppThemeProvider>;
+  return <I18nProvider><AppThemeProvider><AppContent /></AppThemeProvider></I18nProvider>;
 }
 
 const styles = StyleSheet.create({

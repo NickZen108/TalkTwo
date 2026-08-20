@@ -47,3 +47,8 @@ test('Premium checkout exposes only the agreed subscription products', () => {
   );
   assert.ok(PREMIUM_SUBSCRIPTION_PRODUCT_KEYS.every((key) => STORE_PRODUCTS[key].kind === 'subscription'));
 });
+
+test('Premium gift is a repeatable one-time store product at the agreed price', () => {
+  assert.equal(STORE_PRODUCTS.premium_gift_1m.kind, 'one_time');
+  assert.equal(STORE_PRODUCTS.premium_gift_1m.expectedDkk, 59);
+});

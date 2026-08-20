@@ -7,10 +7,26 @@ export interface PendingPremiumGift {
   claim_expires_at: string;
 }
 
+export interface PurchasedPremiumGift {
+  gift_id: string;
+  recipient_email: string;
+  duration_months: number;
+  status: 'paid' | 'claimed' | 'expired' | 'refunded' | string;
+  claim_expires_at: string;
+  claimed_at: string | null;
+  created_at: string;
+}
+
 export async function listMyPendingPremiumGifts() {
   const { data, error } = await supabase.rpc('list_my_pending_premium_gifts');
   if (error) throw error;
   return (data ?? []) as PendingPremiumGift[];
+}
+
+export async function listMyPurchasedPremiumGifts() {
+  const { data, error } = await supabase.rpc('list_my_purchased_premium_gifts');
+  if (error) throw error;
+  return (data ?? []) as PurchasedPremiumGift[];
 }
 
 export async function claimPremiumGift(giftId: string, token?: string) {

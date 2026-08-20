@@ -12,8 +12,10 @@ import MessageWindowsScreen from './MessageWindowsScreen';
 import FeedbackScreen from './FeedbackScreen';
 import PremiumGiftsScreen from './PremiumGiftsScreen';
 import AccountScreen from './AccountScreen';
+import { createKeyRecoveryRequest, fulfillKeyRecoveryRequest, getKeyRecoveryApproval, installFulfilledKeyRecoveries } from '../services/keyRecovery';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
+type PendingRecovery = { token: string };
 
 function Action({ title, onPress, styles, disabled = false, quiet = false }: { title: string; onPress: () => void; styles: ReturnType<typeof makeStyles>; disabled?: boolean; quiet?: boolean }) {
   return (
@@ -30,7 +32,7 @@ function conversationTitle(members: RelationshipMember[], me: string) {
   return `${others.slice(0, 2).join(', ')} +${others.length - 2}`;
 }
 
-export default function HomeScreen({ session, pendingInvite, clearPendingInvite }: { session: Session; pendingInvite: PendingInvite | null; clearPendingInvite: () => void }) {
+export default function HomeScreen({ session, pendingInvite, clearPendingInvite, pendingRecovery, clearPendingRecovery }: { session: Session; pendingInvite: PendingInvite | null; clearPendingInvite: () => void; pendingRecovery: PendingRecovery | null; clearPendingRecovery: () => void }) {
   const { colors, mode, resolved, setMode } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
@@ -60,6 +62,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   });
 
   async function refreshRelationships() {
+    await installFulfilledKeyRecoveries();
     const keyResult = await installMyActiveMemberKeys();
     const [nextRelationships, nextPending] = await Promise.all([listRelationships(), listMyPendingMemberships()]);
     const memberPairs = await Promise.all(nextRelationships.map(async (rel) => [rel.id, await listRelationshipMembers(rel.id)] as const));
@@ -67,6 +70,49 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     setPendingMemberships(nextPending);
     setMembers(Object.fromEntries(memberPairs));
     setMissingSecureKeys(keyResult.missing);
+  }
+
+  async function requestSecureKey(relationship: RelationshipSummary) {
+    try {
+      setBusy(true);
+      const request = await createKeyRecoveryRequest(relationship.id);
+      await Share.share({ message: `Please help me recover this TalkTwo conversation on a new device. Open this link in TalkTwo and approve only after confirming with me directly: ${request.url}` });
+      Alert.alert('Verify separately', `Your verification code is ${request.verificationCode}. Confirm this code with the other chat member by voice or another trusted channel.`);
+    } catch (error) {
+      Alert.alert('Recovery request unavailable', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewKeyRecovery() {
+    if (!pendingRecovery) return;
+    try {
+      setBusy(true);
+      const request = await getKeyRecoveryApproval(pendingRecovery.token);
+      Alert.alert(
+        'Share conversation key?',
+        `${request.requester_name} requested this chat key for a new device. Verification code: ${request.verification_code}. Approve only after confirming the request and code directly with that person.`,
+        [
+          { text: 'Do not approve', style: 'cancel' },
+          {
+            text: 'Approve secure recovery',
+            onPress: () => {
+              void fulfillKeyRecoveryRequest(pendingRecovery.token, request.relationship_id)
+                .then(() => {
+                  clearPendingRecovery();
+                  Alert.alert('Key shared securely', 'Only the requesting device can open the encrypted recovery envelope.');
+                })
+                .catch((error) => Alert.alert('Recovery not approved', error instanceof Error ? error.message : 'Please try again.'));
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      Alert.alert('Recovery request unavailable', error instanceof Error ? error.message : 'Ask for a new recovery link.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -225,9 +271,19 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
           </View>
         ) : null}
 
+        {pendingRecovery ? (
+          <View style={styles.invitationBanner}>
+            <View style={styles.bannerText}>
+              <Text style={styles.bannerTitle}>Secure key recovery</Text>
+              <Text style={styles.bannerHelp}>Another chat member asked this device to encrypt and share a conversation key. Verify the person and code before approving.</Text>
+            </View>
+            <Action styles={styles} title={busy ? 'Please wait…' : 'Review request'} onPress={() => void reviewKeyRecovery()} disabled={busy} />
+          </View>
+        ) : null}
+
         {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'View monthly membership'} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
 
-        {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>Encryption key needed on this device</Text><Text style={styles.securityText}>One or more chats are linked to your account, but this device no longer has the one-time secret needed to open their encrypted key envelope. TalkTwo will not ask the server to reveal the conversation key. Secure recovery sharing is being added before release.</Text></View> : null}
+        {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>Encryption key needed on this device</Text><Text style={styles.securityText}>Tap an affected chat to ask another current member to share its key securely. TalkTwo's server never receives the conversation key or recovery secret.</Text></View> : null}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Chats</Text>
@@ -242,13 +298,13 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
             const subtitle = rel.my_role === 'observer' ? `Observer · ${rel.member_count} people` : rel.member_count > 2 ? `${rel.member_count} people` : 'Private conversation';
             const keyMissing = missingSecureKeys.includes(rel.id);
             return (
-              <TouchableOpacity accessibilityRole="button" key={rel.id} disabled={keyMissing} onPress={() => setSelected(rel)} style={[styles.chatRow, keyMissing && styles.disabled]}>
+              <TouchableOpacity accessibilityRole="button" key={rel.id} disabled={busy} onPress={() => keyMissing ? void requestSecureKey(rel) : setSelected(rel)} style={[styles.chatRow, busy && styles.disabled]}>
                 <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
                 <View style={styles.chatText}>
                   <Text numberOfLines={2} ellipsizeMode="tail" style={styles.chatTitle}>{title}</Text>
                   <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{keyMissing ? 'Secure key unavailable on this device' : subtitle}</Text>
                 </View>
-                <Text style={styles.chevron}>›</Text>
+                <Text style={styles.chevron}>{keyMissing ? 'Key' : '›'}</Text>
               </TouchableOpacity>
             );
           })}

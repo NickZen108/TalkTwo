@@ -5,13 +5,14 @@ import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
 import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { releaseWaitingMessages } from '../services/windows';
+import { useAppTheme, type AppColors, type AppearanceMode } from '../theme/AppTheme';
 import ChatScreen from './ChatScreen';
 import MessageWindowsScreen from './MessageWindowsScreen';
 import FeedbackScreen from './FeedbackScreen';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 
-function Action({ title, onPress, disabled = false, quiet = false }: { title: string; onPress: () => void; disabled?: boolean; quiet?: boolean }) {
+function Action({ title, onPress, styles, disabled = false, quiet = false }: { title: string; onPress: () => void; styles: ReturnType<typeof makeStyles>; disabled?: boolean; quiet?: boolean }) {
   return (
     <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.action, quiet && styles.quietAction, disabled && styles.disabled]}>
       <Text style={[styles.actionText, quiet && styles.quietActionText]}>{title}</Text>
@@ -27,6 +28,8 @@ function conversationTitle(members: RelationshipMember[], me: string) {
 }
 
 export default function HomeScreen({ session, pendingInvite, clearPendingInvite }: { session: Session; pendingInvite: PendingInvite | null; clearPendingInvite: () => void }) {
+  const { colors, mode, resolved, setMode } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
   const [members, setMembers] = useState<Record<string, RelationshipMember[]>>({});
   const [pendingMemberships, setPendingMemberships] = useState<PendingMembership[]>([]);
@@ -124,6 +127,8 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
   if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
 
+  const appearanceOptions: AppearanceMode[] = ['system', 'light', 'dark'];
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -141,11 +146,11 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
               <Text style={styles.bannerTitle}>{pendingInvite.kind === 'member' ? 'Group invitation' : 'Conversation invitation'}</Text>
               <Text style={styles.bannerHelp}>{pendingInvite.kind === 'member' ? 'Accepting only requests access. Everyone already in the chat must approve before payment is available or you can see new messages.' : 'Accept to start this private TalkTwo chat.'}</Text>
             </View>
-            <Action title={busy ? 'Please wait…' : 'Accept'} onPress={() => void acceptPendingInvite()} disabled={busy} />
+            <Action styles={styles} title={busy ? 'Please wait…' : 'Accept'} onPress={() => void acceptPendingInvite()} disabled={busy} />
           </View>
         ) : null}
 
-        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action title="View monthly membership" onPress={() => void showPaymentOffer(approvedPending)} disabled={busy} /></View> : null}</View> : null}
+        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title="View monthly membership" onPress={() => void showPaymentOffer(approvedPending)} disabled={busy} /></View> : null}</View> : null}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Chats</Text>
@@ -173,7 +178,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No chats yet</Text>
               <Text style={styles.emptyText}>Start a conversation and share the private invitation link with the other person.</Text>
-              <Action title="Start a chat" onPress={() => void makeInvite()} disabled={busy} />
+              <Action styles={styles} title="Start a chat" onPress={() => void makeInvite()} disabled={busy} />
             </View>
           ) : null}
         </View>
@@ -181,13 +186,25 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
         <View style={styles.tools}>
           <Text style={styles.sectionTitle}>Quiet controls</Text>
           <Text style={styles.toolHelp}>Choose when messages may appear. TalkTwo does not treat every message like a fire alarm.</Text>
-          <Action title="Message windows" onPress={() => setShowWindows(true)} quiet />
-          <Action title="Check waiting messages" onPress={() => void checkWaiting()} disabled={busy} quiet />
+          <Action styles={styles} title="Message windows" onPress={() => setShowWindows(true)} quiet />
+          <Action styles={styles} title="Check waiting messages" onPress={() => void checkWaiting()} disabled={busy} quiet />
+        </View>
+
+        <View style={styles.tools}>
+          <Text style={styles.sectionTitle}>Appearance</Text>
+          <Text style={styles.toolHelp}>Choose light, dark, or follow your phone. Current appearance: {resolved}.</Text>
+          <View style={styles.appearanceRow}>
+            {appearanceOptions.map((option) => (
+              <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ selected: mode === option }} onPress={() => void setMode(option)} style={[styles.appearanceChip, mode === option && styles.appearanceChipSelected]}>
+                <Text style={[styles.appearanceChipText, mode === option && styles.appearanceChipTextSelected]}>{option[0]?.toUpperCase()}{option.slice(1)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.tools}>
           <Text style={styles.sectionTitle}>TalkTwo</Text>
-          <Action title="Send feedback" onPress={() => setShowFeedback(true)} quiet />
+          <Action styles={styles} title="Send feedback" onPress={() => setShowFeedback(true)} quiet />
           <Text style={styles.privacy}>No profile photos. No contacts, camera, microphone or location access. Chat appearance is stored only on this device.</Text>
         </View>
       </ScrollView>
@@ -195,42 +212,49 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F7F7F4' },
-  container: { paddingBottom: 42 },
-  header: { minHeight: 78, paddingHorizontal: 18, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFFFFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DDDDD7' },
-  headerText: { flex: 1, minWidth: 0 },
-  brand: { fontSize: 28, fontWeight: '800', color: '#173F34', flexShrink: 1 },
-  account: { marginTop: 2, color: '#777771', fontSize: 12, flexShrink: 1 },
-  headerButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4, flexShrink: 0 },
-  headerButtonText: { fontWeight: '700', color: '#4E5E58' },
-  invitationBanner: { margin: 14, padding: 14, backgroundColor: '#E4F0E9', borderRadius: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
-  bannerText: { flex: 1, minWidth: 190 },
-  bannerTitle: { fontWeight: '800', color: '#173F34', fontSize: 16, flexShrink: 1 },
-  bannerHelp: { marginTop: 4, color: '#56615D', lineHeight: 18, flexShrink: 1 },
-  pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: '#F2E9D6', padding: 12, gap: 10 },
-  pendingNoticeText: { color: '#665B43', lineHeight: 19, flexShrink: 1 },
-  pendingAction: { alignSelf: 'stretch' },
-  sectionHeader: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#202020', flexShrink: 1 },
-  newChat: { color: '#1E6A52', fontWeight: '800', paddingVertical: 10 },
-  chatList: { backgroundColor: '#FFFFFF', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#DEDED8' },
-  chatRow: { minHeight: 72, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5DF' },
-  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#DFE8E2', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  avatarText: { color: '#315245', fontWeight: '800', fontSize: 15 },
-  chatText: { flex: 1, minWidth: 0 },
-  chatTitle: { color: '#191919', fontWeight: '700', fontSize: 16, lineHeight: 21, flexShrink: 1 },
-  chatSubtitle: { color: '#777771', marginTop: 3, fontSize: 13, flexShrink: 1 },
-  chevron: { color: '#8A8A84', fontSize: 28, lineHeight: 32, flexShrink: 0 },
-  empty: { padding: 22, gap: 10, alignItems: 'stretch' },
-  emptyTitle: { textAlign: 'center', fontWeight: '800', fontSize: 17, color: '#242424' },
-  emptyText: { textAlign: 'center', color: '#70706A', lineHeight: 20 },
-  tools: { marginTop: 16, marginHorizontal: 14, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: '#DEDED8' },
-  toolHelp: { color: '#70706A', lineHeight: 20, flexShrink: 1 },
-  privacy: { color: '#7B7B75', fontSize: 12, lineHeight: 17, flexShrink: 1 },
-  action: { minHeight: 44, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1E5A48', flexShrink: 0 },
-  quietAction: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D2D2CC' },
-  actionText: { color: '#FFFFFF', fontWeight: '800', textAlign: 'center', flexShrink: 1 },
-  quietActionText: { color: '#292929' },
-  disabled: { opacity: 0.4 },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: colors.background },
+    container: { paddingBottom: 42 },
+    header: { minHeight: 78, paddingHorizontal: 18, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    headerText: { flex: 1, minWidth: 0 },
+    brand: { fontSize: 28, fontWeight: '800', color: colors.brand, flexShrink: 1 },
+    account: { marginTop: 2, color: colors.subtle, fontSize: 12, flexShrink: 1 },
+    headerButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4, flexShrink: 0 },
+    headerButtonText: { fontWeight: '700', color: colors.muted },
+    invitationBanner: { margin: 14, padding: 14, backgroundColor: colors.invite, borderRadius: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
+    bannerText: { flex: 1, minWidth: 190 },
+    bannerTitle: { fontWeight: '800', color: colors.inviteText, fontSize: 16, flexShrink: 1 },
+    bannerHelp: { marginTop: 4, color: colors.muted, lineHeight: 18, flexShrink: 1 },
+    pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: colors.notice, padding: 12, gap: 10 },
+    pendingNoticeText: { color: colors.noticeText, lineHeight: 19, flexShrink: 1 },
+    pendingAction: { alignSelf: 'stretch' },
+    sectionHeader: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+    sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text, flexShrink: 1 },
+    newChat: { color: colors.accent, fontWeight: '800', paddingVertical: 10 },
+    chatList: { backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    chatRow: { minHeight: 72, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: colors.avatar, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+    avatarText: { color: colors.avatarText, fontWeight: '800', fontSize: 15 },
+    chatText: { flex: 1, minWidth: 0 },
+    chatTitle: { color: colors.text, fontWeight: '700', fontSize: 16, lineHeight: 21, flexShrink: 1 },
+    chatSubtitle: { color: colors.subtle, marginTop: 3, fontSize: 13, flexShrink: 1 },
+    chevron: { color: colors.subtle, fontSize: 28, lineHeight: 32, flexShrink: 0 },
+    empty: { padding: 22, gap: 10, alignItems: 'stretch' },
+    emptyTitle: { textAlign: 'center', fontWeight: '800', fontSize: 17, color: colors.text },
+    emptyText: { textAlign: 'center', color: colors.muted, lineHeight: 20 },
+    tools: { marginTop: 16, marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    toolHelp: { color: colors.muted, lineHeight: 20, flexShrink: 1 },
+    privacy: { color: colors.subtle, fontSize: 12, lineHeight: 17, flexShrink: 1 },
+    action: { minHeight: 44, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentStrong, flexShrink: 0 },
+    quietAction: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
+    actionText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    quietActionText: { color: colors.text },
+    disabled: { opacity: 0.4 },
+    appearanceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    appearanceChip: { minHeight: 42, minWidth: 82, flexGrow: 1, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: colors.surfaceSoft },
+    appearanceChipSelected: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
+    appearanceChipText: { color: colors.text, fontWeight: '800' },
+    appearanceChipTextSelected: { color: colors.accentText },
+  });
+}

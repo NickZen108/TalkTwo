@@ -266,6 +266,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       <ChatSettingsScreen
         relationship={relationship}
         session={session}
+        exportMessages={messages}
         onPurchasePremium={onPurchasePremium}
         storePurchaseBusy={storePurchaseBusy}
         onBack={() => {

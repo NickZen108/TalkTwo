@@ -7,6 +7,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "plugins": [
+      "expo-iap",
       [
         "expo-sqlite",
         {

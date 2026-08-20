@@ -6,6 +6,7 @@ import { acceptInvitation, createInvitation, listRelationships, type Relationshi
 import { releaseWaitingMessages } from '../services/windows';
 import ChatScreen from './ChatScreen';
 import MessageWindowsScreen from './MessageWindowsScreen';
+import FeedbackScreen from './FeedbackScreen';
 
 function Button({ title, onPress, disabled = false, secondary = false }: { title: string; onPress: () => void; disabled?: boolean; secondary?: boolean }) {
   return <TouchableOpacity disabled={disabled} onPress={onPress} style={[styles.button, secondary && styles.secondary, disabled && styles.disabled]}><Text style={[styles.buttonText, secondary && styles.secondaryText]}>{title}</Text></TouchableOpacity>;
@@ -17,6 +18,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<RelationshipSummary | null>(null);
   const [showWindows, setShowWindows] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   async function refreshRelationships() {
     try { setRelationships(await listRelationships()); }
@@ -62,6 +64,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
 
   if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => setSelected(null)} />;
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
+  if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -96,6 +99,12 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
           <Text style={styles.premiumTitle}>Premium</Text>
           <Text style={styles.premiumText}>AI review, calm rewrites, Coach, longer messages, Personal Boundaries and PDF export will sit on top of the same communication rules.</Text>
           <View style={styles.greyFeature}><Text style={styles.greyTitle}>Personal Boundaries</Text><Text style={styles.greyText}>Choose words you do not want to receive. Premium only.</Text></View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.title}>Help improve TalkTwo</Text>
+          <Text style={styles.help}>Found something irritating, confusing or genuinely clever we should steal from your brain?</Text>
+          <Button title="Send feedback" onPress={() => setShowFeedback(true)} secondary />
         </View>
       </ScrollView>
     </SafeAreaView>

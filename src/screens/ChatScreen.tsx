@@ -8,11 +8,13 @@ import { editUnopenedMessage, listMessages, openMessage, rejectMessageWithoutOpe
 import { analyzePremiumMessage, getMyPlan, startPremiumTrial, type AiReview, type UserPlan } from '../services/premium';
 import { listRelationshipMembers, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { getPartnerWindows } from '../services/windows';
+import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import ChatSettingsScreen from './ChatSettingsScreen';
 
 const MAX_PREMIUM_LENGTH = 480;
 
 type MemberLook = { name: string; bubble: BubbleThemeName };
+type ChatStyles = ReturnType<typeof makeStyles>;
 
 function isPremiumActive(plan: UserPlan | null) {
   if (!plan) return false;
@@ -40,16 +42,16 @@ function dateLabel(value: string) {
   });
 }
 
-function PatternBackdrop({ theme }: { theme: BackgroundThemeName }) {
+function PatternBackdrop({ theme, styles, dotColor }: { theme: BackgroundThemeName; styles: ChatStyles; dotColor: string }) {
   if (BACKGROUND_THEMES[theme].pattern !== 'dots') return null;
   return (
     <View pointerEvents="none" style={styles.pattern}>
-      {Array.from({ length: 54 }, (_, index) => <View key={index} style={styles.patternDot} />)}
+      {Array.from({ length: 54 }, (_, index) => <View key={index} style={[styles.patternDot, { backgroundColor: dotColor }]} />)}
     </View>
   );
 }
 
-function CompactButton({ title, onPress, disabled = false, secondary = false }: { title: string; onPress: () => void; disabled?: boolean; secondary?: boolean }) {
+function CompactButton({ title, onPress, styles, disabled = false, secondary = false }: { title: string; onPress: () => void; styles: ChatStyles; disabled?: boolean; secondary?: boolean }) {
   return (
     <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.compactButton, secondary && styles.compactSecondary, disabled && styles.disabled]}>
       <Text style={[styles.compactButtonText, secondary && styles.compactSecondaryText]}>{title}</Text>
@@ -58,6 +60,8 @@ function CompactButton({ title, onPress, disabled = false, secondary = false }: 
 }
 
 export default function ChatScreen({ relationship, session, onBack }: { relationship: RelationshipSummary; session: Session; onBack: () => void }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [members, setMembers] = useState<RelationshipMember[]>([]);
@@ -267,6 +271,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
 
   const firstProblem = !premiumAi ? freeResult.reasons[0] : null;
   const backgroundColor = BACKGROUND_THEMES[background].background;
+  const chatTextColor = textColorForBackground(backgroundColor);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -293,7 +298,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
         {trialFallback ? <View style={styles.infoStrip}><Text style={styles.infoText}>Daily trial AI allowance used · Free filter active</Text></View> : null}
 
         <View style={[styles.chatArea, { backgroundColor }]}>
-          <PatternBackdrop theme={background} />
+          <PatternBackdrop theme={background} styles={styles} dotColor={chatTextColor} />
           <FlatList
             data={messages}
             keyExtractor={(item) => item.sender_id === session.user.id ? item.logical_id : item.id}
@@ -302,6 +307,8 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
             refreshControl={(
               <RefreshControl
                 refreshing={refreshing}
+                tintColor={colors.accent}
+                colors={[colors.accent]}
                 onRefresh={() => {
                   setRefreshing(true);
                   void refreshAll().catch(() => undefined).finally(() => setRefreshing(false));
@@ -336,8 +343,8 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
                           <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? 'Potentially sensitive message' : 'New message'}</Text>
                           <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? 'TalkTwo marked this as potentially conflict-escalating.' : 'The text stays hidden until you choose to open it.'}</Text>
                           <View style={styles.bubbleActions}>
-                            <CompactButton title="Open" onPress={() => void openIncoming(item)} secondary />
-                            {item.risk_level === 'yellow' ? <CompactButton title="Reject unread" onPress={() => void rejectIncoming(item)} secondary /> : null}
+                            <CompactButton styles={styles} title="Open" onPress={() => void openIncoming(item)} secondary />
+                            {item.risk_level === 'yellow' ? <CompactButton styles={styles} title="Reject unread" onPress={() => void rejectIncoming(item)} secondary /> : null}
                           </View>
                         </>
                       ) : (
@@ -366,8 +373,8 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
             }}
             ListEmptyComponent={(
               <View style={styles.emptyChat}>
-                <Text style={styles.emptyChatTitle}>A quieter place to talk</Text>
-                <Text style={styles.emptyChatText}>{relationship.my_role === 'observer' ? 'You are a read-only observer. You will see new messages from the time you were approved.' : 'Keep messages practical: facts, requests, agreements and necessary information.'}</Text>
+                <Text style={[styles.emptyChatTitle, { color: chatTextColor }]}>A quieter place to talk</Text>
+                <Text style={[styles.emptyChatText, { color: chatTextColor }]}>{relationship.my_role === 'observer' ? 'You are a read-only observer. You will see new messages from the time you were approved.' : 'Keep messages practical: facts, requests, agreements and necessary information.'}</Text>
               </View>
             )}
           />
@@ -402,7 +409,7 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
             ) : null}
             <View style={styles.composerRow}>
               <View style={styles.inputShell}>
-                <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder="Message" placeholderTextColor="#85857F" style={styles.input} accessibilityLabel="Message" />
+                <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder="Message" placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel="Message" />
                 <View style={styles.counterRow}>
                   <Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text>
                   <Text style={styles.filterLabel}>{premiumAi ? 'AI review' : 'Free filter'}</Text>
@@ -427,76 +434,78 @@ export default function ChatScreen({ relationship, session, onBack }: { relation
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  flex: { flex: 1 },
-  header: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingVertical: 7, backgroundColor: '#FFFFFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DADAD4' },
-  headerIcon: { width: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  back: { fontSize: 36, lineHeight: 40, color: '#173F34' },
-  settingsGlyph: { fontSize: 20, color: '#36584D', letterSpacing: 1 },
-  headerAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DFE8E2', flexShrink: 0 },
-  headerAvatarText: { fontSize: 13, color: '#315245', fontWeight: '800' },
-  headerText: { flex: 1, minWidth: 0 },
-  headerTitle: { fontWeight: '800', fontSize: 16, color: '#191919', flexShrink: 1 },
-  headerSubtitle: { marginTop: 2, color: '#74746F', fontSize: 12, flexShrink: 1 },
-  trialStrip: { minHeight: 38, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EDF4F0', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D5E1DA' },
-  trialText: { color: '#1E654F', fontWeight: '700', textAlign: 'center', flexShrink: 1 },
-  infoStrip: { paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#F2E9D6' },
-  infoText: { color: '#695D42', textAlign: 'center', fontSize: 12, flexShrink: 1 },
-  chatArea: { flex: 1, overflow: 'hidden' },
-  pattern: { ...StyleSheet.absoluteFill, flexDirection: 'row', flexWrap: 'wrap', gap: 28, padding: 20, opacity: 0.16 },
-  patternDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#66706A' },
-  messageContent: { paddingHorizontal: 10, paddingTop: 12, paddingBottom: 16, flexGrow: 1 },
-  datePill: { alignSelf: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.86)', marginVertical: 8 },
-  datePillText: { fontSize: 11, color: '#686863', fontWeight: '700' },
-  messageRow: { width: '100%', marginVertical: 3, flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
-  messageRowMine: { justifyContent: 'flex-end' },
-  messageRowTheirs: { justifyContent: 'flex-start' },
-  smallAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', flexShrink: 0, borderWidth: StyleSheet.hairlineWidth, borderColor: '#D1D1CA' },
-  smallAvatarText: { fontSize: 9, fontWeight: '800', color: '#525750' },
-  bubble: { maxWidth: '82%', minWidth: 88, borderRadius: 16, paddingHorizontal: 11, paddingTop: 8, paddingBottom: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' },
-  bubbleMine: { borderBottomRightRadius: 5 },
-  bubbleTheirs: { borderBottomLeftRadius: 5 },
-  senderName: { fontSize: 11, fontWeight: '800', opacity: 0.74, marginBottom: 3, flexShrink: 1 },
-  messageText: { fontSize: 16, lineHeight: 21, flexShrink: 1 },
-  blockedTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', marginBottom: 3, flexShrink: 1 },
-  bubbleActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  compactButton: { minHeight: 36, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center', backgroundColor: '#1E5A48' },
-  compactSecondary: { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.18)' },
-  compactButtonText: { fontSize: 12, color: '#FFFFFF', fontWeight: '800', textAlign: 'center', flexShrink: 1 },
-  compactSecondaryText: { color: '#242424' },
-  messageMetaRow: { alignItems: 'flex-end', marginTop: 4 },
-  messageMeta: { fontSize: 10, opacity: 0.58, flexShrink: 1 },
-  senderControls: { marginTop: 5, paddingTop: 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.10)', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  sentStatus: { fontSize: 10, opacity: 0.62, flexShrink: 1 },
-  inlineActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, flexShrink: 0 },
-  inlineAction: { fontSize: 11, fontWeight: '800', textDecorationLine: 'underline' },
-  emptyChat: { flex: 1, minHeight: 220, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 8 },
-  emptyChatTitle: { fontSize: 18, fontWeight: '800', color: '#3F4945', textAlign: 'center' },
-  emptyChatText: { color: '#6B716E', lineHeight: 20, textAlign: 'center', flexShrink: 1 },
-  composerWrap: { backgroundColor: '#FFFFFF', paddingHorizontal: 8, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 8 : 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8D8D2' },
-  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 },
-  inputShell: { flex: 1, minWidth: 0, borderRadius: 20, backgroundColor: '#F3F3F0', borderWidth: StyleSheet.hairlineWidth, borderColor: '#D4D4CE', paddingHorizontal: 12, paddingTop: 7, paddingBottom: 5 },
-  input: { minHeight: 28, maxHeight: 112, fontSize: 16, lineHeight: 21, color: '#171717', padding: 0, textAlignVertical: 'top' },
-  counterRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 3 },
-  counter: { color: '#85857F', fontSize: 10 },
-  counterDanger: { color: '#9C2E2E', fontWeight: '800' },
-  filterLabel: { color: '#85857F', fontSize: 10, flexShrink: 1 },
-  sendCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E6A52', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  reviewCircle: { backgroundColor: '#3C5E78' },
-  sendGlyph: { color: '#FFFFFF', fontSize: 19, fontWeight: '800' },
-  disabled: { opacity: 0.35 },
-  reviewStrip: { marginBottom: 6, borderRadius: 12, backgroundColor: '#F2F2EE', borderWidth: StyleSheet.hairlineWidth, borderColor: '#D4D4CE', padding: 9, flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
-  reviewGreen: { backgroundColor: '#EAF2EB' },
-  reviewYellow: { backgroundColor: '#F4EDDA' },
-  reviewRed: { backgroundColor: '#F3E5E5' },
-  reviewTextWrap: { flex: 1, minWidth: 160 },
-  reviewTitle: { fontSize: 12, fontWeight: '800', color: '#272727', flexShrink: 1 },
-  reviewReason: { marginTop: 2, fontSize: 11, lineHeight: 15, color: '#62625D', flexShrink: 1 },
-  rewrite: { fontSize: 12, fontWeight: '800', color: '#285F4D', textDecorationLine: 'underline', flexShrink: 0 },
-  editingStrip: { minHeight: 34, paddingHorizontal: 4, paddingBottom: 5, flexDirection: 'row', gap: 8, alignItems: 'center' },
-  editingText: { flex: 1, minWidth: 0, color: '#6D6D67', fontSize: 11, lineHeight: 15 },
-  cancelEdit: { color: '#8A3737', fontWeight: '800', fontSize: 12, flexShrink: 0 },
-  observerBar: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: '#F2F2EF', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8D8D2' },
-  observerText: { color: '#696963', fontWeight: '800', textAlign: 'center' },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: colors.surface },
+    flex: { flex: 1 },
+    header: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingVertical: 7, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    headerIcon: { width: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+    back: { fontSize: 36, lineHeight: 40, color: colors.brand },
+    settingsGlyph: { fontSize: 20, color: colors.muted, letterSpacing: 1 },
+    headerAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.avatar, flexShrink: 0 },
+    headerAvatarText: { fontSize: 13, color: colors.avatarText, fontWeight: '800' },
+    headerText: { flex: 1, minWidth: 0 },
+    headerTitle: { fontWeight: '800', fontSize: 16, color: colors.text, flexShrink: 1 },
+    headerSubtitle: { marginTop: 2, color: colors.subtle, fontSize: 12, flexShrink: 1 },
+    trialStrip: { minHeight: 38, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.invite, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    trialText: { color: colors.inviteText, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
+    infoStrip: { paddingHorizontal: 12, paddingVertical: 7, backgroundColor: colors.notice },
+    infoText: { color: colors.noticeText, textAlign: 'center', fontSize: 12, flexShrink: 1 },
+    chatArea: { flex: 1, overflow: 'hidden' },
+    pattern: { ...StyleSheet.absoluteFill, flexDirection: 'row', flexWrap: 'wrap', gap: 28, padding: 20, opacity: 0.13 },
+    patternDot: { width: 3, height: 3, borderRadius: 2 },
+    messageContent: { paddingHorizontal: 10, paddingTop: 12, paddingBottom: 16, flexGrow: 1 },
+    datePill: { alignSelf: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.surface, marginVertical: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    datePillText: { fontSize: 11, color: colors.muted, fontWeight: '700' },
+    messageRow: { width: '100%', marginVertical: 3, flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+    messageRowMine: { justifyContent: 'flex-end' },
+    messageRowTheirs: { justifyContent: 'flex-start' },
+    smallAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.avatar, alignItems: 'center', justifyContent: 'center', flexShrink: 0, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    smallAvatarText: { fontSize: 9, fontWeight: '800', color: colors.avatarText },
+    bubble: { maxWidth: '82%', minWidth: 88, borderRadius: 16, paddingHorizontal: 11, paddingTop: 8, paddingBottom: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' },
+    bubbleMine: { borderBottomRightRadius: 5 },
+    bubbleTheirs: { borderBottomLeftRadius: 5 },
+    senderName: { fontSize: 11, fontWeight: '800', opacity: 0.74, marginBottom: 3, flexShrink: 1 },
+    messageText: { fontSize: 16, lineHeight: 21, flexShrink: 1 },
+    blockedTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', marginBottom: 3, flexShrink: 1 },
+    bubbleActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+    compactButton: { minHeight: 36, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center', backgroundColor: colors.accentStrong },
+    compactSecondary: { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.18)' },
+    compactButtonText: { fontSize: 12, color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    compactSecondaryText: { color: '#242424' },
+    messageMetaRow: { alignItems: 'flex-end', marginTop: 4 },
+    messageMeta: { fontSize: 10, opacity: 0.58, flexShrink: 1 },
+    senderControls: { marginTop: 5, paddingTop: 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.10)', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    sentStatus: { fontSize: 10, opacity: 0.62, flexShrink: 1 },
+    inlineActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, flexShrink: 0 },
+    inlineAction: { fontSize: 11, fontWeight: '800', textDecorationLine: 'underline' },
+    emptyChat: { flex: 1, minHeight: 220, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 8 },
+    emptyChatTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
+    emptyChatText: { lineHeight: 20, textAlign: 'center', flexShrink: 1, opacity: 0.78 },
+    composerWrap: { backgroundColor: colors.surface, paddingHorizontal: 8, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 8 : 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 },
+    inputShell: { flex: 1, minWidth: 0, borderRadius: 20, backgroundColor: colors.surfaceSoft, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, paddingHorizontal: 12, paddingTop: 7, paddingBottom: 5 },
+    input: { minHeight: 28, maxHeight: 112, fontSize: 16, lineHeight: 21, color: colors.text, padding: 0, textAlignVertical: 'top' },
+    counterRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 3 },
+    counter: { color: colors.subtle, fontSize: 10 },
+    counterDanger: { color: colors.danger, fontWeight: '800' },
+    filterLabel: { color: colors.subtle, fontSize: 10, flexShrink: 1 },
+    sendCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accentStrong, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+    reviewCircle: { backgroundColor: colors.accent },
+    sendGlyph: { color: colors.accentText, fontSize: 19, fontWeight: '800' },
+    disabled: { opacity: 0.35 },
+    reviewStrip: { marginBottom: 6, borderRadius: 12, backgroundColor: colors.surfaceSoft, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, padding: 9, flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
+    reviewGreen: { backgroundColor: colors.reviewGreen },
+    reviewYellow: { backgroundColor: colors.reviewYellow },
+    reviewRed: { backgroundColor: colors.reviewRed },
+    reviewTextWrap: { flex: 1, minWidth: 160 },
+    reviewTitle: { fontSize: 12, fontWeight: '800', color: colors.reviewText, flexShrink: 1 },
+    reviewReason: { marginTop: 2, fontSize: 11, lineHeight: 15, color: colors.reviewMuted, flexShrink: 1 },
+    rewrite: { fontSize: 12, fontWeight: '800', color: colors.accent, textDecorationLine: 'underline', flexShrink: 0 },
+    editingStrip: { minHeight: 34, paddingHorizontal: 4, paddingBottom: 5, flexDirection: 'row', gap: 8, alignItems: 'center' },
+    editingText: { flex: 1, minWidth: 0, color: colors.muted, fontSize: 11, lineHeight: 15 },
+    cancelEdit: { color: colors.danger, fontWeight: '800', fontSize: 12, flexShrink: 0 },
+    observerBar: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: colors.surfaceSoft, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    observerText: { color: colors.muted, fontWeight: '800', textAlign: 'center' },
+  });
+}

@@ -67,6 +67,14 @@ export function appleAppAccountToken(decodedTransaction: unknown) {
   return text(record(decodedTransaction).appAccountToken);
 }
 
+export function assertCurrentAppleSubscription(decodedTransaction: unknown, now = Date.now()) {
+  const transaction = record(decodedTransaction);
+  const expiresAt = numberValue(transaction.expiresDate);
+  const revokedAt = numberValue(transaction.revocationDate);
+  if (revokedAt !== null) throw new Error('Apple purchase has been revoked.');
+  if (expiresAt === null || expiresAt <= now) throw new Error('Apple subscription is not active.');
+}
+
 export async function googleObfuscatedAccountId(userId: string) {
   return await sha256Hex(`talktwo:${userId}`);
 }
@@ -76,6 +84,18 @@ export function googleVerifiedAccountId(purchaseKind: 'subscription' | 'one_time
   return purchaseKind === 'subscription'
     ? text(record(purchase.externalAccountIdentifiers).obfuscatedExternalAccountId)
     : text(purchase.obfuscatedExternalAccountId);
+}
+
+export function assertCurrentGoogleSubscription(verifiedPurchase: unknown, now = Date.now()) {
+  const purchase = record(verifiedPurchase);
+  if (text(purchase.subscriptionState) !== 'SUBSCRIPTION_STATE_ACTIVE') {
+    throw new Error('Google subscription is not active.');
+  }
+  const lineItems = Array.isArray(purchase.lineItems) ? purchase.lineItems.map(record) : [];
+  if (lineItems.length !== 1) throw new Error('TalkTwo requires exactly one Google subscription line item.');
+  const expiry = text(lineItems[0]?.expiryTime);
+  const expiresAt = expiry ? new Date(expiry).valueOf() : Number.NaN;
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) throw new Error('Google subscription is not active.');
 }
 
 export function appleEventType(notificationType: unknown, subtype: unknown): StoreEventType {

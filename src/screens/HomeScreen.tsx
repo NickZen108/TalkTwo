@@ -3,6 +3,7 @@ import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TouchableOpac
 import type { Session } from '@supabase/supabase-js';
 import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
+import { useNativeStoreBilling } from '../hooks/useNativeStoreBilling';
 import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, installMyActiveMemberKeys, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { releaseWaitingMessages } from '../services/windows';
 import { useAppTheme, type AppColors, type AppearanceMode } from '../theme/AppTheme';
@@ -38,6 +39,20 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   const [selected, setSelected] = useState<RelationshipSummary | null>(null);
   const [showWindows, setShowWindows] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const storeBilling = useNativeStoreBilling(session.user.id, {
+    onError: (message) => Alert.alert('Store purchase unavailable', message),
+    onPurchaseVerified: async () => {
+      await refreshRelationships();
+      Alert.alert('Membership active', 'Your verified monthly membership is now active.');
+    },
+    onRestoreFinished: async (count) => {
+      await refreshRelationships();
+      Alert.alert(
+        count > 0 ? 'Purchases restored' : 'Nothing to restore',
+        count > 0 ? `${count} verified purchase${count === 1 ? '' : 's'} were linked to this TalkTwo account.` : 'No verified purchases linked to this TalkTwo account were found.',
+      );
+    },
+  });
 
   async function refreshRelationships() {
     const keyResult = await installMyActiveMemberKeys();
@@ -100,7 +115,17 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
       }
       Alert.alert(
         `${offer.price_dkk} kr/month`,
-        `${offer.role === 'observer' ? 'Read-only access' : 'Participant access with writing'} renews one month at a time. Annual prepayment is not available for extra members. Store billing is the next integration step; this development build will not charge you.`,
+        `${offer.role === 'observer' ? 'Read-only access' : 'Participant access with writing'} renews one month at a time. Annual prepayment is not available for extra members. Access starts only after the store purchase is verified by TalkTwo.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: 'Continue to store',
+            onPress: () => {
+              void storeBilling.purchaseExtraMember(item.invitation_id, offer.role)
+                .catch((error) => Alert.alert('Purchase could not start', error instanceof Error ? error.message : 'Please try again.'));
+            },
+          },
+        ],
       );
     } catch (error) {
       Alert.alert('Payment offer unavailable', error instanceof Error ? error.message : 'Please try again.');
@@ -153,7 +178,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
           </View>
         ) : null}
 
-        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title="View monthly membership" onPress={() => void showPaymentOffer(approvedPending)} disabled={busy} /></View> : null}</View> : null}
+        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'View monthly membership'} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
 
         {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>Encryption key needed on this device</Text><Text style={styles.securityText}>One or more chats are linked to your account, but this device no longer has the one-time secret needed to open their encrypted key envelope. TalkTwo will not ask the server to reveal the conversation key. Secure recovery sharing is being added before release.</Text></View> : null}
 
@@ -210,6 +235,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
 
         <View style={styles.tools}>
           <Text style={styles.sectionTitle}>TalkTwo</Text>
+          <Action styles={styles} title={storeBilling.processing ? 'Checking purchases…' : 'Restore purchases'} onPress={() => void storeBilling.restore().catch((error) => Alert.alert('Restore unavailable', error instanceof Error ? error.message : 'Please try again.'))} disabled={storeBilling.processing || !storeBilling.connected} quiet />
           <Action styles={styles} title="Send feedback" onPress={() => setShowFeedback(true)} quiet />
           <Text style={styles.privacy}>No profile photos. No contacts, camera, microphone or location access. Chat appearance is stored only on this device.</Text>
         </View>

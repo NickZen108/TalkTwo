@@ -25,6 +25,7 @@ This is the external-account work required before native purchases can be tested
 - Pub/Sub push authentication configured with `GOOGLE_PUBSUB_AUDIENCE` and `GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL`.
 - `GOOGLE_PACKAGE_NAME` configured as `com.talktwo.app`.
 - Play Billing client sets `obfuscatedAccountId` to SHA-256(`talktwo:<TalkTwo user UUID>`).
+- Each extra-member subscription product exposes exactly one eligible monthly Google Play offer; ambiguous offers fail closed in the client.
 - Internal testing track and licensed tester account available.
 
 ## Deployment gate
@@ -59,3 +60,4 @@ This is the external-account work required before native purchases can be tested
 13. Premium gift can be recovered after losing the original link.
 14. Restore purchases works after reinstall / new device.
 15. Dark mode purchase screens retain readable contrast.
+16. Restore refuses a valid store receipt that belongs to another TalkTwo account or has no existing verified TalkTwo ledger entry.

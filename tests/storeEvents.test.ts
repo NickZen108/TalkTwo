@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   appleEventType,
   appleAppAccountToken,
+  assertCurrentAppleSubscription,
+  assertCurrentGoogleSubscription,
   googleObfuscatedAccountId,
   googleVerifiedAccountId,
   normalizeAppleNotification,
@@ -11,6 +13,24 @@ import {
   parseGooglePubSubPush,
   storeEventRpcArgs,
 } from '../supabase/functions/_shared/storeEvents';
+
+test('initial subscription verification rejects expired or revoked receipts', () => {
+  assert.doesNotThrow(() => assertCurrentAppleSubscription(
+    { expiresDate: 2_000, revocationDate: null },
+    1_000,
+  ));
+  assert.throws(() => assertCurrentAppleSubscription({ expiresDate: 1_000 }, 1_000), /not active/i);
+  assert.throws(() => assertCurrentAppleSubscription({ expiresDate: 2_000, revocationDate: 900 }, 1_000), /revoked/i);
+
+  assert.doesNotThrow(() => assertCurrentGoogleSubscription({
+    subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+    lineItems: [{ expiryTime: '2030-01-01T00:00:00.000Z' }],
+  }, Date.parse('2029-01-01T00:00:00.000Z')));
+  assert.throws(() => assertCurrentGoogleSubscription({
+    subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED',
+    lineItems: [{ expiryTime: '2030-01-01T00:00:00.000Z' }],
+  }, Date.parse('2029-01-01T00:00:00.000Z')), /not active/i);
+});
 
 test('client purchase receipts remain bound to the authenticated account', async () => {
   assert.equal(appleAppAccountToken({ appAccountToken: 'user-123' }), 'user-123');

@@ -40,7 +40,7 @@ export default function AccountScreen({
       setPushEnabled(status.enabled);
       setPushPermission(status.permission);
     } catch (error) {
-      Alert.alert('Notifications', error instanceof Error ? error.message : 'Notification settings could not be changed.');
+      Alert.alert(t('account.notificationsError'), error instanceof Error ? error.message : t('account.notificationsErrorBody'));
     } finally {
       setPushBusy(false);
     }
@@ -52,24 +52,24 @@ export default function AccountScreen({
       await saveAccountLocalePreference(next, resolved);
       await setPreference(next);
     } catch (error) {
-      Alert.alert('Language', error instanceof Error ? error.message : t('common.tryAgain'));
+      Alert.alert(t('account.languageError'), error instanceof Error ? error.message : t('common.tryAgain'));
     }
   }
 
   function confirmDeletion() {
     if (!confirmed || deleting) return;
     Alert.alert(
-      'Permanently delete account?',
-      'This cannot be undone. Your TalkTwo account, memberships, settings and server-side message data involving your account will be deleted.',
+      t('account.confirmDeleteTitle'),
+      t('account.confirmDeleteBody'),
       [
-        { text: 'Keep account', style: 'cancel' },
+        { text: t('account.keep'), style: 'cancel' },
         {
-          text: 'Delete permanently',
+          text: t('account.deletePermanently'),
           style: 'destructive',
           onPress: () => {
             setDeleting(true);
             void deleteAccount(userId, relationshipIds)
-              .catch((error) => Alert.alert('Account deletion', error instanceof Error ? error.message : 'The account could not be deleted. Please try again.'))
+              .catch((error) => Alert.alert(t('account.deleteError'), error instanceof Error ? error.message : t('account.deleteErrorBody')))
               .finally(() => setDeleting(false));
           },
         },
@@ -104,7 +104,7 @@ export default function AccountScreen({
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{t('account.notificationsTitle')}</Text>
           <Text style={styles.body}>{t('account.notificationsBody')}</Text>
-          <Text style={styles.body}>{t('account.permission', { permission: pushPermission })}</Text>
+          <Text style={styles.body}>{t('account.permission', { permission: t(pushPermission === 'granted' ? 'account.permissionGranted' : pushPermission === 'denied' ? 'account.permissionDenied' : 'account.permissionUndetermined') })}</Text>
           <TouchableOpacity
             accessibilityRole="switch"
             accessibilityState={{ checked: pushEnabled, disabled: pushBusy }}
@@ -124,7 +124,7 @@ export default function AccountScreen({
           <Text style={styles.warning}>{t('account.deleteWarning')}</Text>
           <Text style={styles.label}>{t('account.deleteType', { confirmation: ACCOUNT_DELETE_CONFIRMATION })}</Text>
           <TextInput
-            accessibilityLabel={`Type ${ACCOUNT_DELETE_CONFIRMATION} to confirm account deletion`}
+            accessibilityLabel={t('account.deleteAccessibility', { confirmation: ACCOUNT_DELETE_CONFIRMATION })}
             autoCapitalize="characters"
             autoCorrect={false}
             editable={!deleting}

@@ -1,0 +1,8 @@
+[functions.apple-store-events]
+verify_jwt = false
+
+[functions.google-store-events]
+verify_jwt = false
+
+[functions.verify-store-purchase]
+verify_jwt = true

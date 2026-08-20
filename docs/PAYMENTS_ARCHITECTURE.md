@@ -24,6 +24,19 @@ Recommended release architecture:
 3. Web/PWA or direct Android distribution: a web payment provider such as Stripe can be used without Play/App Store billing restrictions.
 4. Premium gifts for another person should remain a backend entitlement keyed to the recipient's verified TalkTwo email. The gift must survive loss of a link. The payment rail may differ by storefront.
 
+## Verified store ingestion
+Three Supabase Edge Functions form the provider boundary:
+
+- `verify-store-purchase` accepts an authenticated client purchase, verifies it with Apple or Google, binds it to the authenticated TalkTwo account and completes the matching checkout intent.
+- `apple-store-events` verifies App Store Server Notification JWS payloads and the nested transaction JWS.
+- `google-store-events` verifies the Pub/Sub push JWT, then fetches the authoritative purchase from the Google Play Developer API.
+
+Every provider event is reduced to non-secret verified metadata and passed to the service-role-only `process_verified_store_notification` RPC. `store_notification_events` deduplicates Apple notification UUIDs and Google Pub/Sub message IDs before entitlement mutation. `store_purchase_events` independently deduplicates provider transaction IDs and rejects attempts to change immutable transaction ownership.
+
+Client purchase binding is mandatory. StoreKit purchases must set `appAccountToken` to the authenticated TalkTwo user UUID. Play Billing purchases must set `obfuscatedAccountId` to the lowercase hex SHA-256 of `talktwo:<TalkTwo user UUID>`. A verified receipt with a missing or different binding is rejected.
+
+The server-owned `store_product_catalog` is the only source for product price, currency and billing-intent kind. The database rejects inactive/unknown products, intent mismatches and amount mismatches. Premium subscription lifecycle events intentionally fail closed until the recurring Premium entitlement model is implemented.
+
 ## Payment completion
 A provider webhook/server notification must be the source of truth. After provider verification, backend code completes the matching billing intent.
 
@@ -56,6 +69,7 @@ Renewal notifications update the account boundary and only extend chats that sti
 - Never trust price, role, duration, recipient or entitlement information supplied by the client when a server can derive it.
 - Never complete an entitlement from a client callback alone.
 - Verify provider signatures/server notifications.
-- Make completion idempotent.
-- Keep provider secrets out of the app bundle and repository.
+- Bind every initial purchase to the authenticated TalkTwo account.
+- Make completion idempotent at both notification and transaction level.
+- Keep provider secrets and raw purchase tokens out of logs and repository.
 - Do not expose service-role payment-completion RPCs to anonymous or authenticated client roles.

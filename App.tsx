@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, SafeAreaView, StyleSheet, Text } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './src/lib/supabase';
 import { createSessionFromMagicLink } from './src/services/auth';
@@ -8,7 +8,10 @@ import { storePendingInviteKey } from './src/services/threadKeys';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 
-const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v2';
+const PENDING_INVITE_KEY = 'talktwo.pendingInvite.v3';
+const secureOptions: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
 
 export interface PendingInvite {
   kind: 'invite' | 'member';
@@ -35,7 +38,9 @@ function parseStoredInvite(value: string | null): PendingInvite | null {
     if ((parsed.kind === 'invite' || parsed.kind === 'member') && typeof parsed.token === 'string' && parsed.token) {
       return { kind: parsed.kind, token: parsed.token };
     }
-  } catch { /* Ignore obsolete or damaged local state. */ }
+  } catch {
+    // Damaged secure state is ignored rather than copied to less-protected storage.
+  }
   return null;
 }
 
@@ -48,9 +53,8 @@ export default function App() {
     let mounted = true;
 
     async function savePendingInvite(invite: PendingInvite) {
-      setPendingInvite(invite);
-      try { await AsyncStorage.setItem(PENDING_INVITE_KEY, JSON.stringify(invite)); }
-      catch { /* The in-memory invitation still works for this session. */ }
+      await SecureStore.setItemAsync(PENDING_INVITE_KEY, JSON.stringify(invite), secureOptions);
+      if (mounted) setPendingInvite(invite);
     }
 
     async function handleUrl(url: string | null) {
@@ -81,7 +85,7 @@ export default function App() {
     void (async () => {
       const [{ data }, storedInvite, initialUrl] = await Promise.all([
         supabase.auth.getSession(),
-        AsyncStorage.getItem(PENDING_INVITE_KEY).catch(() => null),
+        SecureStore.getItemAsync(PENDING_INVITE_KEY, secureOptions).catch(() => null),
         Linking.getInitialURL(),
       ]);
       if (!mounted) return;
@@ -104,7 +108,7 @@ export default function App() {
 
   function clearPendingInvite() {
     setPendingInvite(null);
-    void AsyncStorage.removeItem(PENDING_INVITE_KEY).catch(() => undefined);
+    void SecureStore.deleteItemAsync(PENDING_INVITE_KEY, secureOptions).catch(() => undefined);
   }
 
   if (loading) {

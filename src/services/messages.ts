@@ -5,7 +5,7 @@ export interface ChatMessage {
   relationship_id: string;
   sender_id: string;
   recipient_id: string;
-  body: string;
+  body: string | null;
   risk_level: 'green' | 'yellow';
   created_at: string;
   available_at: string;
@@ -18,12 +18,9 @@ export interface ChatMessage {
 }
 
 export async function listMessages(relationshipId: string) {
-  const { data, error } = await supabase
-    .from('messages')
-    .select('id,relationship_id,sender_id,recipient_id,body,risk_level,created_at,available_at,delivered_at,opened_at,withdrawn_at,edited_at,rejected_at,reject_reason')
-    .eq('relationship_id', relationshipId)
-    .is('withdrawn_at', null)
-    .order('created_at', { ascending: true });
+  const { data, error } = await supabase.rpc('list_relationship_messages', {
+    rel_id: relationshipId,
+  });
   if (error) throw error;
   return (data ?? []) as ChatMessage[];
 }

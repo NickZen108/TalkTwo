@@ -11,6 +11,10 @@ function defaultDraft(day: number): Draft {
   return { enabled: !weekend, start: '08:00', end: '18:00' };
 }
 
+function initialDrafts(): Record<number, Draft> {
+  return Object.fromEntries(DAYS.map((_, day) => [day, defaultDraft(day)])) as Record<number, Draft>;
+}
+
 function normalizeTime(value: string) {
   const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
@@ -22,7 +26,7 @@ function normalizeTime(value: string) {
 
 export default function MessageWindowsScreen({ onBack }: { onBack: () => void }) {
   const [timezone, setTimezone] = useState('UTC');
-  const [drafts, setDrafts] = useState<Record<number, Draft>>(() => Object.fromEntries(DAYS.map((_, day) => [day, defaultDraft(day)])));
+  const [drafts, setDrafts] = useState<Record<number, Draft>>(initialDrafts);
   const [busyDay, setBusyDay] = useState<number | null>(null);
   const [timezoneBusy, setTimezoneBusy] = useState(false);
 
@@ -35,7 +39,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
         setTimezone(chosen);
         if (chosen !== storedTimezone) await setMyTimezone(chosen);
 
-        const next = Object.fromEntries(DAYS.map((_, day) => [day, defaultDraft(day)])) as Record<number, Draft>;
+        const next = initialDrafts();
         for (const row of windows as MessageWindow[]) {
           next[row.weekday] = {
             enabled: row.enabled,
@@ -51,7 +55,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
   }, []);
 
   async function saveDay(day: number) {
-    const draft = drafts[day];
+    const draft = drafts[day] ?? defaultDraft(day);
     const start = normalizeTime(draft.start);
     const end = normalizeTime(draft.end);
     if (!start || !end) {
@@ -73,7 +77,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
       setTimezoneBusy(true);
       const saved = await setMyTimezone(timezone);
       setTimezone(saved);
-      Alert.alert('Timezone saved', 'Connected people will see when your message windows occur in their local time.');
+      Alert.alert('Timezone saved', 'TalkTwo will use this timezone when deciding when waiting messages become available.');
     } catch (error) {
       Alert.alert('Could not save timezone', error instanceof Error ? error.message : 'Please check the timezone name.');
     } finally {
@@ -103,18 +107,18 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
           <Text style={styles.help}>Messages can be sent at any time, but they stay hidden until one of your open windows begins. You can still check waiting messages whenever you choose.</Text>
 
           {DAYS.map((name, day) => {
-            const draft = drafts[day];
+            const draft = drafts[day] ?? defaultDraft(day);
             return (
               <View key={name} style={styles.dayRow}>
                 <View style={styles.dayHeader}>
                   <Text style={styles.dayName}>{name}</Text>
-                  <Switch value={draft.enabled} onValueChange={(enabled) => setDrafts((old) => ({ ...old, [day]: { ...old[day], enabled } }))} />
+                  <Switch value={draft.enabled} onValueChange={(enabled) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), enabled } }))} />
                 </View>
                 {draft.enabled ? (
                   <View style={styles.timeRow}>
-                    <TextInput value={draft.start} onChangeText={(start) => setDrafts((old) => ({ ...old, [day]: { ...old[day], start } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" />
+                    <TextInput value={draft.start} onChangeText={(start) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), start } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" />
                     <Text style={styles.to}>to</Text>
-                    <TextInput value={draft.end} onChangeText={(end) => setDrafts((old) => ({ ...old, [day]: { ...old[day], end } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" />
+                    <TextInput value={draft.end} onChangeText={(end) => setDrafts((old) => ({ ...old, [day]: { ...(old[day] ?? defaultDraft(day)), end } }))} style={styles.timeInput} keyboardType="numbers-and-punctuation" />
                   </View>
                 ) : <Text style={styles.closed}>Closed</Text>}
                 <TouchableOpacity onPress={() => void saveDay(day)} disabled={busyDay === day} style={styles.saveDay}>

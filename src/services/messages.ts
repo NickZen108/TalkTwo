@@ -14,15 +14,15 @@ export interface ChatMessage {
   withdrawn_at: string | null;
   edited_at: string | null;
   rejected_at: string | null;
+  reject_reason: string | null;
 }
 
 export async function listMessages(relationshipId: string) {
   const { data, error } = await supabase
     .from('messages')
-    .select('id,relationship_id,sender_id,recipient_id,body,risk_level,created_at,available_at,delivered_at,opened_at,withdrawn_at,edited_at,rejected_at')
+    .select('id,relationship_id,sender_id,recipient_id,body,risk_level,created_at,available_at,delivered_at,opened_at,withdrawn_at,edited_at,rejected_at,reject_reason')
     .eq('relationship_id', relationshipId)
     .is('withdrawn_at', null)
-    .is('rejected_at', null)
     .order('created_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as ChatMessage[];
@@ -41,6 +41,12 @@ export async function openMessage(messageId: string) {
   const { data, error } = await supabase.rpc('open_message', { message_id: messageId });
   if (error) throw error;
   return data as ChatMessage;
+}
+
+export async function rejectMessageWithoutOpening(messageId: string) {
+  const { data, error } = await supabase.rpc('reject_message_without_opening', { message_id: messageId });
+  if (error) throw error;
+  return Boolean(data);
 }
 
 export async function withdrawMessage(messageId: string) {

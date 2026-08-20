@@ -179,8 +179,8 @@ function AppContent() {
         }
 
         const gifts = await listMyPendingPremiumGifts();
-        if (cancelled || gifts.length === 0) return;
         const gift = gifts[0];
+        if (cancelled || !gift) return;
         setGiftPrompted(true);
         Alert.alert('Premium gift waiting', 'A paid Premium gift was found for your signed-in email. You do not need the original link.', [
           { text: 'Later', style: 'cancel' },

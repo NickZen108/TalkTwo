@@ -12,7 +12,11 @@ import FeedbackScreen from './FeedbackScreen';
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 
 function Action({ title, onPress, disabled = false, quiet = false }: { title: string; onPress: () => void; disabled?: boolean; quiet?: boolean }) {
-  return <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.action, quiet && styles.quietAction, disabled && styles.disabled]}><Text style={[styles.actionText, quiet && styles.quietActionText]}>{title}</Text></TouchableOpacity>;
+  return (
+    <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.action, quiet && styles.quietAction, disabled && styles.disabled]}>
+      <Text style={[styles.actionText, quiet && styles.quietActionText]}>{title}</Text>
+    </TouchableOpacity>
+  );
 }
 
 function conversationTitle(members: RelationshipMember[], me: string) {
@@ -39,7 +43,9 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     setMembers(Object.fromEntries(memberPairs));
   }
 
-  useEffect(() => { void refreshRelationships().catch((error) => Alert.alert('Could not load chats', error instanceof Error ? error.message : 'Please try again.')); }, []);
+  useEffect(() => {
+    void refreshRelationships().catch((error) => Alert.alert('Could not load chats', error instanceof Error ? error.message : 'Please try again.'));
+  }, []);
 
   async function makeInvite() {
     try {
@@ -49,7 +55,9 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
       await refreshRelationships();
     } catch (error) {
       Alert.alert('Could not create invitation', error instanceof Error ? error.message : 'Please try again.');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function acceptPendingInvite() {
@@ -71,7 +79,9 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
       }
     } catch (error) {
       Alert.alert('Invitation not accepted', error instanceof Error ? error.message : 'Ask the sender for a new invitation.');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function checkWaiting() {
@@ -81,7 +91,9 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
       Alert.alert(count > 0 ? 'Waiting messages released' : 'Nothing waiting', count > 0 ? `${count} message${count === 1 ? '' : 's'} can now appear in your chats.` : 'There are no messages waiting outside your current message windows.');
     } catch (error) {
       Alert.alert('Could not check waiting messages', error instanceof Error ? error.message : 'Please try again.');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   const pendingText = useMemo(() => pendingMemberships.some((item) => item.status === 'awaiting_seat')
@@ -96,18 +108,29 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <View style={styles.headerText}><Text style={styles.brand}>TalkTwo</Text><Text numberOfLines={1} style={styles.account}>{session.user.email}</Text></View>
+          <View style={styles.headerText}>
+            <Text style={styles.brand}>TalkTwo</Text>
+            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.account}>{session.user.email}</Text>
+          </View>
           <TouchableOpacity accessibilityRole="button" onPress={() => void signOut()} style={styles.headerButton}><Text style={styles.headerButtonText}>Sign out</Text></TouchableOpacity>
         </View>
 
-        {pendingInvite ? <View style={styles.invitationBanner}>
-          <View style={styles.bannerText}><Text style={styles.bannerTitle}>{pendingInvite.kind === 'member' ? 'Group invitation' : 'Conversation invitation'}</Text><Text style={styles.bannerHelp}>{pendingInvite.kind === 'member' ? 'Accepting only requests access. Everyone already in the chat must approve before you can see new messages.' : 'Accept to start this private TalkTwo chat.'}</Text></View>
-          <Action title={busy ? 'Please wait…' : 'Accept'} onPress={() => void acceptPendingInvite()} disabled={busy} />
-        </View> : null}
+        {pendingInvite ? (
+          <View style={styles.invitationBanner}>
+            <View style={styles.bannerText}>
+              <Text style={styles.bannerTitle}>{pendingInvite.kind === 'member' ? 'Group invitation' : 'Conversation invitation'}</Text>
+              <Text style={styles.bannerHelp}>{pendingInvite.kind === 'member' ? 'Accepting only requests access. Everyone already in the chat must approve before you can see new messages.' : 'Accept to start this private TalkTwo chat.'}</Text>
+            </View>
+            <Action title={busy ? 'Please wait…' : 'Accept'} onPress={() => void acceptPendingInvite()} disabled={busy} />
+          </View>
+        ) : null}
 
         {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text></View> : null}
 
-        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Chats</Text><TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void makeInvite()}><Text style={styles.newChat}>New chat</Text></TouchableOpacity></View>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Chats</Text>
+          <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void makeInvite()}><Text style={styles.newChat}>New chat</Text></TouchableOpacity>
+        </View>
 
         <View style={styles.chatList}>
           {relationships.map((rel) => {
@@ -118,12 +141,21 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
             return (
               <TouchableOpacity accessibilityRole="button" key={rel.id} onPress={() => setSelected(rel)} style={styles.chatRow}>
                 <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
-                <View style={styles.chatText}><Text numberOfLines={2} style={styles.chatTitle}>{title}</Text><Text numberOfLines={1} style={styles.chatSubtitle}>{subtitle}</Text></View>
+                <View style={styles.chatText}>
+                  <Text numberOfLines={2} ellipsizeMode="tail" style={styles.chatTitle}>{title}</Text>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{subtitle}</Text>
+                </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             );
           })}
-          {!relationships.length ? <View style={styles.empty}><Text style={styles.emptyTitle}>No chats yet</Text><Text style={styles.emptyText}>Start a conversation and share the private invitation link with the other person.</Text><Action title="Start a chat" onPress={() => void makeInvite()} disabled={busy} /></View> : null}
+          {!relationships.length ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No chats yet</Text>
+              <Text style={styles.emptyText}>Start a conversation and share the private invitation link with the other person.</Text>
+              <Action title="Start a chat" onPress={() => void makeInvite()} disabled={busy} />
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.tools}>
@@ -152,8 +184,8 @@ const styles = StyleSheet.create({
   account: { marginTop: 2, color: '#777771', fontSize: 12, flexShrink: 1 },
   headerButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4, flexShrink: 0 },
   headerButtonText: { fontWeight: '700', color: '#4E5E58' },
-  invitationBanner: { margin: 14, padding: 14, backgroundColor: '#E4F0E9', borderRadius: 16, flexDirection: 'row', gap: 12, alignItems: 'center' },
-  bannerText: { flex: 1, minWidth: 0 },
+  invitationBanner: { margin: 14, padding: 14, backgroundColor: '#E4F0E9', borderRadius: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
+  bannerText: { flex: 1, minWidth: 190 },
   bannerTitle: { fontWeight: '800', color: '#173F34', fontSize: 16, flexShrink: 1 },
   bannerHelp: { marginTop: 4, color: '#56615D', lineHeight: 18, flexShrink: 1 },
   pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: '#F2E9D6', padding: 12 },
@@ -166,7 +198,7 @@ const styles = StyleSheet.create({
   avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#DFE8E2', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   avatarText: { color: '#315245', fontWeight: '800', fontSize: 15 },
   chatText: { flex: 1, minWidth: 0 },
-  chatTitle: { color: '#191919', fontWeight: '750', fontSize: 16, lineHeight: 21, flexShrink: 1 },
+  chatTitle: { color: '#191919', fontWeight: '700', fontSize: 16, lineHeight: 21, flexShrink: 1 },
   chatSubtitle: { color: '#777771', marginTop: 3, fontSize: 13, flexShrink: 1 },
   chevron: { color: '#8A8A84', fontSize: 28, lineHeight: 32, flexShrink: 0 },
   empty: { padding: 22, gap: 10, alignItems: 'stretch' },

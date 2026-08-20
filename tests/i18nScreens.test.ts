@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const windowsScreen = fs.readFileSync('src/screens/MessageWindowsScreen.tsx', 'utf8');
 const feedbackScreen = fs.readFileSync('src/screens/FeedbackScreen.tsx', 'utf8');
+const chatScreen = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
 
 test('message window copy and accessibility labels use the locale catalogue', () => {
   assert.match(windowsScreen, /const \{ t \} = useI18n\(\)/);
@@ -21,4 +22,14 @@ test('feedback categories, controls and alerts use the locale catalogue', () => 
   assert.match(feedbackScreen, /Alert\.alert\(t\('feedback\.thankYou'\), t\('feedback\.sent'\)\)/);
   assert.doesNotMatch(feedbackScreen, />Help improve TalkTwo</);
   assert.doesNotMatch(feedbackScreen, />Send feedback</);
+});
+
+test('chat actions, message states and dates use the locale catalogue', () => {
+  assert.match(chatScreen, /const \{ locale, t \} = useI18n\(\)/);
+  assert.match(chatScreen, /dateLabel\(item\.created_at, locale, t\('chat\.today'\), t\('chat\.yesterday'\)\)/);
+  assert.match(chatScreen, /accessibilityLabel=\{t\('chat\.attachDocument'\)\}/);
+  assert.match(chatScreen, /t\(isAttachment \? 'chat\.sensitiveDocument' : 'chat\.sensitiveMessage'\)/);
+  assert.doesNotMatch(chatScreen, />Try Premium AI review for 7 days</);
+  assert.doesNotMatch(chatScreen, />Observer · read only</);
+  assert.doesNotMatch(chatScreen, /accessibilityLabel="Send message"/);
 });

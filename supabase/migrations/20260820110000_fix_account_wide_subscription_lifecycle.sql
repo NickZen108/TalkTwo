@@ -9,8 +9,8 @@ create index if not exists relationship_member_subscriptions_provider_idx
   where provider_subscription_id is not null;
 
 create unique index if not exists extra_member_access_provider_subscription_uidx
-  on public.extra_member_access_subscriptions (payment_provider, provider_subscription_id)
-  where payment_provider is not null and provider_subscription_id is not null;
+  on public.extra_member_access_subscriptions (provider_subscription_id)
+  where provider_subscription_id is not null;
 
 create or replace function public.renew_extra_member_subscription(
   provider_subscription text,

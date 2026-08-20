@@ -8,20 +8,26 @@ const PROFANITY = [
 ];
 
 const GENERALISATIONS = [
-  'always', 'never', 'every time', 'constantly', 'again',
-  'altid', 'aldrig', 'hver gang', 'konstant', 'igen'
+  'always', 'never', 'every time', 'constantly',
+  'altid', 'aldrig', 'hver gang', 'konstant'
+];
+
+const FAULT_REMINDER_PATTERNS = [
+  /\b(?:late|forgot|failed|missed|wrong)\b.{0,20}\bagain\b/i,
+  /\bagain\b.{0,20}\b(?:late|forgot|failed|missed|wrong)\b/i,
+  /\b(?:for sent|forsinket|glemte|glemt|svigtede|forkert)\b.{0,20}\bigen\b/i,
+  /\bigen\b.{0,20}\b(?:for sent|forsinket|glemte|glemt|svigtede|forkert)\b/i,
 ];
 
 const CRITICISM_PATTERNS = [
-  /\byou are\b/i,
-  /\byou're\b/i,
   /\bwhy can(?:'|’)t you\b/i,
   /\bwhy do you always\b/i,
-  /\bdu er\b/i,
-  /\bhvorfor kan du ikke\b/i,
-  /\bhvorfor gør du altid\b/i,
   /\bdet er ikke okay at du\b/i,
   /\bjeg synes ikke det er okay at du\b/i,
+  /\bhvorfor kan du ikke\b/i,
+  /\bhvorfor gør du altid\b/i,
+  /\byou (?:are|were).{0,40}\b(?:late|wrong|selfish|irresponsible|rude|unreasonable|lazy|careless)\b/i,
+  /\bdu (?:er|var|kom).{0,40}\b(?:forsinket|for sent|forkert|egoistisk|uansvarlig|uhøflig|urimelig|doven|ligeglad)\b/i,
 ];
 
 const EMOTION_PATTERNS = [
@@ -94,10 +100,24 @@ export function evaluateFreeMessage(message: string): FilterResult {
       addReason(reasons, {
         code: 'generalisation',
         title: 'Remove the generalisation',
-        explanation: `“${phrase}” turns one situation into a broad judgment or reminder of past faults and can increase conflict.`,
+        explanation: `“${phrase}” turns one situation into a broad judgment and can increase conflict.`,
         suggestion: 'Describe only the specific practical situation that matters now.',
         matchedText: phrase,
       });
+    }
+  }
+
+  for (const pattern of FAULT_REMINDER_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) {
+      addReason(reasons, {
+        code: 'fault_reminder',
+        title: 'Remove the reminder of past faults',
+        explanation: 'Words such as “again” or “igen” are blocked when they are used to point out a repeated failure.',
+        suggestion: 'State only the practical situation that matters now.',
+        matchedText: match[0],
+      });
+      break;
     }
   }
 

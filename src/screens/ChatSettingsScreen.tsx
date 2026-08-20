@@ -3,9 +3,10 @@ import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, To
 import type { Session } from '@supabase/supabase-js';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
-import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
+import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
+import { useAppTheme, type AppColors } from '../theme/AppTheme';
 
-function Button({ title, onPress, secondary = false, danger = false, disabled = false }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean }) {
+function Button({ title, onPress, secondary = false, danger = false, disabled = false, styles }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean; styles: ReturnType<typeof makeStyles> }) {
   return (
     <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button, secondary && styles.secondaryButton, danger && styles.dangerButton, disabled && styles.disabled]}>
       <Text style={[styles.buttonText, secondary && styles.secondaryButtonText]}>{title}</Text>
@@ -24,6 +25,8 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
   onBack: () => void;
   onAppearanceChanged: () => void;
 }) {
+  const { colors, resolved } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [members, setMembers] = useState<RelationshipMember[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [background, setBackground] = useState<BackgroundThemeName>('paper');
@@ -108,6 +111,39 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     );
   }
 
+  function changeRenewalApproval(member: RelationshipMember) {
+    if (member.renewal_approved_by_me === null) return;
+    const displayName = localStates[member.user_id]?.alias.trim() || member.display_name;
+    const approve = !member.renewal_approved_by_me;
+    const period = member.current_period_end ? new Date(member.current_period_end).toLocaleDateString() : 'the end of the current paid month';
+    Alert.alert(
+      approve ? `Re-approve ${displayName}?` : `Stop approving ${displayName}?`,
+      approve
+        ? 'If every original approver approves again before the current period ends, monthly renewal can continue.'
+        : `${displayName} keeps access until ${period}. Their membership will then end instead of renewing. If you need immediate distance, use Block separately.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: approve ? 'Re-approve' : 'Stop renewal',
+          style: approve ? 'default' : 'destructive',
+          onPress: () => void (async () => {
+            try {
+              setBusy(true);
+              const status = await setExtraMemberRenewalApproval(relationship.id, member.user_id, approve);
+              await refresh();
+              if (status === 'cancel_at_period_end') Alert.alert('Renewal stopped', `${displayName} remains until the paid month ends, then leaves the chat.`);
+              else Alert.alert('Renewal approved', `${displayName} can continue renewing monthly while all required approvals remain in place.`);
+            } catch (error) {
+              Alert.alert('Approval could not be changed', error instanceof Error ? error.message : 'Please try again.');
+            } finally {
+              setBusy(false);
+            }
+          })(),
+        },
+      ],
+    );
+  }
+
   async function invite(role: 'participant' | 'observer') {
     try {
       setBusy(true);
@@ -156,11 +192,11 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Background</Text>
-          <Text style={styles.help}>Only you see this. Built-in themes need no photo or file permission.</Text>
+          <Text style={styles.help}>Only you see this. App dark mode is currently {resolved}; conversation backgrounds stay a separate local choice.</Text>
           <View style={styles.themeGrid}>
             {(Object.entries(BACKGROUND_THEMES) as Array<[BackgroundThemeName, (typeof BACKGROUND_THEMES)[BackgroundThemeName]]>).map(([key, theme]) => (
               <TouchableOpacity key={key} accessibilityRole="button" accessibilityState={{ selected: background === key }} onPress={() => void chooseBackground(key)} style={[styles.themeChip, { backgroundColor: theme.background }, background === key && styles.selectedTheme]}>
-                {theme.pattern === 'dots' ? <Text style={styles.dots}>• · •</Text> : null}
+                {theme.pattern === 'dots' ? <Text style={[styles.dots, { color: textColorForBackground(theme.background) }]}>• · •</Text> : null}
                 <Text style={{ color: textColorForBackground(theme.background), fontWeight: '700' }}>{theme.label}</Text>
               </TouchableOpacity>
             ))}
@@ -180,6 +216,7 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
                   <View style={styles.memberText}>
                     <Text numberOfLines={2} ellipsizeMode="tail" style={styles.memberName}>{visibleName}{member.user_id === session.user.id ? ' · You' : ''}</Text>
                     <Text style={styles.role}>{member.role === 'observer' ? 'Observer · read only' : 'Participant'}</Text>
+                    {member.is_extra ? <Text style={styles.subscription}>{member.role === 'observer' ? '29 kr/month' : '99 kr/month'}{member.current_period_end ? ` · paid through ${new Date(member.current_period_end).toLocaleDateString()}` : ''}{member.subscription_status === 'cancel_at_period_end' ? ' · renewal stopping' : ''}</Text> : null}
                   </View>
                 </View>
                 <TextInput
@@ -187,6 +224,7 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
                   onChangeText={(alias) => setLocalStates((existing) => ({ ...existing, [member.user_id]: { ...state, alias } }))}
                   onEndEditing={() => void saveMemberPreference(member)}
                   placeholder="Local nickname (optional)"
+                  placeholderTextColor={colors.subtle}
                   maxLength={50}
                   style={styles.aliasInput}
                 />
@@ -196,7 +234,8 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
                     <TouchableOpacity key={key} accessibilityLabel={`${theme.label} bubble`} accessibilityRole="button" accessibilityState={{ selected: state.bubble === key }} onPress={() => void saveMemberPreference(member, { bubble: key })} style={[styles.colorDot, { backgroundColor: theme.background }, state.bubble === key && styles.colorSelected]} />
                   ))}
                 </View>
-                {member.user_id !== session.user.id ? <Button title={member.blocked_by_me ? 'Unblock person' : 'Block person'} onPress={() => confirmBlock(member)} secondary={!member.blocked_by_me} danger={member.blocked_by_me} disabled={busy} /> : null}
+                {member.user_id !== session.user.id ? <Button styles={styles} title={member.blocked_by_me ? 'Unblock person' : 'Block person'} onPress={() => confirmBlock(member)} secondary={!member.blocked_by_me} danger={member.blocked_by_me} disabled={busy} /> : null}
+                {member.user_id !== session.user.id && member.is_extra && member.renewal_approved_by_me !== null ? <Button styles={styles} title={member.renewal_approved_by_me ? 'Stop my renewal approval' : 'Re-approve monthly renewal'} onPress={() => changeRenewalApproval(member)} secondary={member.renewal_approved_by_me} disabled={busy} /> : null}
               </View>
             );
           })}
@@ -216,8 +255,8 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
                   </View>
                 </View>
                 <View style={styles.twoButtons}>
-                  <View style={styles.flex}><Button title="Reject" onPress={() => void answerApproval(item, false)} secondary disabled={busy} /></View>
-                  <View style={styles.flex}><Button title="Approve" onPress={() => void answerApproval(item, true)} disabled={busy} /></View>
+                  <View style={styles.flex}><Button styles={styles} title="Reject" onPress={() => void answerApproval(item, false)} secondary disabled={busy} /></View>
+                  <View style={styles.flex}><Button styles={styles} title="Approve" onPress={() => void answerApproval(item, true)} disabled={busy} /></View>
                 </View>
               </View>
             ))}
@@ -227,8 +266,8 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Add another person</Text>
           <Text style={styles.help}>The first two people are the core chat. Person 3 and onward pays for their own access only after every current member has approved them.</Text>
-          <Button title="Invite participant · 99 kr/month" onPress={() => void invite('participant')} disabled={busy} />
-          <Button title="Invite read-only observer · 29 kr/month" onPress={() => void invite('observer')} secondary disabled={busy} />
+          <Button styles={styles} title="Invite participant · 99 kr/month" onPress={() => void invite('participant')} disabled={busy} />
+          <Button styles={styles} title="Invite read-only observer · 29 kr/month" onPress={() => void invite('observer')} secondary disabled={busy} />
           <Text style={styles.privacyNote}>Extra memberships renew one month at a time. Annual prepayment is not offered. Invited people receive no earlier messages. Existing participants can export older messages separately if they intentionally want to share them.</Text>
         </View>
       </ScrollView>
@@ -236,42 +275,45 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F7F7F4' },
-  container: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40, gap: 14 },
-  header: { flexDirection: 'row', alignItems: 'center', minHeight: 60, gap: 8 },
-  backButton: { width: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  backText: { fontSize: 36, color: '#1C1C1C', lineHeight: 40 },
-  headerText: { flex: 1, minWidth: 0 },
-  title: { fontSize: 23, fontWeight: '800', color: '#171717', flexShrink: 1 },
-  subtitle: { marginTop: 2, color: '#6B6B66', lineHeight: 18, flexShrink: 1 },
-  section: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16, gap: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#DDDDD7' },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#171717', flexShrink: 1 },
-  help: { color: '#686863', lineHeight: 20, flexShrink: 1 },
-  themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  themeChip: { minWidth: 98, minHeight: 54, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, justifyContent: 'center', borderWidth: 1, borderColor: '#D7D7D0', flexGrow: 1, flexBasis: 98 },
-  selectedTheme: { borderWidth: 3, borderColor: '#202020' },
-  dots: { fontSize: 12, letterSpacing: 4, marginBottom: 2, color: '#7A7A74' },
-  memberCard: { gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E6E1' },
-  memberHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E2E4DF', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  avatarText: { fontWeight: '800', color: '#333632', fontSize: 15 },
-  memberText: { flex: 1, minWidth: 0 },
-  memberName: { fontSize: 16, fontWeight: '700', color: '#191919', lineHeight: 21, flexShrink: 1 },
-  role: { color: '#74746F', marginTop: 2, fontSize: 13, flexShrink: 1 },
-  aliasInput: { minHeight: 44, borderWidth: 1, borderColor: '#D8D8D2', borderRadius: 12, paddingHorizontal: 12, fontSize: 16, color: '#171717' },
-  smallLabel: { fontSize: 12, color: '#70706B', fontWeight: '700' },
-  colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  colorDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#CFCFC9' },
-  colorSelected: { borderWidth: 3, borderColor: '#161616' },
-  approvalCard: { gap: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E6E1' },
-  twoButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  flex: { flex: 1, minWidth: 120 },
-  button: { minHeight: 46, backgroundColor: '#1E5A48', borderRadius: 13, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
-  secondaryButton: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CFCFC9' },
-  dangerButton: { backgroundColor: '#8A2E2E' },
-  disabled: { opacity: 0.4 },
-  buttonText: { color: '#FFFFFF', fontSize: 15, lineHeight: 20, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
-  secondaryButtonText: { color: '#222222' },
-  privacyNote: { color: '#777771', fontSize: 12, lineHeight: 17, flexShrink: 1 },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: colors.background },
+    container: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40, gap: 14 },
+    header: { flexDirection: 'row', alignItems: 'center', minHeight: 60, gap: 8 },
+    backButton: { width: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+    backText: { fontSize: 36, color: colors.brand, lineHeight: 40 },
+    headerText: { flex: 1, minWidth: 0 },
+    title: { fontSize: 23, fontWeight: '800', color: colors.text, flexShrink: 1 },
+    subtitle: { marginTop: 2, color: colors.muted, lineHeight: 18, flexShrink: 1 },
+    section: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, gap: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text, flexShrink: 1 },
+    help: { color: colors.muted, lineHeight: 20, flexShrink: 1 },
+    themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    themeChip: { minWidth: 98, minHeight: 54, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, justifyContent: 'center', borderWidth: 1, borderColor: colors.borderStrong, flexGrow: 1, flexBasis: 98 },
+    selectedTheme: { borderWidth: 3, borderColor: colors.accent },
+    dots: { fontSize: 12, letterSpacing: 4, marginBottom: 2 },
+    memberCard: { gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    memberHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.avatar, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    avatarText: { fontWeight: '800', color: colors.avatarText, fontSize: 15 },
+    memberText: { flex: 1, minWidth: 0 },
+    memberName: { fontSize: 16, fontWeight: '700', color: colors.text, lineHeight: 21, flexShrink: 1 },
+    role: { color: colors.muted, marginTop: 2, fontSize: 13, flexShrink: 1 },
+    subscription: { color: colors.subtle, marginTop: 3, fontSize: 12, lineHeight: 17, flexShrink: 1 },
+    aliasInput: { minHeight: 44, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 12, fontSize: 16, color: colors.text, backgroundColor: colors.input },
+    smallLabel: { fontSize: 12, color: colors.muted, fontWeight: '700' },
+    colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    colorDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.borderStrong },
+    colorSelected: { borderWidth: 3, borderColor: colors.accent },
+    approvalCard: { gap: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    twoButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    flex: { flex: 1, minWidth: 120 },
+    button: { minHeight: 46, backgroundColor: colors.accentStrong, borderRadius: 13, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+    secondaryButton: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
+    dangerButton: { backgroundColor: colors.danger },
+    disabled: { opacity: 0.4 },
+    buttonText: { color: colors.accentText, fontSize: 15, lineHeight: 20, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    secondaryButtonText: { color: colors.text },
+    privacyNote: { color: colors.subtle, fontSize: 12, lineHeight: 17, flexShrink: 1 },
+  });
+}

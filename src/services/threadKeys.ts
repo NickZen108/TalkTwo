@@ -84,15 +84,26 @@ export async function bindPendingMemberInviteSecret(token: string, invitationId:
   const tokenName = `${PENDING_TOKEN_PREFIX}${token}`;
   const secret = await SecureStore.getItemAsync(tokenName, secureOptions);
   if (!secret) throw new Error('This invitation is missing its one-time encryption secret. Ask the sender for a new invitation.');
-  await SecureStore.setItemAsync(`${PENDING_INVITATION_PREFIX}${invitationId}`, assertKey(secret), secureOptions);
+  await SecureStore.setItemAsync(
+    `${PENDING_INVITATION_PREFIX}${invitationId}`,
+    JSON.stringify({ token: token.trim(), secret: assertKey(secret) }),
+    secureOptions,
+  );
   await SecureStore.deleteItemAsync(tokenName, secureOptions);
 }
 
-export async function installActiveMemberEnvelope(invitationId: string, relationshipId: string, token: string, envelope: string) {
+export async function installActiveMemberEnvelope(invitationId: string, relationshipId: string, envelope: string) {
   const pendingName = `${PENDING_INVITATION_PREFIX}${invitationId}`;
-  const secret = await SecureStore.getItemAsync(pendingName, secureOptions);
-  if (!secret) return false;
-  const threadKey = await openInvitationEnvelope(token, secret, envelope);
+  const stored = await SecureStore.getItemAsync(pendingName, secureOptions);
+  if (!stored) return false;
+  let parsed: { token: string; secret: string };
+  try {
+    parsed = JSON.parse(stored) as { token: string; secret: string };
+  } catch {
+    throw new Error('The pending invitation encryption data is damaged. Ask a current member to send a recovery invitation.');
+  }
+  if (!parsed.token || !parsed.secret) throw new Error('The pending invitation encryption data is incomplete.');
+  const threadKey = await openInvitationEnvelope(parsed.token, parsed.secret, envelope);
   await storeThreadKey(relationshipId, threadKey);
   await SecureStore.deleteItemAsync(pendingName, secureOptions);
   return true;

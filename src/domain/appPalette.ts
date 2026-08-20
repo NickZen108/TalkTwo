@@ -21,6 +21,11 @@ export const APP_PALETTES = {
     input: '#FFFFFF',
     disabled: '#9A9A94',
     danger: '#A84646',
+    reviewGreen: '#EAF2EB',
+    reviewYellow: '#F4EDDA',
+    reviewRed: '#F3E5E5',
+    reviewText: '#272727',
+    reviewMuted: '#62625D',
   },
   dark: {
     background: '#101311',
@@ -44,6 +49,11 @@ export const APP_PALETTES = {
     input: '#1E2521',
     disabled: '#626B66',
     danger: '#E07A7A',
+    reviewGreen: '#173323',
+    reviewYellow: '#352E1D',
+    reviewRed: '#3A2022',
+    reviewText: '#F3F5F2',
+    reviewMuted: '#C7CEC9',
   },
 } as const;
 

@@ -16,7 +16,7 @@ export default function AccountScreen({
   onBack: () => void;
 }) {
   const { colors } = useAppTheme();
-  const { t, locale, preference, setPreference } = useI18n();
+  const { t, systemLocale, preference, setPreference } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [confirmation, setConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -48,7 +48,7 @@ export default function AccountScreen({
 
   async function changeLanguage(next: LocalePreference) {
     try {
-      const resolved = next === 'system' ? locale : next;
+      const resolved = next === 'system' ? systemLocale : next;
       await saveAccountLocalePreference(next, resolved);
       await setPreference(next);
     } catch (error) {

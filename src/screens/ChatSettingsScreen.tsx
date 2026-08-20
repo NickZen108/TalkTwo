@@ -60,7 +60,10 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     void refresh().catch((error) => Alert.alert('Could not load chat settings', error instanceof Error ? error.message : 'Please try again.'));
   }, [relationship.id]);
 
-  const memberNames = useMemo(() => members.filter((member) => member.user_id !== session.user.id).map((member) => localStates[member.user_id]?.alias.trim() || member.display_name), [members, localStates, session.user.id]);
+  const memberNames = useMemo(
+    () => members.filter((member) => member.user_id !== session.user.id).map((member) => localStates[member.user_id]?.alias.trim() || member.display_name),
+    [members, localStates, session.user.id],
+  );
 
   async function chooseBackground(theme: BackgroundThemeName) {
     try {
@@ -100,7 +103,9 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
               await refresh();
             } catch (error) {
               Alert.alert('Block setting could not be changed', error instanceof Error ? error.message : 'Please try again.');
-            } finally { setBusy(false); }
+            } finally {
+              setBusy(false);
+            }
           })(),
         },
       ],
@@ -118,7 +123,9 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
       });
     } catch (error) {
       Alert.alert('Invitation could not be created', error instanceof Error ? error.message : 'Please try again.');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function answerApproval(item: PendingApproval, approve: boolean) {
@@ -131,7 +138,9 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
       if (status === 'rejected') Alert.alert('Not added', 'The invitation was rejected.');
     } catch (error) {
       Alert.alert('Approval could not be saved', error instanceof Error ? error.message : 'Please try again.');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function buySeat() {
@@ -141,15 +150,20 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
       await refresh();
     } catch (error) {
       Alert.alert('Purchase setup needed', error instanceof Error ? error.message : 'Please try again.');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></TouchableOpacity>
-          <View style={styles.headerText}><Text style={styles.title}>Chat settings</Text><Text numberOfLines={2} style={styles.subtitle}>{memberNames.length ? memberNames.join(', ') : 'TalkTwo conversation'}</Text></View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to chat" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></TouchableOpacity>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Chat settings</Text>
+            <Text numberOfLines={2} ellipsizeMode="tail" style={styles.subtitle}>{memberNames.length ? memberNames.join(', ') : 'TalkTwo conversation'}</Text>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -175,7 +189,10 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
               <View key={member.user_id} style={styles.memberCard}>
                 <View style={styles.memberHeader}>
                   <View style={styles.avatar}><Text style={styles.avatarText}>{initialsForName(visibleName)}</Text></View>
-                  <View style={styles.memberText}><Text numberOfLines={2} style={styles.memberName}>{visibleName}{member.user_id === session.user.id ? ' · You' : ''}</Text><Text style={styles.role}>{member.role === 'observer' ? 'Observer · read only' : 'Participant'}</Text></View>
+                  <View style={styles.memberText}>
+                    <Text numberOfLines={2} ellipsizeMode="tail" style={styles.memberName}>{visibleName}{member.user_id === session.user.id ? ' · You' : ''}</Text>
+                    <Text style={styles.role}>{member.role === 'observer' ? 'Observer · read only' : 'Participant'}</Text>
+                  </View>
                 </View>
                 <TextInput
                   value={state.alias}
@@ -188,7 +205,7 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
                 <Text style={styles.smallLabel}>Bubble colour</Text>
                 <View style={styles.colorRow}>
                   {(Object.entries(BUBBLE_THEMES) as Array<[BubbleThemeName, (typeof BUBBLE_THEMES)[BubbleThemeName]]>).map(([key, theme]) => (
-                    <TouchableOpacity key={key} accessibilityLabel={`${theme.label} bubble`} accessibilityRole="button" onPress={() => void saveMemberPreference(member, { bubble: key })} style={[styles.colorDot, { backgroundColor: theme.background }, state.bubble === key && styles.colorSelected]} />
+                    <TouchableOpacity key={key} accessibilityLabel={`${theme.label} bubble`} accessibilityRole="button" accessibilityState={{ selected: state.bubble === key }} onPress={() => void saveMemberPreference(member, { bubble: key })} style={[styles.colorDot, { backgroundColor: theme.background }, state.bubble === key && styles.colorSelected]} />
                   ))}
                 </View>
                 {member.user_id !== session.user.id ? <Button title={member.blocked_by_me ? 'Unblock person' : 'Block person'} onPress={() => confirmBlock(member)} secondary={!member.blocked_by_me} danger={member.blocked_by_me} disabled={busy} /> : null}
@@ -197,16 +214,27 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
           })}
         </View>
 
-        {pendingApprovals.length ? <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Needs your approval</Text>
-          <Text style={styles.help}>A new person gets no old chat history. Every current member must approve before access begins.</Text>
-          {pendingApprovals.map((item) => (
-            <View key={item.invitation_id} style={styles.approvalCard}>
-              <View style={styles.memberHeader}><View style={styles.avatar}><Text style={styles.avatarText}>{initialsForName(item.display_name)}</Text></View><View style={styles.memberText}><Text numberOfLines={2} style={styles.memberName}>{item.display_name}</Text><Text style={styles.role}>{item.role === 'observer' ? 'Observer · read only' : 'Participant'}</Text></View></View>
-              <View style={styles.twoButtons}><View style={styles.flex}><Button title="Reject" onPress={() => void answerApproval(item, false)} secondary disabled={busy} /></View><View style={styles.flex}><Button title="Approve" onPress={() => void answerApproval(item, true)} disabled={busy} /></View></View>
-            </View>
-          ))}
-        </View> : null}
+        {pendingApprovals.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Needs your approval</Text>
+            <Text style={styles.help}>A new person gets no old chat history. Every current member must approve before access begins.</Text>
+            {pendingApprovals.map((item) => (
+              <View key={item.invitation_id} style={styles.approvalCard}>
+                <View style={styles.memberHeader}>
+                  <View style={styles.avatar}><Text style={styles.avatarText}>{initialsForName(item.display_name)}</Text></View>
+                  <View style={styles.memberText}>
+                    <Text numberOfLines={2} ellipsizeMode="tail" style={styles.memberName}>{item.display_name}</Text>
+                    <Text style={styles.role}>{item.role === 'observer' ? 'Observer · read only' : 'Participant'}</Text>
+                  </View>
+                </View>
+                <View style={styles.twoButtons}>
+                  <View style={styles.flex}><Button title="Reject" onPress={() => void answerApproval(item, false)} secondary disabled={busy} /></View>
+                  <View style={styles.flex}><Button title="Approve" onPress={() => void answerApproval(item, true)} disabled={busy} /></View>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Add another person</Text>
@@ -226,7 +254,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F7F7F4' },
   container: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40, gap: 14 },
   header: { flexDirection: 'row', alignItems: 'center', minHeight: 60, gap: 8 },
-  backButton: { width: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
+  backButton: { width: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   backText: { fontSize: 36, color: '#1C1C1C', lineHeight: 40 },
   headerText: { flex: 1, minWidth: 0 },
   title: { fontSize: 23, fontWeight: '800', color: '#171717', flexShrink: 1 },
@@ -235,7 +263,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#171717', flexShrink: 1 },
   help: { color: '#686863', lineHeight: 20, flexShrink: 1 },
   themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  themeChip: { minWidth: 98, minHeight: 54, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, justifyContent: 'center', borderWidth: 1, borderColor: '#D7D7D0' },
+  themeChip: { minWidth: 98, minHeight: 54, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, justifyContent: 'center', borderWidth: 1, borderColor: '#D7D7D0', flexGrow: 1, flexBasis: 98 },
   selectedTheme: { borderWidth: 3, borderColor: '#202020' },
   dots: { fontSize: 12, letterSpacing: 4, marginBottom: 2, color: '#7A7A74' },
   memberCard: { gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E6E1' },
@@ -243,22 +271,22 @@ const styles = StyleSheet.create({
   avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E2E4DF', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarText: { fontWeight: '800', color: '#333632', fontSize: 15 },
   memberText: { flex: 1, minWidth: 0 },
-  memberName: { fontSize: 16, fontWeight: '750', color: '#191919', lineHeight: 21, flexShrink: 1 },
+  memberName: { fontSize: 16, fontWeight: '700', color: '#191919', lineHeight: 21, flexShrink: 1 },
   role: { color: '#74746F', marginTop: 2, fontSize: 13, flexShrink: 1 },
   aliasInput: { minHeight: 44, borderWidth: 1, borderColor: '#D8D8D2', borderRadius: 12, paddingHorizontal: 12, fontSize: 16, color: '#171717' },
   smallLabel: { fontSize: 12, color: '#70706B', fontWeight: '700' },
   colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  colorDot: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: '#CFCFC9' },
+  colorDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#CFCFC9' },
   colorSelected: { borderWidth: 3, borderColor: '#161616' },
   approvalCard: { gap: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E6E1' },
-  twoButtons: { flexDirection: 'row', gap: 10 },
-  flex: { flex: 1, minWidth: 0 },
+  twoButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  flex: { flex: 1, minWidth: 120 },
   button: { minHeight: 46, backgroundColor: '#1E5A48', borderRadius: 13, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   secondaryButton: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CFCFC9' },
   dangerButton: { backgroundColor: '#8A2E2E' },
   disabled: { opacity: 0.4 },
   buttonText: { color: '#FFFFFF', fontSize: 15, lineHeight: 20, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
   secondaryButtonText: { color: '#222222' },
-  seatText: { fontWeight: '750', color: '#33332F', lineHeight: 20 },
-  privacyNote: { color: '#777771', fontSize: 12, lineHeight: 17 },
+  seatText: { fontWeight: '700', color: '#33332F', lineHeight: 20, flexShrink: 1 },
+  privacyNote: { color: '#777771', fontSize: 12, lineHeight: 17, flexShrink: 1 },
 });

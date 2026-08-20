@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, SafeAreaView, StyleSheet, Text } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './src/lib/supabase';
 import { createSessionFromMagicLink } from './src/services/auth';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
+
+const PENDING_INVITE_KEY = 'talktwo.pendingInvite';
 
 function invitationTokenFromUrl(url: string) {
   const match = url.match(/^talktwo:\/\/invite\/([^?#]+)/i);
@@ -17,11 +20,19 @@ export default function App() {
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+
+    async function savePendingInvite(token: string) {
+      setPendingInvite(token);
+      try { await AsyncStorage.setItem(PENDING_INVITE_KEY, token); }
+      catch { /* The in-memory token still works for this session. */ }
+    }
+
     async function handleUrl(url: string | null) {
       if (!url) return;
       const inviteToken = invitationTokenFromUrl(url);
       if (inviteToken) {
-        setPendingInvite(inviteToken);
+        await savePendingInvite(inviteToken);
         return;
       }
       if (url.toLowerCase().startsWith('talktwo://auth')) {
@@ -33,27 +44,40 @@ export default function App() {
       }
     }
 
-    supabase.auth.getSession().then(({ data }) => {
+    void (async () => {
+      const [{ data }, storedInvite, initialUrl] = await Promise.all([
+        supabase.auth.getSession(),
+        AsyncStorage.getItem(PENDING_INVITE_KEY).catch(() => null),
+        Linking.getInitialURL(),
+      ]);
+      if (!mounted) return;
       setSession(data.session);
-      setLoading(false);
-    });
+      if (storedInvite) setPendingInvite(storedInvite);
+      await handleUrl(initialUrl);
+      if (mounted) setLoading(false);
+    })();
 
-    void Linking.getInitialURL().then(handleUrl);
     const linking = Linking.addEventListener('url', ({ url }) => { void handleUrl(url); });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
 
     return () => {
+      mounted = false;
       linking.remove();
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  function clearPendingInvite() {
+    setPendingInvite(null);
+    void AsyncStorage.removeItem(PENDING_INVITE_KEY).catch(() => undefined);
+  }
 
   if (loading) {
     return <SafeAreaView style={styles.loading}><ActivityIndicator /><Text style={styles.note}>Opening TalkTwo…</Text></SafeAreaView>;
   }
 
   return session
-    ? <HomeScreen session={session} pendingInvite={pendingInvite} clearPendingInvite={() => setPendingInvite(null)} />
+    ? <HomeScreen session={session} pendingInvite={pendingInvite} clearPendingInvite={clearPendingInvite} />
     : <LoginScreen />;
 }
 

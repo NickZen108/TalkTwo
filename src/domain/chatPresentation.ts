@@ -4,6 +4,7 @@ export const BACKGROUND_THEMES = {
   sand: { label: 'Sand', background: '#F2E8D8', pattern: 'none' as const },
   sky: { label: 'Sky', background: '#E8EFF5', pattern: 'none' as const },
   dots: { label: 'Soft dots', background: '#F3F1EC', pattern: 'dots' as const },
+  night: { label: 'Night', background: '#19201C', pattern: 'none' as const },
 };
 
 export type BackgroundThemeName = keyof typeof BACKGROUND_THEMES;

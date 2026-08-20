@@ -81,6 +81,21 @@ begin
          updated_at = pg_catalog.now()
    where user_id = account_subscription.user_id;
 
+  -- A chat that withdrew approval ends exactly at its already-paid boundary,
+  -- even while the account subscription renews for other approved chats.
+  update public.relationship_member_subscriptions
+     set status = 'expired', auto_renew = false, updated_at = pg_catalog.now()
+   where member_user_id = account_subscription.user_id
+     and status = 'cancel_at_period_end'
+     and current_period_end <= period_start;
+
+  delete from public.relationship_members rm
+   using public.relationship_member_subscriptions s
+   where s.member_user_id = account_subscription.user_id
+     and s.relationship_id = rm.relationship_id
+     and s.member_user_id = rm.user_id
+     and s.status = 'expired';
+
   -- Extend only chats whose unanimous approval is still valid. A chat that
   -- withdrew approval keeps its old paid boundary and ends there.
   update public.relationship_member_subscriptions s

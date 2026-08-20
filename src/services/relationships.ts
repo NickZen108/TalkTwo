@@ -113,8 +113,19 @@ export interface PendingMembership {
   invitation_id: string;
   relationship_id: string;
   role: MemberRole;
-  status: 'awaiting_approvals' | 'awaiting_seat';
+  status: 'awaiting_approvals' | 'awaiting_payment';
   created_at: string;
+}
+
+export interface MemberPaymentOffer {
+  invitation_id: string;
+  relationship_id: string;
+  role: MemberRole;
+  price_dkk: 29 | 99;
+  billing_interval: 'month';
+  interval_count: 1;
+  auto_renew: true;
+  ready_to_pay: boolean;
 }
 
 export async function listMyPendingMemberships() {
@@ -123,10 +134,20 @@ export async function listMyPendingMemberships() {
   return (data ?? []) as PendingMembership[];
 }
 
-export async function getRelationshipSeatStatus(relationshipId: string) {
-  const { data, error } = await supabase.rpc('get_relationship_seat_status', { rel_id: relationshipId });
+export async function getMemberPaymentOffer(invitationId: string) {
+  const { data, error } = await supabase.rpc('get_member_payment_offer', { inv_id: invitationId });
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error('Seat status could not be loaded.');
-  return row as { member_count: number; extra_seats: number; max_members: number; available_seats: number };
+  if (!row) throw new Error('Payment offer could not be loaded.');
+  return row as MemberPaymentOffer;
+}
+
+export async function setExtraMemberRenewalApproval(relationshipId: string, targetUserId: string, approve: boolean) {
+  const { data, error } = await supabase.rpc('set_extra_member_renewal_approval', {
+    rel_id: relationshipId,
+    target_user: targetUserId,
+    approve,
+  });
+  if (error) throw error;
+  return String(data) as 'active' | 'cancel_at_period_end';
 }

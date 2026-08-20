@@ -6,6 +6,8 @@ import { getConversationTheme, listMemberPreferences, setConversationTheme, setM
 import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
+import type { ChatMessage } from '../services/messages';
+import { shareConversationPdf } from '../services/conversationExport';
 
 function Button({ title, onPress, secondary = false, danger = false, disabled = false, styles }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean; styles: ReturnType<typeof makeStyles> }) {
   return (
@@ -20,9 +22,10 @@ interface LocalMemberState {
   bubble: BubbleThemeName;
 }
 
-export default function ChatSettingsScreen({ relationship, session, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
+export default function ChatSettingsScreen({ relationship, session, exportMessages, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
   relationship: RelationshipSummary;
   session: Session;
+  exportMessages: ChatMessage[];
   onBack: () => void;
   onAppearanceChanged: () => void;
   onPurchasePremium: (productKey: PremiumSubscriptionProductKey, relationshipId?: string | null, beneficiaryUserId?: string | null) => Promise<void>;
@@ -70,6 +73,35 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     () => members.filter((member) => member.user_id !== session.user.id && !member.is_extra),
     [members, session.user.id],
   );
+
+  function confirmExport() {
+    const exportableCount = exportMessages.filter((message) => Boolean(message.body) && !message.withdrawn_at && !message.blocked_for_recipient).length;
+    Alert.alert(
+      'Export an unencrypted PDF?',
+      `This makes a readable copy of ${exportableCount} messages already visible on this device. Anyone you share or save it with can read it. Unopened, blocked and withdrawn messages are excluded.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Create PDF',
+          onPress: () => void (async () => {
+            try {
+              setBusy(true);
+              const title = memberNames.length ? memberNames.join(', ') : 'TalkTwo conversation';
+              await shareConversationPdf(
+                title,
+                members.map((member) => ({ id: member.user_id, name: localStates[member.user_id]?.alias.trim() || member.display_name })),
+                exportMessages,
+              );
+            } catch (error) {
+              Alert.alert('PDF could not be created', error instanceof Error ? error.message : 'Please try again.');
+            } finally {
+              setBusy(false);
+            }
+          })(),
+        },
+      ],
+    );
+  }
 
   function buyTwoPersonPremium(member: RelationshipMember, productKey: 'premium_two_monthly' | 'premium_two_annual') {
     const displayName = localStates[member.user_id]?.alias.trim() || member.display_name;
@@ -312,6 +344,12 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
           <Button styles={styles} title="Invite participant · 99 kr/month" onPress={() => void invite('participant')} disabled={busy} />
           <Button styles={styles} title="Invite read-only observer · 29 kr/month" onPress={() => void invite('observer')} secondary disabled={busy} />
           <Text style={styles.privacyNote}>Extra memberships renew one month at a time. Annual prepayment is not offered. Invited people receive no earlier messages. Existing participants can export older messages separately if they intentionally want to share them.</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Conversation export</Text>
+          <Text style={styles.help}>Creates an unencrypted PDF from messages already visible on this device. Unopened, blocked and withdrawn messages are never included.</Text>
+          <Button styles={styles} title="Export visible messages to PDF" onPress={confirmExport} secondary disabled={busy} />
         </View>
       </ScrollView>
     </SafeAreaView>

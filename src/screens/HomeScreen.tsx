@@ -10,6 +10,7 @@ import { useAppTheme, type AppColors, type AppearanceMode } from '../theme/AppTh
 import ChatScreen from './ChatScreen';
 import MessageWindowsScreen from './MessageWindowsScreen';
 import FeedbackScreen from './FeedbackScreen';
+import PremiumGiftsScreen from './PremiumGiftsScreen';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 
@@ -39,6 +40,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   const [selected, setSelected] = useState<RelationshipSummary | null>(null);
   const [showWindows, setShowWindows] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showPremiumGifts, setShowPremiumGifts] = useState(false);
   const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
   const storeBilling = useNativeStoreBilling(session.user.id, {
     onError: (message) => Alert.alert('Store purchase unavailable', message),
@@ -195,6 +197,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
   if (selected) return <ChatScreen relationship={selected} session={session} onBack={() => { setSelected(null); void refreshRelationships(); }} onPurchasePremium={storeBilling.purchasePremium} storePurchaseBusy={storeBilling.processing || !storeBilling.connected} />;
   if (showWindows) return <MessageWindowsScreen onBack={() => setShowWindows(false)} />;
   if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
+  if (showPremiumGifts) return <PremiumGiftsScreen onBack={() => setShowPremiumGifts(false)} />;
 
   const appearanceOptions: AppearanceMode[] = ['system', 'light', 'dark'];
 
@@ -277,6 +280,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite 
             value={giftRecipientEmail}
           />
           <Action styles={styles} title={storeBilling.processing ? 'Processing purchase…' : 'Give Premium · 59 kr once'} onPress={buyPremiumGift} disabled={storeBilling.processing || !storeBilling.connected} quiet />
+          <Action styles={styles} title="Manage Premium gifts" onPress={() => setShowPremiumGifts(true)} quiet />
         </View>
 
         <View style={styles.tools}>

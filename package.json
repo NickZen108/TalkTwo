@@ -19,6 +19,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "expo": "~57.0.13",
+    "expo-build-properties": "~57.0.12",
     "expo-constants": "~57.0.12",
     "expo-crypto": "~57.0.1",
     "expo-iap": "^5.3.0",

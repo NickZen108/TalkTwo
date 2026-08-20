@@ -53,3 +53,17 @@ export function storeProductKeyForId(platform: StorePlatform, productId: string)
   }
   return null;
 }
+
+export function productIdsByKind(platform: StorePlatform, kind: StoreProductKind) {
+  return (Object.entries(STORE_PRODUCTS) as Array<[StoreProductKey, (typeof STORE_PRODUCTS)[StoreProductKey]]>)
+    .filter(([, product]) => product.kind === kind)
+    .map(([key]) => productIdFor(platform, key));
+}
+
+export function subscriptionProductIdsFor(platform: StorePlatform) {
+  return productIdsByKind(platform, 'subscription');
+}
+
+export function oneTimeProductIdsFor(platform: StorePlatform) {
+  return productIdsByKind(platform, 'one_time');
+}

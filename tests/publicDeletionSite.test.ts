@@ -32,8 +32,10 @@ test('permanent deletion requires explicit confirmation and the authenticated ed
   assert.match(html, /src="\/src\/main\.js"/i);
 });
 
-test('browser build uses publishable configuration and never documents a private service role value', () => {
+test('browser build accepts only current publishable Supabase configuration', () => {
   assert.match(env, /VITE_SUPABASE_PUBLISHABLE_KEY=/i);
   assert.doesNotMatch(env, /VITE_.*SERVICE_ROLE/i);
+  assert.match(source, /\^sb_publishable_/i);
   assert.doesNotMatch(source, /SUPABASE_SERVICE_ROLE_KEY/i);
+  assert.doesNotMatch(source, /sb_secret_/i);
 });

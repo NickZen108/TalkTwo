@@ -23,14 +23,25 @@ test('the complete document is reviewed as untrusted data with strict structured
   assert.match(source, /documentText\.includes\(fragment\)/i);
 });
 
-test('AI privacy, quota, budget and cost guards run before an approval is recorded', () => {
+test('AI privacy, quota and atomic budget guards run before an approval is recorded', () => {
   assert.match(source, /store: false/i);
   assert.match(source, /get_ai_budget_status/i);
   assert.match(source, /consume_ai_analysis_for_user/i);
   assert.match(source, /refund_trial_ai_analysis/i);
-  assert.match(source, /from\("ai_cost_events"\)\.insert/i);
+  assert.match(source, /reserve_ai_budget_call/i);
+  assert.match(source, /commit_ai_budget_call/i);
+  assert.match(source, /finalize_ai_budget_call/i);
+  assert.doesNotMatch(source, /from\("ai_cost_events"\)\.insert/i);
   assert.match(source, /from\("ai_document_reviews"\)\.insert/i);
   assert.match(source, /body_hash: bodyHash[\s\S]*file_name: fileName[\s\S]*page_count: computedPageCount/i);
+
+  const quota = source.indexOf('consume_ai_analysis_for_user');
+  const reserve = source.indexOf('reserve_ai_budget_call');
+  const commit = source.indexOf('commit_ai_budget_call');
+  const provider = source.indexOf('fetch("https://api.openai.com/v1/responses"');
+  const finalize = source.indexOf('finalize_ai_budget_call');
+  const approval = source.indexOf('from("ai_document_reviews").insert');
+  assert.ok(quota >= 0 && reserve > quota && commit > reserve && provider > commit && finalize > provider && approval > finalize);
 });
 
 test('client-side limits are independently repeated at the trusted edge', () => {

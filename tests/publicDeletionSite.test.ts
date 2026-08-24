@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import test from 'node:test';
 
 const source = fs.readFileSync('public-site/src/main.js', 'utf8');
 const html = fs.readFileSync('public-site/index.html', 'utf8');
 const env = fs.readFileSync('public-site/.env.example', 'utf8');
+
+test('public deletion browser module parses as valid JavaScript', () => {
+  execFileSync(process.execPath, ['--check', 'public-site/src/main.js'], { stdio: 'pipe' });
+});
 
 test('external deletion verifies an existing account without creating one', () => {
   assert.match(source, /signInWithOtp\(/i);

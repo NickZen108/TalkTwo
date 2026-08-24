@@ -10,6 +10,7 @@ Before changing production:
 
 - all draft feature PRs intended for the release have been reviewed and the exact release commit is frozen;
 - the QA mirror for that exact tree is green for app TypeScript, test TypeScript, tests, public-site build, layout/privacy checks, Expo Doctor, runtime dependency audit, Android export/prebuild/release APK/merged permissions, and iOS export/prebuild/surface checks;
+- run `npm run release:preflight` with the final release environment and require `TalkTwo release preflight OK.`;
 - Apple/Google product IDs and package IDs still match `src/domain/storeProducts.ts` and `com.talktwo.app`;
 - required provider secrets are present in Supabase; no secret is stored in the mobile client or public-site bundle;
 - the final HTTPS public site is live before `EXPO_PUBLIC_TALKTWO_SITE_URL` is enabled in a release build;
@@ -107,4 +108,4 @@ Before the app exposes public links:
 
 ## Stop conditions
 
-Stop the release immediately for any failed schema gate, missing secret, mismatched store product ID, broken public URL, failed disposable-account deletion, unexpected permission, failed provider verification, red QA job, or migration drift that has not been reconciled.
+Stop the release immediately for any failed schema gate, failed `release:preflight`, missing secret, mismatched store product ID, broken public URL, failed disposable-account deletion, unexpected permission, failed provider verification, red QA job, or migration drift that has not been reconciled.

@@ -25,6 +25,14 @@ const forbiddenPermissionStrings = [
   'requestContactsPermissions',
 ];
 
+const forbiddenConsoleCalls = [
+  'console.log(',
+  'console.info(',
+  'console.warn(',
+  'console.error(',
+  'console.debug(',
+];
+
 function walk(target) {
   const stat = fs.statSync(target);
   if (stat.isFile()) return [target];
@@ -41,6 +49,12 @@ for (const file of files) {
   }
   for (const marker of forbiddenPermissionStrings) {
     if (source.includes(marker)) failures.push(`${file}: contains permission request ${marker}`);
+  }
+  for (const marker of forbiddenConsoleCalls) {
+    if (source.includes(marker)) failures.push(`${file}: contains raw mobile logging call ${marker.slice(0, -1)}`);
+  }
+  if (file !== path.normalize('src/domain/appLinks.ts') && /talktwo:\/\//i.test(source)) {
+    failures.push(`${file}: hardcodes talktwo:// instead of the centralized verified app-link boundary`);
   }
 }
 
@@ -79,9 +93,15 @@ if (packageJson.dependencies?.['@react-native-async-storage/async-storage']) {
 if (!packageJson.dependencies?.['expo-secure-store']) failures.push('package.json: expo-secure-store must remain installed for keys, auth session and invitation secrets');
 if (!packageJson.dependencies?.['expo-sqlite']) failures.push('package.json: expo-sqlite must remain installed for the encrypted local message cache');
 
+const dependencyNames = Object.keys({ ...(packageJson.dependencies ?? {}), ...(packageJson.devDependencies ?? {}) });
+const telemetryDependencies = dependencyNames.filter((name) => /(?:sentry|analytics|amplitude|mixpanel|segment)/i.test(name));
+if (telemetryDependencies.length) {
+  failures.push(`package.json: telemetry/analytics dependencies require explicit privacy review before inclusion (${telemetryDependencies.join(', ')})`);
+}
+
 if (failures.length) {
   console.error('Privacy surface gate failed:\n- ' + failures.join('\n- '));
   process.exit(1);
 }
 
-console.log('Privacy surface gate passed. Sensitive Android backups are disabled; SecureStore and fail-closed SQLCipher remain required.');
+console.log('Privacy surface gate passed. Sensitive backups, raw mobile logging/telemetry, raw deep-link generation and unencrypted local storage remain blocked.');

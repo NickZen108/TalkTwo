@@ -49,7 +49,15 @@ test('expired timed blocks cannot bypass active Personal Boundaries at storage',
   assert.match(storageBoundaryMigration, /b\.expires_at is null or b\.expires_at > now\(\)/i);
   assert.match(storageBoundaryMigration, /if not new\.blocked_for_recipient and new\.body is not null/i);
   assert.match(storageBoundaryMigration, /private\.matching_personal_boundary\(/i);
-  assert.match(storageBoundaryMigration, /raise exception 'Message contains a recipient''s blocked word or phrase/i);
+  assert.match(storageBoundaryMigration, /raise exception 'Message matches a recipient''s private Personal Boundary/i);
+});
+
+test('Personal Boundary enforcement does not reveal the matching private phrase to a sender', () => {
+  const helper = storageBoundaryMigration.match(/create or replace function private\.matching_personal_boundary[\s\S]*?\$\$;/i)?.[0] ?? '';
+  assert.match(helper, /select 'private Personal Boundary'::text/i);
+  assert.doesNotMatch(helper, /select pb\.word/i);
+  assert.match(storageBoundaryMigration, /Existing callers still get a non-null signal, but can no longer learn/i);
+  assert.doesNotMatch(storageBoundaryMigration, /raise exception[^\n]*boundary_(?:phrase|match)/i);
 });
 
 test('plaintext is processed for trusted checks but removed before an inserted message is persisted', () => {

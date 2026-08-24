@@ -68,7 +68,7 @@ Before the public site can be treated as launch-ready:
 - verify an unknown email does not reveal account existence and is not auto-created;
 - verify an expired/reused magic link cannot delete anything;
 - verify the built bundle contains no service-role or other private key;
-- verify all four store-facing URLs work without redirects to missing pages;
+- verify all five public routes work without redirects to missing pages;
 - only then enable `EXPO_PUBLIC_TALKTWO_SITE_URL` in the mobile release build and enter the final URLs in App Store Connect / Google Play Console.
 
 No deploy or production deletion should be performed as part of ordinary repository QA.

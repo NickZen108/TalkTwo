@@ -10,6 +10,11 @@ These items are implemented in the current unmerged release-candidate stack, cul
 - Free deterministic filter and Premium AI message/document review;
 - atomic AI budget reservation/settlement and trial/quota guards;
 - account deletion, peer key recovery, Personal Boundaries and encrypted local message storage;
+- SQLCipher is required at runtime for the local message database and Android app-data backup is disabled;
+- new server message rows retain ciphertext + verification metadata rather than conversation plaintext after trusted send-time checks complete;
+- unopened recipient APIs hide both ciphertext and deterministic verification hashes until the user explicitly opens the message;
+- mobile magic-link authentication uses PKCE rather than importing access/refresh credentials from redirect URLs;
+- auth, invitation, member, recovery and Premium-gift links share one fail-closed app-link boundary: development may use `talktwo://`, while a configured release origin uses same-origin HTTPS `/app/...` links only;
 - text-document attachments, private push architecture and Danish/English localization;
 - Coach explicit opt-in with owner-only aggregate statistics;
 - organization-funded server-assigned Premium without consumer redemption-code UI;
@@ -52,11 +57,11 @@ The mobile client now reads the same values checked by the native release prefli
 
 - `EXPO_PUBLIC_SUPABASE_URL`;
 - a current `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` beginning with `sb_publishable_`;
-- `EXPO_PUBLIC_TALKTWO_SITE_URL` pointing at the final live HTTPS site.
+- `EXPO_PUBLIC_TALKTWO_SITE_URL` pointing at the final live HTTPS site and therefore defining the only accepted production origin for `/app/auth`, `/app/invite`, `/app/member`, `/app/recover-key` and `/app/premium-gift` links.
 
-Secret / service-role Supabase keys are forbidden in the mobile bundle.
+If `EXPO_PUBLIC_TALKTWO_SITE_URL` is present but invalid, the app-link builder/parser fails closed rather than falling back to a custom scheme. Secret / service-role Supabase keys are forbidden in the mobile bundle.
 
-### 4. Public domain + publication review
+### 4. Public domain + publication review + verified app links
 
 The public site is implemented but intentionally remains in draft mode. Before publication it needs:
 
@@ -72,7 +77,16 @@ The public site is implemented but intentionally remains in draft mode. Before p
 - final Supabase public URL + `sb_publishable_...` key;
 - explicit `VITE_PUBLICATION_APPROVED=true` only after the intended legal/privacy review.
 
-Then `cd public-site && npm run release:preflight` must return `TalkTwo public-site release preflight OK.` before the site is deployed.
+The same final HTTPS host must also be proven as the native app-link owner before a production build can pass mobile preflight:
+
+- iOS `associatedDomains` must contain `applinks:<final-host>`;
+- the host must serve a valid `/.well-known/apple-app-site-association` bound to the final Apple Team ID + `com.talktwo.app`, scoped to the intended `/app/*` routes;
+- Android must contain an `autoVerify` HTTPS intent filter for the same host with `pathPrefix: "/app/"`;
+- the host must serve a valid `/.well-known/assetlinks.json` bound to `com.talktwo.app` and the SHA-256 certificate fingerprint of the actual release signing key;
+- Supabase Auth must allow the final `/app/auth` redirect;
+- signed-device smoke tests must prove that valid links open TalkTwo and look-alike domains/custom-scheme links cannot silently replace the verified production route.
+
+Then `cd public-site && npm run release:preflight` must return `TalkTwo public-site release preflight OK.` before the site is deployed, and the mobile `npm run release:preflight` must also pass against the final native configuration.
 
 ### 5. Public deletion production wiring
 

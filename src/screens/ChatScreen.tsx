@@ -446,6 +446,14 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
               const unopened = !mine && !item.opened_at;
               const blocked = !mine && item.blocked_for_recipient;
               const rejectedCount = mine ? item.rejected_count : 0;
+              const deliveredCount = mine ? Math.max(0, Math.min(item.delivered_count ?? 0, item.recipient_count)) : 0;
+              const deliveredStatus = deliveredCount > 0
+                ? `${locale === 'da' ? 'Leveret' : 'Delivered'} ${deliveredCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''}`
+                : t('chat.sent');
+              const rejectedStatus = rejectedCount > 0
+                ? t('chat.rejectedUnread', { count: `${rejectedCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''}` })
+                : null;
+              const senderStatus = rejectedStatus ? `${rejectedStatus} · ${deliveredStatus}` : deliveredStatus;
               const isAttachment = item.message_kind === 'text_attachment';
 
               return (
@@ -491,7 +499,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                       </View>
                       {mine ? (
                         <View style={styles.senderControls}>
-                          <Text style={[styles.sentStatus, { color: textColor }]}>{rejectedCount > 0 ? t('chat.rejectedUnread', { count: `${rejectedCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''}` }) : t('chat.sent')}</Text>
+                          <Text accessibilityLabel={senderStatus} style={[styles.sentStatus, { color: textColor }]}>{senderStatus}</Text>
                           <View style={styles.inlineActions}>
                             {item.body && !isAttachment ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.edit')}</Text></TouchableOpacity> : null}
                             <TouchableOpacity accessibilityRole="button" onPress={() => void withdraw(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.withdraw')}</Text></TouchableOpacity>

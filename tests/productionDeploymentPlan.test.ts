@@ -65,3 +65,30 @@ test('deployment plan requires deletion, privacy, public-site, native and exact-
   assert.match(plan, /exact tree is green/i);
   assert.match(plan, /final app icon\/splash\/store artwork is approved/i);
 });
+
+test('deployment plan verifies ciphertext-only storage and unread hash privacy', () => {
+  assert.match(plan, /public\.messages\.body[^\n]*immediately `NULL`/i);
+  assert.match(plan, /`body`, `ciphertext` \*\*and\*\* `body_hash` as `NULL`/i);
+  assert.match(plan, /ciphertext-only at rest immediately after trusted send-time checks/i);
+  assert.match(plan, /unopened message exposes no deterministic body hash/i);
+  assert.match(plan, /never inspect real user conversation plaintext/i);
+});
+
+test('deployment plan requires PKCE and verified HTTPS app-link ownership', () => {
+  assert.match(plan, /apple-app-site-association/i);
+  assert.match(plan, /assetlinks\.json/i);
+  assert.match(plan, /pathPrefix: "\/app\/"/i);
+  assert.match(plan, /allowlist the exact final `\/app\/auth` redirect/i);
+  assert.match(plan, /magic-link sign-in uses PKCE/i);
+  assert.match(plan, /access_token.*refresh_token/i);
+  assert.match(plan, /possession secrets.*URL fragments/i);
+  assert.match(plan, /public `\/app\/\*` fallback never logs/i);
+  assert.match(plan, /valid final-domain `\/app\/auth`/i);
+  assert.match(plan, /look-alike domain/i);
+});
+
+test('deployment plan keeps local encryption a signed-release gate', () => {
+  assert.match(plan, /local SQLite database reports a non-empty `cipher_version`/i);
+  assert.match(plan, /Android app-data backup remains disabled/i);
+  assert.match(plan, /local SQLCipher failure/i);
+});

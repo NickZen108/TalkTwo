@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
+import PartnerAvailabilityCard from '../components/PartnerAvailabilityCard';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
 import { exportableMessages, validateExportDateRange } from '../domain/conversationExport';
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
@@ -321,6 +322,8 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
             <Text numberOfLines={2} ellipsizeMode="tail" style={styles.subtitle}>{memberNames.length ? memberNames.join(', ') : t('settings.conversation')}</Text>
           </View>
         </View>
+
+        <PartnerAvailabilityCard relationshipId={relationship.id} myUserId={session.user.id} />
 
         {premiumPartners.length ? (
           <View style={styles.section}>

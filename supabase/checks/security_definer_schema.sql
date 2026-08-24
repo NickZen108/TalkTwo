@@ -5,6 +5,7 @@
 do $$
 declare
   violations text;
+  target oid;
 begin
   select pg_catalog.string_agg(
            pg_catalog.format('%I.%I(%s)', n.nspname, p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid)),
@@ -35,6 +36,24 @@ begin
   if pg_catalog.has_schema_privilege('authenticated', 'public', 'create')
      or pg_catalog.has_schema_privilege('anon', 'public', 'create') then
     raise exception 'Untrusted API roles must not have CREATE privilege on public schema';
+  end if;
+
+  -- These privacy-sensitive legacy/internal surfaces must never be callable by
+  -- a signed-in client even though other narrowly-authenticated SECURITY DEFINER
+  -- RPCs are intentionally part of TalkTwo's client API.
+  foreach target in array array[
+    pg_catalog.to_regprocedure('public.withdraw_message(uuid)')::oid,
+    pg_catalog.to_regprocedure('public.edit_unopened_message(uuid,text,text)')::oid,
+    pg_catalog.to_regprocedure('public.get_relationship_partner_settings(uuid)')::oid
+  ]
+  loop
+    if target is not null and pg_catalog.has_function_privilege('authenticated', target, 'execute') then
+      raise exception 'Privacy-sensitive RPC must not be executable by authenticated clients: %', target::regprocedure;
+    end if;
+  end loop;
+
+  if pg_catalog.to_regprocedure('public.set_member_block(uuid,uuid,boolean)') is not null then
+    raise exception 'Legacy three-argument set_member_block RPC must not survive the privacy migration';
   end if;
 end
 $$;

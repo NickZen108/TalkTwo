@@ -8,7 +8,7 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     id: 'row', logical_id: 'logical', relationship_id: 'rel', sender_id: 'sender', recipient_id: null,
     body: 'Hello', body_hash: 'hash', ciphertext: 'cipher', risk_level: 'green', created_at: '2026-08-20T12:00:00Z',
     available_at: '2026-08-20T12:00:00Z', opened_at: null, withdrawn_at: null, edited_at: null, rejected_at: null,
-    reject_reason: null, blocked_for_recipient: false, recipient_count: 1, rejected_count: 0,
+    reject_reason: null, blocked_for_recipient: false, recipient_count: 1, rejected_count: 0, delivered_count: 0,
     message_kind: 'text', attachment_name: null, attachment_mime_type: null, attachment_size_bytes: null,
     attachment_page_count: null, ...overrides,
   };

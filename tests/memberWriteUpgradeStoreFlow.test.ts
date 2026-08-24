@@ -6,6 +6,7 @@ const flow = fs.readFileSync('supabase/migrations/20260824115500_member_write_up
 const guard = fs.readFileSync('supabase/migrations/20260824115600_member_write_upgrade_replacement_guard.sql', 'utf8');
 const recovery = fs.readFileSync('supabase/migrations/20260824115700_member_upgrade_checkout_recovery.sql', 'utf8');
 const resumable = fs.readFileSync('supabase/migrations/20260824115800_resumable_member_upgrade_checkout.sql', 'utf8');
+const approvalSnapshot = fs.readFileSync('supabase/migrations/20260824115900_member_upgrade_approval_snapshot.sql', 'utf8');
 const verifier = fs.readFileSync('supabase/functions/verify-store-purchase/index.ts', 'utf8');
 const billingHook = fs.readFileSync('src/hooks/useNativeStoreBilling.ts', 'utf8');
 const memberBilling = fs.readFileSync('src/services/memberBilling.ts', 'utf8');
@@ -59,6 +60,13 @@ test('interrupted native checkout can be cancelled or resumed without creating c
   assert.match(resumable, /request\.status in \('awaiting_payment','checkout_pending'\)/i);
   assert.match(resumable, /return query select existing_intent\.id,9900,'dkk'::text,true,existing_intent\.expires_at/i);
   assert.match(billingHook, /Reconcile a still-authorized pending intent/i);
+});
+
+test('store completion uses the approval snapshot frozen when checkout began', () => {
+  assert.match(approvalSnapshot, /member_write_upgrade_checkout_snapshot_approved/i);
+  assert.match(approvalSnapshot, /a\.decision is distinct from true/i);
+  assert.match(approvalSnapshot, /request\.status<>'checkout_pending'/i);
+  assert.doesNotMatch(approvalSnapshot, /member_write_upgrade_is_unanimous\(request\.id\)/i);
 });
 
 test('mobile exposes request approval and store continuation only through the new workflow', () => {

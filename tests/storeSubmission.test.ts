@@ -4,6 +4,7 @@ import test from 'node:test';
 import { STORE_PRODUCTS } from '../src/domain/storeProducts';
 
 const pack = fs.readFileSync('docs/STORE_SUBMISSION_PACK.md', 'utf8');
+const checklist = fs.readFileSync('docs/STORE_SETUP_CHECKLIST.md', 'utf8');
 
 test('submission pack contains every canonical store product ID and price', () => {
   for (const product of Object.values(STORE_PRODUCTS)) {
@@ -36,4 +37,13 @@ test('review notes cover the current privacy-explicit PDF export', () => {
   assert.match(pack, /explicit unencrypted-file warning/i);
   assert.match(pack, /date interval controls/i);
   assert.match(pack, /text-document attachment contents/i);
+});
+
+test('store setup checklist requires the fail-closed production gates', () => {
+  assert.match(checklist, /npm run release:preflight/i);
+  assert.match(checklist, /account_deletion_schema_ok/i);
+  assert.match(checklist, /security_definer_schema_ok/i);
+  assert.match(checklist, /20260824084500_ai_budget_reservations\.sql/i);
+  assert.match(checklist, /Final app\/adaptive icon and store artwork must be approved/i);
+  assert.match(checklist, /unknown email neither creates an account nor reveals/i);
 });

@@ -34,6 +34,11 @@ function singleParameter(params: URLSearchParams, name: string) {
   return matches.length === 1 && matches[0] ? matches[0] : null;
 }
 
+function safeFragmentIdentifier(params: URLSearchParams, name: string) {
+  const value = singleParameter(params, name);
+  return value ? safeIdentifier(value) : null;
+}
+
 function parsed(url: string) {
   if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
   return parseTalkTwoLink(url);
@@ -41,8 +46,11 @@ function parsed(url: string) {
 
 export function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
   const link = parsed(url);
-  if (!link || !['invite', 'member'].includes(link.family) || link.pathSegments.length !== 2) return null;
-  const token = safeIdentifier(link.pathSegments[1] ?? '');
+  // Invitation tokens are bearer authority. They must never appear in an HTTPS
+  // path/query, where web infrastructure may log them. Accept the canonical
+  // fragment-only format and reject legacy path-token links.
+  if (!link || !['invite', 'member'].includes(link.family) || link.pathSegments.length !== 1) return null;
+  const token = safeFragmentIdentifier(link.fragment, 'token');
   const secret = singleParameter(link.fragment, 's');
   if (!token || !secret || !INVITATION_SECRET_PATTERN.test(secret)) return null;
   return {
@@ -58,15 +66,17 @@ export function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
   const giftId = safeIdentifier(link.pathSegments[1] ?? '');
   // Keep the possession token in the fragment so an HTTPS browser fallback never
   // sends it to the public web server, reverse proxy or request logs.
-  const token = singleParameter(link.fragment, 'token');
-  if (!giftId || !token || token.length > MAX_IDENTIFIER_LENGTH || /[\u0000-\u001f\u007f]/.test(token)) return null;
+  const token = safeFragmentIdentifier(link.fragment, 'token');
+  if (!giftId || !token) return null;
   return { giftId, token };
 }
 
 export function keyRecoveryFromUrl(url: string): (PendingKeyRecoveryApproval & { secret: string }) | null {
   const link = parsed(url);
-  if (!link || link.family !== 'recover-key' || link.pathSegments.length !== 2) return null;
-  const token = safeIdentifier(link.pathSegments[1] ?? '');
+  // The recovery token authorizes a chat member to inspect/fulfill the request,
+  // so both it and the local envelope secret stay fragment-only.
+  if (!link || link.family !== 'recover-key' || link.pathSegments.length !== 1) return null;
+  const token = safeFragmentIdentifier(link.fragment, 'token');
   const secret = singleParameter(link.fragment, 's');
   if (!token || !secret || !INVITATION_SECRET_PATTERN.test(secret)) return null;
   return { token, secret: secret.toLowerCase() };
@@ -74,15 +84,17 @@ export function keyRecoveryFromUrl(url: string): (PendingKeyRecoveryApproval & {
 
 export function isInvitationUrl(url: string) {
   const link = parsed(url);
-  return Boolean(link && (link.family === 'invite' || link.family === 'member'));
+  return Boolean(link && (link.family === 'invite' || link.family === 'member') && link.pathSegments.length === 1);
 }
 
 export function isPremiumGiftUrl(url: string) {
-  return parsed(url)?.family === 'premium-gift';
+  const link = parsed(url);
+  return Boolean(link && link.family === 'premium-gift' && link.pathSegments.length === 2);
 }
 
 export function isKeyRecoveryUrl(url: string) {
-  return parsed(url)?.family === 'recover-key';
+  const link = parsed(url);
+  return Boolean(link && link.family === 'recover-key' && link.pathSegments.length === 1);
 }
 
 export function isAuthCallbackUrl(url: string) {

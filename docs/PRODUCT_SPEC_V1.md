@@ -14,7 +14,7 @@ TalkTwo deliberately discourages criticism, emotional unloading, generalisations
 - A user can connect to multiple other users through separate relationships.
 - Invitations use a shareable link that can be sent through SMS, email or another app.
 - One user may pay Premium for the other user.
-- Organisations can buy activation codes without access to message content.
+- Organisations can fund Premium without access to message content. Organisation-funded access is assigned server-side to a verified account; the consumer app does not use an activation-code or alternate-payment field.
 
 ## Free plan
 - Strict local rule-based filtering. No AI calls.
@@ -49,7 +49,7 @@ Premium adds:
 - Optional Coach.
 - Calm rewrite suggestions.
 - Personal Boundaries with up to 10 user-defined blocked words or phrases, subject to anti-abuse rules.
-- PDF export over a selected period or entire history.
+- PDF export over a selected period or entire visible history.
 - Text-document attachments, scanned for conflict content before delivery.
 
 ## Risk levels
@@ -112,30 +112,37 @@ Premium only and opt-in.
 - Calm, short, respectful and non-therapeutic tone.
 - May advise whenever enabled.
 - Can suggest a practical rewrite.
-- Can show only the user's own statistics, including percentage of attempts blocked.
+- Can show only the user's own aggregate statistics, including percentage of attempts blocked.
 - Never compares one partner's score against another's.
+- Coach statistics do not store message text, relationship IDs or partner scores.
 
 ## Exports
-Premium users can export sent message history to PDF for a chosen date interval or the entire history.
+Premium users can export locally visible ordinary message history to PDF for a chosen date interval or the entire visible history.
 
 Export includes:
-- sent messages
-- sender/recipient
+- ordinary text messages
+- sender and recipient/conversation context
 - dates and timestamps
 - app branding and selected interval
 
 Export excludes:
+- unopened or locally unavailable messages
 - blocked drafts
+- withdrawn messages
+- text-document attachment contents
 - AI judgments
 - AI scores
 - private Coach advice
+
+The generated PDF is readable and unencrypted. The app warns the user before creating it and uses the device share sheet instead of uploading the PDF to TalkTwo.
 
 ## Privacy principles
 - Local-first message history where feasible.
 - Minimise central retention.
 - Server stores only what is necessary for routing, account state, undelivered messages and synchronization.
 - AI analysis only occurs for Premium/trial users and should use the minimum contextual data needed.
-- Organisations paying for accounts get no access to conversations or private user statistics.
+- Organisations paying for accounts get no access to conversations, relationship identifiers or private user statistics.
+- Pending organisation sponsorships store only a one-way hash of the normalized recipient email, not the recipient email in plaintext.
 
 ## Internationalisation
 - UI architecture supports many languages from the start.

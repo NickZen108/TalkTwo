@@ -23,6 +23,7 @@ export interface ChatMessage {
   blocked_for_recipient: boolean;
   recipient_count: number;
   rejected_count: number;
+  delivered_count: number;
   message_kind: 'text' | 'text_attachment';
   attachment_name: string | null;
   attachment_mime_type: string | null;
@@ -37,6 +38,12 @@ interface AttachmentMetadataRow {
   attachment_mime_type: string | null;
   attachment_size_bytes: number | null;
   attachment_page_count: number | null;
+}
+
+interface SentDeliveryStatusRow {
+  logical_id: string;
+  recipient_count: number;
+  delivered_count: number;
 }
 
 async function currentUserId() {
@@ -81,21 +88,32 @@ async function persistVisibleMessage(ownerUserId: string, message: ChatMessage) 
 
 export async function listMessages(relationshipId: string) {
   const ownerUserId = await currentUserId();
-  const [{ data, error }, cached, metadataResult] = await Promise.all([
+  const { error: deliveryAckError } = await supabase.rpc('ack_available_messages_delivered', { rel_id: relationshipId });
+  if (deliveryAckError) throw deliveryAckError;
+
+  const [{ data, error }, cached, metadataResult, deliveryResult] = await Promise.all([
     supabase.rpc('list_relationship_messages', { rel_id: relationshipId }),
     listCachedMessages(ownerUserId, relationshipId),
     supabase.rpc('list_relationship_attachment_metadata', { rel_id: relationshipId }),
+    supabase.rpc('list_my_sent_delivery_status', { rel_id: relationshipId }),
   ]);
   if (error) throw error;
   if (metadataResult.error) throw metadataResult.error;
+  if (deliveryResult.error) throw deliveryResult.error;
   const metadata = new Map(
     ((metadataResult.data ?? []) as AttachmentMetadataRow[]).map((row) => [row.message_key, row]),
+  );
+  const deliveryByLogicalId = new Map(
+    ((deliveryResult.data ?? []) as SentDeliveryStatusRow[]).map((row) => [row.logical_id, row]),
   );
   const remote: ChatMessage[] = ((data ?? []) as ChatMessage[]).map((row) => {
     const mine = row.sender_id === ownerUserId;
     const attachment = metadata.get(mine ? row.logical_id : row.id);
+    const delivery = mine ? deliveryByLogicalId.get(row.logical_id) : null;
     return {
       ...row,
+      recipient_count: delivery?.recipient_count ?? row.recipient_count,
+      delivered_count: delivery?.delivered_count ?? 0,
       message_kind: attachment?.message_kind ?? ('text' as const),
       attachment_name: attachment?.attachment_name ?? null,
       attachment_mime_type: attachment?.attachment_mime_type ?? null,
@@ -158,6 +176,7 @@ export async function sendMessage(relationshipId: string, body: string) {
     ...row,
     body: clean,
     ciphertext: encryptedBody,
+    delivered_count: 0,
     message_kind: 'text',
     attachment_name: null,
     attachment_mime_type: null,
@@ -193,6 +212,7 @@ export async function sendTextAttachment(relationshipId: string, attachment: Pre
     ...row,
     body: attachment.text,
     ciphertext: encryptedBody,
+    delivered_count: 0,
     message_kind: 'text_attachment',
     attachment_name: attachment.name,
     attachment_mime_type: attachment.mimeType,
@@ -215,7 +235,7 @@ export async function openMessage(messageId: string) {
   if (!body) throw new Error('Message could not be stored securely on this device.');
   const { error: ackError } = await supabase.rpc('ack_opened_message_cached', { message_id: row.id });
   if (ackError) throw ackError;
-  return { ...row, body };
+  return { ...row, body, delivered_count: 0 };
 }
 
 export async function rejectMessageWithoutOpening(messageId: string) {
@@ -251,6 +271,7 @@ export async function editUnopenedMessage(logicalId: string, relationshipId: str
     ...row,
     body: clean,
     ciphertext: encryptedBody,
+    delivered_count: 0,
     message_kind: 'text',
     attachment_name: null,
     attachment_mime_type: null,

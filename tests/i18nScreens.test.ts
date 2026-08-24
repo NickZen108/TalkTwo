@@ -11,7 +11,7 @@ const settingsScreen = fs.readFileSync('src/screens/ChatSettingsScreen.tsx', 'ut
 const accountScreen = fs.readFileSync('src/screens/AccountScreen.tsx', 'utf8');
 
 test('message window copy and accessibility labels use the locale catalogue', () => {
-  assert.match(windowsScreen, /const \{ t \} = useI18n\(\)/);
+  assert.match(windowsScreen, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(windowsScreen, /t\('windows\.timezoneHelp', \{ timezone: deviceTimezone \}\)/);
   assert.match(windowsScreen, /accessibilityLabel=\{t\('windows\.windowLabel', \{ day: name \}\)\}/);
   assert.match(windowsScreen, /accessibilityLabel=\{t\('windows\.saveLabel', \{ day: name \}\)\}/);

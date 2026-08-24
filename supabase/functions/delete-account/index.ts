@@ -18,6 +18,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'confirmation_required' }, 400);
     }
 
+    // Revoke every refresh session before removing the Auth user so another
+    // device cannot refresh its session after deletion. Supabase access-token
+    // JWTs remain valid until their encoded expiry, so database authorization
+    // must still fail closed once the user's rows have been cascaded away.
+    const { error: signOutError } = await userClient.auth.signOut({ scope: 'global' });
+    if (signOutError) throw signOutError;
+
     const { error: deleteError } = await supabaseAdmin().auth.admin.deleteUser(user.id);
     if (deleteError) throw deleteError;
 

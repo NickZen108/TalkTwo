@@ -8,7 +8,8 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { scripts?: R
 test('release preflight rejects placeholder/private client configuration', () => {
   assert.match(source, /EXPO_PUBLIC_SUPABASE_URL/i);
   assert.match(source, /EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY/i);
-  assert.match(source, /service\[_-\]\?role/i);
+  assert.match(source, /\^sb_publishable_/i);
+  assert.match(source, /secret and legacy service-role keys are forbidden/i);
   assert.match(source, /EXPO_PUBLIC_TALKTWO_SITE_URL/i);
   assert.match(source, /url\.protocol === 'https:'/i);
   assert.match(source, /!url\.username && !url\.password/i);

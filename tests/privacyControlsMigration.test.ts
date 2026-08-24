@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const migration = fs.readFileSync('supabase/migrations/20260824110000_privacy_controls_and_notification_mutes.sql', 'utf8');
 const storageBoundaryMigration = fs.readFileSync('supabase/migrations/20260824113000_storage_boundary_enforcement.sql', 'utf8');
+const messageClient = fs.readFileSync('src/services/messages.ts', 'utf8');
 
 test('partner timezone/window RPC is not participant-readable', () => {
   assert.match(migration, /revoke execute on function public\.get_relationship_partner_settings\(uuid\) from authenticated/i);
@@ -58,4 +59,13 @@ test('plaintext is processed for trusted checks but removed before an inserted m
   assert.ok(scrub > boundaryMatch, 'plaintext may only be cleared after storage-boundary checks');
   assert.match(storageBoundaryMigration, /new\.plaintext_scrubbed_at := coalesce\(new\.plaintext_scrubbed_at, now\(\)\)/i);
   assert.match(storageBoundaryMigration, /not a claim of[\s\S]*end-to-end encryption/i);
+});
+
+test('incoming verification hashes remain private until the recipient actually opens the message', () => {
+  const incoming = storageBoundaryMigration.match(/incoming as \([\s\S]*?\)\s*select \* from mine/i)?.[0] ?? '';
+  assert.match(incoming, /case when m\.blocked_for_recipient or m\.opened_at is null then null else m\.body_hash end as body_hash/i);
+  assert.match(incoming, /case when m\.blocked_for_recipient or m\.opened_at is null then null else m\.ciphertext end as ciphertext/i);
+  assert.match(messageClient, /body_hash: string \| null/);
+  assert.match(messageClient, /if \(!message\.body_hash\) throw new Error\('The server-approved message verifier is unavailable\.'/);
+  assert.match(messageClient, /row\.ciphertext && row\.body_hash && \(mine \|\| row\.opened_at\)/);
 });

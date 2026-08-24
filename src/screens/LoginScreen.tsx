@@ -3,11 +3,13 @@ import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, Touchable
 import { sendMagicLink } from '../services/auth';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import { useI18n } from '../i18n/I18nContext';
+import { getFreeFilterCopy } from '../i18n/freeFilterCopy';
 
 export default function LoginScreen() {
   const { colors } = useAppTheme();
   const { t, locale, setPreference } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const freeFilterCopy = useMemo(() => getFreeFilterCopy(locale), [locale]);
   const [email, setEmail] = useState('');
   const [sentEmail, setSentEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,6 +41,7 @@ export default function LoginScreen() {
           <View style={styles.step}><Text style={styles.stepNumber}>1</Text><Text style={styles.stepText}>{t('login.step1')}</Text></View>
           <View style={styles.step}><Text style={styles.stepNumber}>2</Text><Text style={styles.stepText}>{t('login.step2')}</Text></View>
           <View style={styles.step}><Text style={styles.stepNumber}>3</Text><Text style={styles.stepText}>{t('login.step3')}</Text></View>
+          <Text style={styles.filterLanguageNote}>{freeFilterCopy.semanticLimit}</Text>
           <Text style={styles.safetyNote}>{t('login.safety')}</Text>
         </View>
         <View style={styles.card}>
@@ -77,7 +80,8 @@ function makeStyles(colors: AppColors) {
     step: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
     stepNumber: { width: 26, height: 26, borderRadius: 13, textAlign: 'center', textAlignVertical: 'center', lineHeight: 26, overflow: 'hidden', backgroundColor: colors.avatar, color: colors.avatarText, fontWeight: '800' },
     stepText: { flex: 1, color: colors.muted, lineHeight: 20 },
-    safetyNote: { color: colors.subtle, fontSize: 12, lineHeight: 18, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 10 },
+    filterLanguageNote: { color: colors.muted, fontSize: 12, lineHeight: 18, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 10 },
+    safetyNote: { color: colors.subtle, fontSize: 12, lineHeight: 18 },
     card: { backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 12 },
     title: { fontSize: 20, fontWeight: '800', color: colors.text },
     help: { color: colors.muted, lineHeight: 20 },

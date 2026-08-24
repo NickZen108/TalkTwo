@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 
 export interface CoachSettings {
   enabled: boolean;
+  premium_active: boolean;
   reviewed_attempts: number;
   green_count: number;
   yellow_count: number;
@@ -14,6 +15,7 @@ function normalizeCoachSettings(value: unknown): CoachSettings {
   if (!row || typeof row !== 'object') {
     return {
       enabled: false,
+      premium_active: false,
       reviewed_attempts: 0,
       green_count: 0,
       yellow_count: 0,
@@ -25,6 +27,7 @@ function normalizeCoachSettings(value: unknown): CoachSettings {
   const record = row as Record<string, unknown>;
   return {
     enabled: record.enabled === true,
+    premium_active: record.premium_active === true,
     reviewed_attempts: Number(record.reviewed_attempts ?? 0),
     green_count: Number(record.green_count ?? 0),
     yellow_count: Number(record.yellow_count ?? 0),

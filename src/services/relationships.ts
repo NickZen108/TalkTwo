@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { buildTalkTwoLink } from '../domain/appLinks';
 import {
   bindPendingMemberInviteSecret,
   consumeInitialInviteEnvelope,
@@ -31,7 +32,7 @@ export interface RelationshipMember {
 }
 
 function invitationUrl(path: 'invite' | 'member', token: string, secret: string) {
-  return `talktwo://${path}/${encodeURIComponent(token)}#s=${secret}`;
+  return buildTalkTwoLink(path, token, { fragment: { s: secret } });
 }
 
 async function prepareInvitationEnvelope(token: string, relationshipId: string) {

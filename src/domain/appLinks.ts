@@ -23,7 +23,14 @@ export function talkTwoHttpsOrigin(siteUrl = configuredSiteUrl()) {
   if (!siteUrl) return null;
   try {
     const parsed = new URL(siteUrl);
-    if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password) return null;
+    // The production setting is an origin, not a website sub-path. Silently
+    // discarding a configured path/query/fragment would make operators review
+    // one URL while TalkTwo emits another. Non-default ports are intentionally
+    // rejected because native associated-domain/app-link ownership is host based.
+    if (
+      parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password
+      || parsed.port || parsed.pathname !== '/' || parsed.search || parsed.hash
+    ) return null;
     return parsed.origin;
   } catch {
     return null;

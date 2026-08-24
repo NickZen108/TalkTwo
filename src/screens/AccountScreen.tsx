@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ACCOUNT_DELETE_CONFIRMATION, accountDeleteConfirmed } from '../domain/accountDeletion';
 import { deleteAccount } from '../services/auth';
+import { getMyCoachSettings, setMyCoachEnabled, type CoachSettings } from '../services/coach';
 import { disablePushNotifications, enablePushNotifications, pushNotificationStatus } from '../services/pushNotifications';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
+import { getCoachCopy } from '../i18n/coachCopy';
 import { saveAccountLocalePreference, useI18n, type LocalePreference } from '../i18n/I18nContext';
 
 export default function AccountScreen({
@@ -16,19 +18,24 @@ export default function AccountScreen({
   onBack: () => void;
 }) {
   const { colors } = useAppTheme();
-  const { t, systemLocale, preference, setPreference } = useI18n();
+  const { t, locale, systemLocale, preference, setPreference } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const coachCopy = useMemo(() => getCoachCopy(locale), [locale]);
   const [confirmation, setConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushPermission, setPushPermission] = useState<string>('undetermined');
   const [pushBusy, setPushBusy] = useState(false);
+  const [coach, setCoach] = useState<CoachSettings | null>(null);
+  const [coachBusy, setCoachBusy] = useState(false);
   const confirmed = accountDeleteConfirmed(confirmation);
+  const coachEffective = Boolean(coach?.enabled && coach?.premium_active);
 
   useEffect(() => {
     void pushNotificationStatus()
       .then((status) => { setPushEnabled(status.enabled); setPushPermission(status.permission); })
       .catch(() => undefined);
+    void getMyCoachSettings().then(setCoach).catch(() => undefined);
   }, []);
 
   async function setPush(next: boolean) {
@@ -43,6 +50,25 @@ export default function AccountScreen({
       Alert.alert(t('account.notificationsError'), error instanceof Error ? error.message : t('account.notificationsErrorBody'));
     } finally {
       setPushBusy(false);
+    }
+  }
+
+  async function toggleCoach() {
+    if (!coach || coachBusy) return;
+    const next = !coach.enabled;
+    if (next && !coach.premium_active) {
+      Alert.alert(coachCopy.unavailableTitle, coachCopy.unavailableBody);
+      return;
+    }
+    try {
+      setCoachBusy(true);
+      await setMyCoachEnabled(next);
+      setCoach(await getMyCoachSettings());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : coachCopy.unavailableBody;
+      Alert.alert(coachCopy.unavailableTitle, message.toLowerCase().includes('premium') ? coachCopy.unavailableBody : message);
+    } finally {
+      setCoachBusy(false);
     }
   }
 
@@ -76,6 +102,14 @@ export default function AccountScreen({
       ],
     );
   }
+
+  const coachButtonLabel = coachBusy
+    ? coachCopy.updating
+    : coach?.enabled && !coach.premium_active
+      ? coachCopy.paused
+      : coachEffective
+        ? coachCopy.on
+        : coachCopy.off;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -114,6 +148,36 @@ export default function AccountScreen({
           >
             <Text style={styles.notificationButtonText}>{pushBusy ? t('account.updating') : pushEnabled ? t('account.notificationsOn') : t('account.notificationsOff')}</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{coachCopy.title}</Text>
+          <Text style={styles.body}>{coachCopy.help}</Text>
+          <TouchableOpacity
+            accessibilityRole="switch"
+            accessibilityState={{ checked: coachEffective, disabled: coachBusy || !coach }}
+            disabled={coachBusy || !coach}
+            onPress={() => void toggleCoach()}
+            style={[styles.coachButton, coachEffective && styles.coachButtonEnabled, coachBusy && styles.disabled]}
+          >
+            <Text style={styles.coachButtonText}>{coachButtonLabel}</Text>
+          </TouchableOpacity>
+          {!coach?.premium_active ? <Text style={styles.premiumNote}>{coachCopy.unavailableBody}</Text> : null}
+          {coach?.premium_active ? (
+            <View style={styles.statsWrap}>
+              <Text style={styles.statsTitle}>{coachCopy.statsTitle}</Text>
+              {coach.reviewed_attempts > 0 ? (
+                <View style={styles.statsGrid}>
+                  <View style={styles.statCell}><Text style={styles.statValue}>{coach.reviewed_attempts}</Text><Text style={styles.statLabel}>{coachCopy.reviewed}</Text></View>
+                  <View style={styles.statCell}><Text style={styles.statValue}>{coach.green_count}</Text><Text style={styles.statLabel}>{coachCopy.green}</Text></View>
+                  <View style={styles.statCell}><Text style={styles.statValue}>{coach.yellow_count}</Text><Text style={styles.statLabel}>{coachCopy.yellow}</Text></View>
+                  <View style={styles.statCell}><Text style={styles.statValue}>{coach.red_count}</Text><Text style={styles.statLabel}>{coachCopy.blocked}</Text></View>
+                  <View style={styles.statCell}><Text style={styles.statValue}>{coach.blocked_percentage}%</Text><Text style={styles.statLabel}>{coachCopy.blockedRate}</Text></View>
+                </View>
+              ) : <Text style={styles.body}>{coachCopy.noReviews}</Text>}
+            </View>
+          ) : null}
+          <Text style={styles.privacyNote}>{coachCopy.privacy}</Text>
         </View>
 
         <View style={styles.card}>
@@ -162,6 +226,8 @@ function makeStyles(colors: AppColors) {
     sectionTitle: { color: colors.text, fontSize: 18, fontWeight: '800', flexShrink: 1 },
     body: { color: colors.muted, lineHeight: 20, flexShrink: 1 },
     warning: { color: colors.danger, lineHeight: 20, fontWeight: '700', flexShrink: 1 },
+    premiumNote: { color: colors.noticeText, backgroundColor: colors.notice, borderRadius: 10, padding: 10, lineHeight: 19, flexShrink: 1 },
+    privacyNote: { color: colors.subtle, fontSize: 12, lineHeight: 17, flexShrink: 1 },
     label: { color: colors.text, fontWeight: '700', marginTop: 4 },
     input: { minHeight: 46, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: colors.text, backgroundColor: colors.surfaceSoft },
     deleteButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.danger },
@@ -169,6 +235,15 @@ function makeStyles(colors: AppColors) {
     notificationButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
     notificationButtonEnabled: { backgroundColor: colors.accentStrong },
     notificationButtonText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    coachButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
+    coachButtonEnabled: { backgroundColor: colors.accentStrong },
+    coachButtonText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    statsWrap: { gap: 9, paddingTop: 2 },
+    statsTitle: { color: colors.text, fontWeight: '800', fontSize: 15 },
+    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    statCell: { minWidth: 92, flexGrow: 1, flexBasis: 92, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 10, backgroundColor: colors.surfaceSoft, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    statValue: { color: colors.text, fontSize: 18, fontWeight: '800' },
+    statLabel: { color: colors.muted, fontSize: 12, marginTop: 2 },
     languageOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     languageOption: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSoft },
     languageOptionSelected: { borderColor: colors.accent, borderWidth: 2 },

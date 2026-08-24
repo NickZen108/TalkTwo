@@ -5,6 +5,7 @@ import { sentDeliveryStatusText } from '../src/i18n/deliveryCopy';
 
 const privacyCard = fs.readFileSync('src/components/PartnerAvailabilityCard.tsx', 'utf8');
 const chat = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
+const settings = fs.readFileSync('src/screens/ChatSettingsScreen.tsx', 'utf8');
 
 test('sender delivery copy never reveals rejection state', () => {
   assert.equal(sentDeliveryStatusText(0, 1, 1, 'da'), 'Sendt');
@@ -26,6 +27,11 @@ test('privacy card exposes requested mute and timed block controls', () => {
   assert.match(privacyCard, /setBlock\(member\.user_id, 240\)/);
   assert.match(privacyCard, /setBlock\(member\.user_id, 1440\)/);
   assert.match(privacyCard, /setBlock\(member\.user_id, null\)/);
+});
+
+test('chat settings use one privacy block control surface', () => {
+  assert.match(settings, /<PartnerAvailabilityCard relationshipId=\{relationship\.id\} myUserId=\{session\.user\.id\} \/>/);
+  assert.doesNotMatch(settings, /setMemberBlocked|confirmBlock|settings\.blockPerson|settings\.unblockPerson/);
 });
 
 test('chat never fetches or renders participant timezone metadata', () => {

@@ -63,7 +63,11 @@ if (!validPublicConfig()) {
 
   const supabase = createClient(config.supabaseUrl, config.publishableKey, {
     auth: {
+      // Public deletion links use the same interception-resistant model as the
+      // mobile app: the email contains a short-lived auth code, while the PKCE
+      // verifier remains on the browser/device that initiated the request.
       detectSessionInUrl: true,
+      flowType: 'pkce',
       persistSession: true,
       autoRefreshToken: true,
     },
@@ -107,7 +111,8 @@ if (!validPublicConfig()) {
       });
     } finally {
       // Keep the same response for existing and unknown addresses so the page
-      // does not become an account-enumeration endpoint.
+      // does not become an account-enumeration endpoint at the UI layer. The
+      // production smoke test must also verify the provider/network behavior.
       requestStatus.textContent = genericLinkMessage;
       setBusy(requestButton, false, 'Email me a secure sign-in link', 'Sending…');
     }

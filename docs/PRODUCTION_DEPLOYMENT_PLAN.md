@@ -40,6 +40,7 @@ Critical ordering invariants:
 16. `20260824110000_privacy_controls_and_notification_mutes.sql`
 17. `20260824111000_cancel_muted_and_blocked_push_jobs.sql`
 18. `20260824112000_delivery_and_open_state_privacy.sql`
+19. `20260824113000_storage_boundary_enforcement.sql`
 
 If additional migrations exist on the frozen release commit, they also run in lexical filename order.
 
@@ -54,7 +55,8 @@ If additional migrations exist on the frozen release commit, they also run in le
 - verify authenticated participants cannot execute the partner timezone/window RPC;
 - verify `notification_mutes` has no direct `anon`/`authenticated` table access;
 - verify sender-visible message rows contain no recipient open/rejection state;
-- verify emoji/emoticon storage is rejected regardless of plan/client.
+- verify emoji/emoticon storage is rejected regardless of plan/client;
+- verify an expired timed block cannot bypass an active recipient Personal Boundary for either text messages or text-document attachments.
 
 ## Phase 2 — Edge Functions
 
@@ -85,6 +87,7 @@ Use disposable test identities and sandbox/store-test transactions only.
 - Verify an unsafe public display name is not exposed to other participants.
 - Verify recipient timezone, local time and exact communication window cannot be fetched by another participant.
 - Verify 1-hour, 4-hour, 24-hour and indefinite blocks remain private to the blocker.
+- Verify an expired timed block resumes delivery without bypassing the recipient's active Personal Boundaries for text or text-document attachments.
 - Verify global/chat/person notification mutes suppress alerts without stopping message routing.
 - Verify queued alerts are cancelled immediately when the device, chat/person notification scope or sender is muted/blocked.
 - AI hard-limit reservation, commit/finalize and fail-closed behavior.

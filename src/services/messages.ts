@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { cacheMessage, listCachedMessages, removeCachedMessage } from './localDb';
+import { cacheMessage, listCachedMessages } from './localDb';
 import { decryptMessageBody, encryptMessageBody, hashMessageBody } from './messageCrypto';
 import type { PreparedTextAttachment } from '../domain/textAttachments';
 
@@ -242,44 +242,4 @@ export async function rejectMessageWithoutOpening(messageId: string) {
   const { data, error } = await supabase.rpc('reject_message_without_opening', { message_id: messageId });
   if (error) throw error;
   return Boolean(data);
-}
-
-export async function withdrawMessage(logicalId: string, relationshipId: string) {
-  const ownerUserId = await currentUserId();
-  const { data, error } = await supabase.rpc('withdraw_message', { message_id: logicalId });
-  if (error) throw error;
-  const changed = Boolean(data);
-  if (changed) await removeCachedMessage(ownerUserId, relationshipId, logicalId);
-  return changed;
-}
-
-export async function editUnopenedMessage(logicalId: string, relationshipId: string, body: string) {
-  const ownerUserId = await currentUserId();
-  const clean = body.trim();
-  const encryptedBody = await encryptMessageBody(relationshipId, clean);
-  const { data, error } = await supabase.rpc('edit_unopened_message', {
-    message_id: logicalId,
-    new_body: clean,
-    encrypted_body: encryptedBody,
-  });
-  if (error) throw error;
-  const row = (Array.isArray(data) ? data[0] : data) as ChatMessage | null;
-  if (!row) throw new Error('Message could not be edited.');
-  const expectedHash = await hashMessageBody(clean);
-  if (row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) throw new Error('Server message verification failed.');
-  const complete: ChatMessage = {
-    ...row,
-    body: clean,
-    ciphertext: encryptedBody,
-    delivered_count: 0,
-    message_kind: 'text',
-    attachment_name: null,
-    attachment_mime_type: null,
-    attachment_size_bytes: null,
-    attachment_page_count: null,
-  };
-  await persistVisibleMessage(ownerUserId, complete);
-  const { error: ackError } = await supabase.rpc('ack_sent_message_cached', { message_id: row.logical_id });
-  if (ackError) throw ackError;
-  return complete;
 }

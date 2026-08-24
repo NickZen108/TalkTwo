@@ -9,11 +9,17 @@ test('post-deploy security gate rejects privacy-sensitive authenticated RPC surf
     'public.withdraw_message(uuid)',
     'public.edit_unopened_message(uuid,text,text)',
     'public.get_relationship_partner_settings(uuid)',
+    'public.get_member_write_upgrade_offer(uuid)',
+    'public.get_member_upgrade_verification_context(uuid,uuid)',
+    'public.confirm_verified_member_write_upgrade(uuid,uuid,text,text,text,timestamptz,timestamptz)',
+    'public.confirm_member_write_upgrade(uuid,uuid,text)',
+    'public.complete_billing_intent(uuid,text,text,timestamptz,timestamptz)',
   ]) {
     assert.match(check, new RegExp(signature.replace(/[().]/g, '\\$&')));
   }
   assert.match(check, /has_function_privilege\('authenticated', target, 'execute'\)/i);
-  assert.match(check, /Privacy-sensitive RPC must not be executable by authenticated clients/i);
+  assert.match(check, /has_function_privilege\('anon', target, 'execute'\)/i);
+  assert.match(check, /Privacy-sensitive or service-only RPC must not be executable/i);
 });
 
 test('post-deploy gate rejects the obsolete three-argument block RPC', () => {

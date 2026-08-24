@@ -13,8 +13,8 @@ test('development links use the custom scheme only when no site URL is configure
   assert.deepEqual(parsed?.pathSegments, ['invite']);
 });
 
-test('configured production links use the HTTPS origin and app namespace', () => {
-  const site = 'https://secure.example/public/path';
+test('configured production links require one canonical HTTPS origin and app namespace', () => {
+  const site = 'https://secure.example';
   assert.equal(talkTwoHttpsOrigin(site), 'https://secure.example');
   const link = buildTalkTwoLink(
     'recover-key',
@@ -26,6 +26,19 @@ test('configured production links use the HTTPS origin and app namespace', () =>
   const parsed = parseTalkTwoLink(link, site);
   assert.equal(parsed?.family, 'recover-key');
   assert.deepEqual(parsed?.pathSegments, ['recover-key']);
+});
+
+test('production site configuration rejects paths, query, fragments and non-default ports', () => {
+  for (const site of [
+    'https://secure.example/public/path',
+    'https://secure.example/?campaign=1',
+    'https://secure.example/#section',
+    'https://secure.example:8443',
+  ]) {
+    assert.equal(talkTwoHttpsOrigin(site), null);
+    assert.throws(() => buildTalkTwoLink('auth', undefined, {}, site), /public link configuration is invalid/i);
+  }
+  assert.equal(talkTwoHttpsOrigin('https://secure.example/'), 'https://secure.example');
 });
 
 test('production parser rejects custom schemes, look-alike origins and non-app paths', () => {

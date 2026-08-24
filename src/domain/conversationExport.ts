@@ -21,7 +21,12 @@ function printableDate(value: string, locale?: string) {
 
 export function exportableMessages(messages: ChatMessage[]) {
   return messages
-    .filter((message) => Boolean(message.body) && !message.withdrawn_at && !message.blocked_for_recipient)
+    .filter((message) => (
+      message.message_kind === 'text'
+      && Boolean(message.body)
+      && !message.withdrawn_at
+      && !message.blocked_for_recipient
+    ))
     .sort((left, right) => left.created_at.localeCompare(right.created_at));
 }
 

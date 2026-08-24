@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 import { ACCOUNT_DELETE_CONFIRMATION } from '../domain/accountDeletion';
 import { clearLocalAccountData } from './localDb';
 import { clearPendingStorePurchase } from './storeBilling';
-import { removeThreadKeys } from './threadKeys';
+import { clearAllTalkTwoThreadSecrets, clearPendingThreadSecrets, removeThreadKeys } from './threadKeys';
 import { disablePushNotifications } from './pushNotifications';
 
 export const AUTH_REDIRECT_URL = 'talktwo://auth';
@@ -42,6 +42,9 @@ export async function createSessionFromMagicLink(url: string) {
 
 export async function signOut() {
   await disablePushNotifications().catch(() => undefined);
+  // Invite and recovery secrets are single-purpose state for the active account.
+  // Do not let them silently cross an account switch on a shared device.
+  await clearPendingThreadSecrets().catch(() => undefined);
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
@@ -57,9 +60,12 @@ export async function deleteAccount(userId: string, relationshipIds: string[]) {
   try {
     await Promise.all([
       clearLocalAccountData(userId),
-      removeThreadKeys(relationshipIds),
       clearPendingStorePurchase(),
     ]);
+    // Known IDs remove thread keys created by older, pre-index builds. The index
+    // then clears every current TalkTwo thread/invite/recovery secret on device.
+    await removeThreadKeys(relationshipIds);
+    await clearAllTalkTwoThreadSecrets();
   } catch (error) {
     cleanupError = error;
   } finally {

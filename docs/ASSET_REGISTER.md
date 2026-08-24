@@ -4,7 +4,7 @@ Keep this document free of passwords, secret values and personal recovery data. 
 
 | Asset | Purpose | Ownership target | Transfer method / gate | Current repository status |
 | --- | --- | --- | --- | --- |
-| GitHub repository / organization | Source, PRs, CI | Organization/team owned | Transfer repository/org roles; verify buyer admin; remove seller after acceptance | Repository exists; handover strategy documented |
+| GitHub repository / organization | Source, PRs, CI | Organization/team owned | Transfer repository into a buyer/company-controlled GitHub organization; verify at least two appropriate buyer admins/recovery paths; remove seller only after acceptance | Repository currently lives in the personal `NickZen108/TalkTwo` namespace. This is not a code blocker, but organization ownership is a handover-readiness improvement and should be completed before/at a sale rather than leaving the buyer dependent on a personal account. |
 | Supabase project / organization | Auth, database, RPCs, Edge Functions | Organization/team owned | Add/transfer organization control, billing and recovery; rotate secrets | Project integration exists; production deployment intentionally not performed by launch-readiness branches |
 | Expo / EAS project | Signed builds, push project identity | Organization/team owned | Buyer-controlled Expo org/project and build credentials | Final EAS project ID still a release blocker |
 | Apple Developer / App Store Connect | iOS signing/distribution/IAP | Correct legal entity/team | Provider-supported app/account/team transfer as applicable | Account-dependent; final signed/store validation not performed |

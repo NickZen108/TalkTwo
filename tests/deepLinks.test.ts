@@ -11,6 +11,24 @@ import {
 } from '../src/domain/deepLinks';
 
 const secret = 'A'.repeat(64);
+const originalSiteUrl = process.env.EXPO_PUBLIC_TALKTWO_SITE_URL;
+delete process.env.EXPO_PUBLIC_TALKTWO_SITE_URL;
+
+function withSiteUrl<T>(value: string, run: () => T) {
+  const previous = process.env.EXPO_PUBLIC_TALKTWO_SITE_URL;
+  process.env.EXPO_PUBLIC_TALKTWO_SITE_URL = value;
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) delete process.env.EXPO_PUBLIC_TALKTWO_SITE_URL;
+    else process.env.EXPO_PUBLIC_TALKTWO_SITE_URL = previous;
+  }
+}
+
+process.on('exit', () => {
+  if (originalSiteUrl === undefined) delete process.env.EXPO_PUBLIC_TALKTWO_SITE_URL;
+  else process.env.EXPO_PUBLIC_TALKTWO_SITE_URL = originalSiteUrl;
+});
 
 test('parses invitation secrets from fragments without preserving their case', () => {
   assert.deepEqual(invitationFromUrl(`talktwo://invite/invite%201#s=${secret}`), {
@@ -60,7 +78,28 @@ test('recognizes only exact TalkTwo link families', () => {
   assert.equal(isPremiumGiftUrl('talktwo://premium-gifts/id'), false);
   assert.equal(isKeyRecoveryUrl('talktwo://recover-key/id'), true);
   assert.equal(isKeyRecoveryUrl('talktwo://recover-keys/id'), false);
-  assert.equal(isAuthCallbackUrl('talktwo://auth#access_token=x'), true);
-  assert.equal(isAuthCallbackUrl('talktwo://authentication#access_token=x'), false);
-  assert.equal(isAuthCallbackUrl(`talktwo://auth#${'x'.repeat(4096)}`), false);
+  assert.equal(isAuthCallbackUrl('talktwo://auth?code=x'), true);
+  assert.equal(isAuthCallbackUrl('talktwo://authentication?code=x'), false);
+  assert.equal(isAuthCallbackUrl(`talktwo://auth?code=${'x'.repeat(4096)}`), false);
+});
+
+test('configured builds accept only same-origin HTTPS app paths', () => {
+  withSiteUrl('https://secure.example', () => {
+    assert.deepEqual(invitationFromUrl(`https://secure.example/app/invite/invite%201#s=${secret}`), {
+      kind: 'invite',
+      token: 'invite 1',
+      secret: secret.toLowerCase(),
+    });
+    assert.deepEqual(premiumGiftFromUrl('https://secure.example/app/premium-gift/gift%201?token=token-1'), {
+      giftId: 'gift 1',
+      token: 'token-1',
+    });
+    assert.deepEqual(keyRecoveryFromUrl(`https://secure.example/app/recover-key/request%201#s=${secret}`), {
+      token: 'request 1',
+      secret: secret.toLowerCase(),
+    });
+    assert.equal(isAuthCallbackUrl('https://secure.example/app/auth?code=x'), true);
+    assert.equal(isAuthCallbackUrl('talktwo://auth?code=x'), false);
+    assert.equal(isInvitationUrl(`https://secure.example.evil.invalid/app/invite/id#s=${secret}`), false);
+  });
 });

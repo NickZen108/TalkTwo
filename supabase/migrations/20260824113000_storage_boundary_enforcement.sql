@@ -12,6 +12,38 @@
 -- for newly inserted rows. This is stronger at-rest minimization, not a claim of
 -- zero-knowledge or end-to-end encryption: the trusted send boundary still
 -- processes plaintext while deciding whether the message may be routed.
+--
+-- Personal Boundary phrases are private recipient configuration. Older send RPCs
+-- include the return value of matching_personal_boundary() in their exception
+-- copy, so replace the helper at the final migration boundary with a presence-only
+-- marker. Existing callers still get a non-null signal, but can no longer learn
+-- which private word or phrase matched.
+create or replace function private.matching_personal_boundary(
+  target_user uuid,
+  target_relationship uuid,
+  message_body text
+)
+returns text
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select 'private Personal Boundary'::text
+  from public.personal_boundaries pb
+  join public.user_plans up on up.user_id = pb.user_id
+  where pb.user_id = target_user
+    and pb.relationship_id = target_relationship
+    and (
+      (up.plan = 'trial' and up.trial_ends_at > now()) or
+      (up.plan = 'premium' and (up.premium_ends_at is null or up.premium_ends_at > now()))
+    )
+    and strpos(
+      ' ' || public.normalize_personal_boundary(message_body) || ' ',
+      ' ' || pb.normalized_phrase || ' '
+    ) > 0
+  limit 1;
+$$;
 
 create or replace function private.enforce_message_privacy_invariants()
 returns trigger
@@ -21,7 +53,7 @@ set search_path = ''
 as $$
 declare
   reason text;
-  boundary_phrase text;
+  boundary_match text;
 begin
   if new.body is not null then
     reason := public.symbolic_tone_block_reason(new.body);
@@ -39,13 +71,13 @@ begin
     );
 
     if not new.blocked_for_recipient and new.body is not null then
-      boundary_phrase := private.matching_personal_boundary(
+      boundary_match := private.matching_personal_boundary(
         new.recipient_id,
         new.relationship_id,
         new.body
       );
-      if boundary_phrase is not null then
-        raise exception 'Message contains a recipient''s blocked word or phrase: "%"', boundary_phrase;
+      if boundary_match is not null then
+        raise exception 'Message matches a recipient''s private Personal Boundary. Rephrase or remove the sensitive topic.';
       end if;
     end if;
 

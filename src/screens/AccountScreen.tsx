@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ACCOUNT_DELETE_CONFIRMATION, accountDeleteConfirmed } from '../domain/accountDeletion';
 import { deleteAccount } from '../services/auth';
 import { getMyCoachSettings, setMyCoachEnabled, type CoachSettings } from '../services/coach';
 import { disablePushNotifications, enablePushNotifications, pushNotificationStatus } from '../services/pushNotifications';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import { getCoachCopy } from '../i18n/coachCopy';
+import { getPublicInfoCopy } from '../i18n/legalCopy';
 import { saveAccountLocalePreference, useI18n, type LocalePreference } from '../i18n/I18nContext';
+import { talkTwoPublicSiteLinks } from '../lib/publicSite';
 
 export default function AccountScreen({
   userId,
@@ -21,6 +23,7 @@ export default function AccountScreen({
   const { t, locale, systemLocale, preference, setPreference } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const coachCopy = useMemo(() => getCoachCopy(locale), [locale]);
+  const publicInfoCopy = useMemo(() => getPublicInfoCopy(locale), [locale]);
   const [confirmation, setConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
@@ -82,6 +85,14 @@ export default function AccountScreen({
     }
   }
 
+  async function openPublicLink(url: string) {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(publicInfoCopy.openErrorTitle, publicInfoCopy.openErrorBody);
+    }
+  }
+
   function confirmDeletion() {
     if (!confirmed || deleting) return;
     Alert.alert(
@@ -110,6 +121,13 @@ export default function AccountScreen({
       : coachEffective
         ? coachCopy.on
         : coachCopy.off;
+
+  const publicLinks = talkTwoPublicSiteLinks ? [
+    { label: publicInfoCopy.privacy, url: talkTwoPublicSiteLinks.privacy },
+    { label: publicInfoCopy.terms, url: talkTwoPublicSiteLinks.terms },
+    { label: publicInfoCopy.support, url: talkTwoPublicSiteLinks.support },
+    { label: publicInfoCopy.deleteAccount, url: talkTwoPublicSiteLinks.deleteAccount },
+  ] : [];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -180,6 +198,18 @@ export default function AccountScreen({
           <Text style={styles.privacyNote}>{coachCopy.privacy}</Text>
         </View>
 
+        {publicLinks.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>{publicInfoCopy.title}</Text>
+            <Text style={styles.body}>{publicInfoCopy.help}</Text>
+            {publicLinks.map((item) => (
+              <TouchableOpacity key={item.url} accessibilityRole="link" onPress={() => void openPublicLink(item.url)} style={styles.publicLinkButton}>
+                <Text style={styles.publicLinkText}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{t('account.deleteTitle')}</Text>
           <Text style={styles.body}>{t('account.deleteBody1')}</Text>
@@ -238,6 +268,8 @@ function makeStyles(colors: AppColors) {
     coachButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
     coachButtonEnabled: { backgroundColor: colors.accentStrong },
     coachButtonText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    publicLinkButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surfaceSoft, borderWidth: 1, borderColor: colors.borderStrong },
+    publicLinkText: { color: colors.accent, fontWeight: '800', flexShrink: 1 },
     statsWrap: { gap: 9, paddingTop: 2 },
     statsTitle: { color: colors.text, fontWeight: '800', fontSize: 15 },
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

@@ -10,7 +10,7 @@ export interface ChatMessage {
   sender_id: string;
   recipient_id: string | null;
   body: string | null;
-  body_hash: string;
+  body_hash: string | null;
   ciphertext: string | null;
   risk_level: 'green' | 'yellow';
   created_at: string;
@@ -54,6 +54,7 @@ async function currentUserId() {
 
 async function verifiedBody(message: ChatMessage) {
   if (!message.ciphertext) return message.body;
+  if (!message.body_hash) throw new Error('The server-approved message verifier is unavailable.');
   const decrypted = await decryptMessageBody(message.relationship_id, message.ciphertext, message.body_hash);
   if (message.body !== null && message.body.trim() !== decrypted) {
     throw new Error('The encrypted message does not match the approved server copy.');
@@ -62,7 +63,9 @@ async function verifiedBody(message: ChatMessage) {
 }
 
 async function persistVisibleMessage(ownerUserId: string, message: ChatMessage) {
-  if (message.blocked_for_recipient || !message.ciphertext) return null;
+  const bodyHash = message.body_hash;
+  const ciphertext = message.ciphertext;
+  if (message.blocked_for_recipient || !ciphertext || !bodyHash) return null;
   const body = await verifiedBody(message);
   if (!body) return null;
   const mine = message.sender_id === ownerUserId;
@@ -75,8 +78,8 @@ async function persistVisibleMessage(ownerUserId: string, message: ChatMessage) 
     senderId: message.sender_id,
     recipientId: message.recipient_id,
     body,
-    bodyHash: message.body_hash,
-    ciphertext: message.ciphertext,
+    bodyHash,
+    ciphertext,
     riskLevel: message.risk_level,
     createdAt: message.created_at,
     editedAt: message.edited_at,
@@ -130,16 +133,16 @@ export async function listMessages(relationshipId: string) {
     const local = localByKey.get(key);
 
     if (row.blocked_for_recipient) {
-      hydrated.push({ ...row, body: null, ciphertext: null });
+      hydrated.push({ ...row, body: null, body_hash: null, ciphertext: null });
       continue;
     }
 
     if (local) {
-      hydrated.push({ ...row, body: local.body, ciphertext: local.ciphertext });
+      hydrated.push({ ...row, body: local.body, body_hash: local.body_hash, ciphertext: local.ciphertext });
       continue;
     }
 
-    if (row.ciphertext && (mine || row.opened_at)) {
+    if (row.ciphertext && row.body_hash && (mine || row.opened_at)) {
       try {
         const body = await persistVisibleMessage(ownerUserId, row);
         if (body) {
@@ -171,7 +174,9 @@ export async function sendMessage(relationshipId: string, body: string) {
   const row = (Array.isArray(data) ? data[0] : data) as ChatMessage | null;
   if (!row) throw new Error('Message was not created.');
   const expectedHash = await hashMessageBody(clean);
-  if (row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) throw new Error('Server message verification failed.');
+  if (!row.body_hash || row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) {
+    throw new Error('Server message verification failed.');
+  }
   const complete: ChatMessage = {
     ...row,
     body: clean,
@@ -205,7 +210,7 @@ export async function sendTextAttachment(relationshipId: string, attachment: Pre
   const row = (Array.isArray(data) ? data[0] : data) as ChatMessage | null;
   if (!row) throw new Error('The document was not sent.');
   const expectedHash = await hashMessageBody(attachment.text);
-  if (row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) {
+  if (!row.body_hash || row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) {
     throw new Error('Server document verification failed.');
   }
   const complete: ChatMessage = {

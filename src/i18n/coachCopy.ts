@@ -6,6 +6,7 @@ export interface CoachCopy {
   privacy: string;
   on: string;
   off: string;
+  paused: string;
   updating: string;
   statsTitle: string;
   reviewed: string;
@@ -24,6 +25,7 @@ const english: CoachCopy = {
   privacy: 'Your statistics are yours only. TalkTwo stores aggregate counts, not a history of message text or comparisons with another person.',
   on: 'Coach on',
   off: 'Turn on Coach',
+  paused: 'Coach paused · Premium inactive',
   updating: 'Updating…',
   statsTitle: 'Your review statistics',
   reviewed: 'Reviewed',
@@ -42,6 +44,7 @@ const danish: CoachCopy = {
   privacy: 'Din statistik er kun din. TalkTwo gemmer kun samlede tal – ikke en historik over beskedtekst og ingen sammenligning med den anden person.',
   on: 'Coach slået til',
   off: 'Slå Coach til',
+  paused: 'Coach på pause · Premium er ikke aktiv',
   updating: 'Opdaterer…',
   statsTitle: 'Din vurderingsstatistik',
   reviewed: 'Vurderet',

@@ -17,6 +17,20 @@ function validHttps(value) {
   }
 }
 
+function validHttpsOrigin(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && Boolean(url.hostname)
+      && !url.username && !url.password
+      && !url.port
+      && url.pathname === '/'
+      && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
 function present(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -41,12 +55,12 @@ if (!validHttps(supabaseUrl)) fail('EXPO_PUBLIC_SUPABASE_URL must be a valid HTT
 if (!validSupabasePublishableKey(publishableKey)) {
   fail('EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be a current sb_publishable_ key; secret and legacy service-role keys are forbidden in the mobile client.');
 }
-if (!validHttps(publicSiteUrl)) {
-  fail('EXPO_PUBLIC_TALKTWO_SITE_URL must be the final live HTTPS public site before release.');
+if (!validHttpsOrigin(publicSiteUrl)) {
+  fail('EXPO_PUBLIC_TALKTWO_SITE_URL must be the final live HTTPS origin only (for example https://example.com), with no credentials, custom port, path, query or fragment.');
 }
 
 let publicSiteHost = '';
-if (validHttps(publicSiteUrl)) publicSiteHost = new URL(publicSiteUrl).hostname;
+if (validHttpsOrigin(publicSiteUrl)) publicSiteHost = new URL(publicSiteUrl).hostname;
 
 if (app.name !== 'TalkTwo') fail('Expo app name must remain TalkTwo.');
 if (!present(app.version)) fail('Expo user-facing version is required.');

@@ -7,6 +7,7 @@ const privacyCard = fs.readFileSync('src/components/PartnerAvailabilityCard.tsx'
 const chat = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
 const settings = fs.readFileSync('src/screens/ChatSettingsScreen.tsx', 'utf8');
 const pushNotifications = fs.readFileSync('src/services/pushNotifications.ts', 'utf8');
+const windowsService = fs.readFileSync('src/services/windows.ts', 'utf8');
 
 test('sender delivery copy never reveals rejection state', () => {
   assert.equal(sentDeliveryStatusText(0, 1, 1, 'da'), 'Sendt');
@@ -19,6 +20,12 @@ test('privacy controls do not request partner timezone or availability', () => {
   assert.doesNotMatch(privacyCard, /getPartnerWindows|buildPartnerAvailability|timezone|localTime|differenceMinutes/);
   assert.match(privacyCard, /listMyNotificationMutes/);
   assert.match(privacyCard, /listMyMemberBlocks/);
+});
+
+test('participant client API does not expose partner routing metadata', () => {
+  assert.doesNotMatch(windowsService, /getPartnerWindows|PartnerWindow|get_relationship_partner_settings/);
+  assert.match(windowsService, /getMyTimezone/);
+  assert.match(windowsService, /listMyWindows/);
 });
 
 test('privacy card exposes requested mute and timed block controls', () => {

@@ -15,6 +15,7 @@
     "layout:check": "node scripts/check-layout-safety.mjs",
     "privacy:check": "node scripts/check-privacy-surface.mjs",
     "ios:check": "node scripts/check-ios-surface.mjs",
+    "release:preflight": "node scripts/release-preflight.mjs",
     "qa": "npm run typecheck && npm run typecheck:tests && npm test && npm run layout:check && npm run privacy:check && npx expo-doctor && npm run audit:runtime"
   },
   "dependencies": {

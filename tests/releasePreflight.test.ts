@@ -15,6 +15,15 @@ test('release preflight rejects placeholder/private client configuration', () =>
   assert.match(source, /!url\.username && !url\.password/i);
 });
 
+test('release preflight requires verified HTTPS Universal Links and Android App Links', () => {
+  assert.match(source, /associatedDomains/i);
+  assert.match(source, /applinks:\$\{publicSiteHost\}/i);
+  assert.match(source, /autoVerify !== true/i);
+  assert.match(source, /entry\?\.scheme === 'https'/i);
+  assert.match(source, /entry\?\.host === host/i);
+  assert.match(source, /custom URL schemes alone are not sufficient for auth\/invitation\/recovery secrets/i);
+});
+
 test('release preflight locks native identifiers, SDK, versioning and artwork gates', () => {
   assert.match(source, /com\.talktwo\.app/i);
   assert.match(source, /compileSdkVersion/i);

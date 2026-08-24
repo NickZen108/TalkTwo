@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const migration = fs.readFileSync('supabase/migrations/20260824110000_privacy_controls_and_notification_mutes.sql', 'utf8');
+const storageBoundaryMigration = fs.readFileSync('supabase/migrations/20260824113000_storage_boundary_enforcement.sql', 'utf8');
 
 test('partner timezone/window RPC is not participant-readable', () => {
   assert.match(migration, /revoke execute on function public\.get_relationship_partner_settings\(uuid\) from authenticated/i);
@@ -40,4 +41,12 @@ test('public names and every stored message pass neutralization gates', () => {
   assert.match(migration, /symbolic_tone_block_reason/i);
   assert.match(migration, /before insert or update of body on public\.messages/i);
   assert.match(migration, /hader\|hate\|hates/i);
+});
+
+test('expired timed blocks cannot bypass active Personal Boundaries at storage', () => {
+  assert.match(storageBoundaryMigration, /create or replace function private\.enforce_message_privacy_invariants/i);
+  assert.match(storageBoundaryMigration, /b\.expires_at is null or b\.expires_at > now\(\)/i);
+  assert.match(storageBoundaryMigration, /if not new\.blocked_for_recipient and new\.body is not null/i);
+  assert.match(storageBoundaryMigration, /private\.matching_personal_boundary\(/i);
+  assert.match(storageBoundaryMigration, /raise exception 'Message contains a recipient''s blocked word or phrase/i);
 });

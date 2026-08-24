@@ -38,8 +38,9 @@ test('chat actions, message states and dates use the locale catalogue', () => {
   assert.doesNotMatch(chatScreen, /accessibilityLabel="Send message"/);
 });
 
-test('home navigation, recovery and purchase gates use the locale catalogue', () => {
-  assert.match(homeScreen, /const \{ t \} = useI18n\(\)/);
+test('home navigation, recovery and purchase gates use localized copy', () => {
+  assert.match(homeScreen, /const \{ t, locale \} = useI18n\(\)/);
+  assert.match(homeScreen, /const upgradeCopy = locale === 'da'/);
   assert.match(homeScreen, /t\('home\.shareKeyBody', \{ name: request\.requester_name, code: request\.verification_code \}\)/);
   assert.match(homeScreen, /t\('home\.extraPaymentBody', \{ access:/);
   assert.match(homeScreen, /accessibilityLabel=\{t\('home\.giftEmailLabel'\)\}/);

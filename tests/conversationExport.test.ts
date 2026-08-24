@@ -8,16 +8,19 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     id: 'row', logical_id: 'logical', relationship_id: 'rel', sender_id: 'sender', recipient_id: null,
     body: 'Hello', body_hash: 'hash', ciphertext: 'cipher', risk_level: 'green', created_at: '2026-08-20T10:00:00Z',
     available_at: '2026-08-20T10:00:00Z', opened_at: null, withdrawn_at: null, edited_at: null, rejected_at: null,
-    reject_reason: null, blocked_for_recipient: false, recipient_count: 1, rejected_count: 0, ...overrides,
+    reject_reason: null, blocked_for_recipient: false, recipient_count: 1, rejected_count: 0,
+    message_kind: 'text', attachment_name: null, attachment_mime_type: null, attachment_size_bytes: null,
+    attachment_page_count: null, ...overrides,
   };
 }
 
-test('exports only locally visible, non-withdrawn and non-blocked messages', () => {
+test('exports only locally visible, ordinary non-withdrawn and non-blocked messages', () => {
   assert.equal(exportableMessages([
     message(),
     message({ id: 'hidden', body: null }),
     message({ id: 'withdrawn', withdrawn_at: '2026-08-20T11:00:00Z' }),
     message({ id: 'blocked', blocked_for_recipient: true }),
+    message({ id: 'attachment', message_kind: 'text_attachment', body: 'Private document contents' }),
   ]).length, 1);
 });
 

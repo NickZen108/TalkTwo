@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const source = fs.readFileSync('public-site/src/main.js', 'utf8');
-const html = fs.readFileSync('public-site/index.html', 'utf8');
+const html = fs.readFileSync('public-site/delete-account/index.html', 'utf8');
 const env = fs.readFileSync('public-site/.env.example', 'utf8');
 
 test('public deletion browser module parses as valid JavaScript', () => {
@@ -29,6 +29,7 @@ test('permanent deletion requires explicit confirmation and the authenticated ed
   assert.match(source, /functions\.invoke\('delete-account'/i);
   assert.match(source, /body:\s*\{\s*confirmation:\s*'DELETE'\s*\}/i);
   assert.match(html, /Deleting TalkTwo does not cancel an Apple App Store or Google Play subscription/i);
+  assert.match(html, /src="\/src\/main\.js"/i);
 });
 
 test('browser build uses publishable configuration and never documents a private service role value', () => {

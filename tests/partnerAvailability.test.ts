@@ -16,8 +16,16 @@ function row(overrides: Partial<PartnerWindow> = {}): PartnerWindow {
   };
 }
 
+function onlyAvailability(rows: PartnerWindow[], now: Date) {
+  const result = buildPartnerAvailability(rows, now);
+  assert.equal(result.length, 1);
+  const availability = result[0];
+  assert.ok(availability);
+  return availability;
+}
+
 test('shows an enabled partner window as open during its local hours', () => {
-  const [availability] = buildPartnerAvailability([row()], new Date('2026-08-24T10:00:00Z'));
+  const availability = onlyAvailability([row()], new Date('2026-08-24T10:00:00Z'));
   assert.equal(availability.localTime, '10:00');
   assert.equal(availability.start, '08:00');
   assert.equal(availability.end, '18:00');
@@ -27,7 +35,7 @@ test('shows an enabled partner window as open during its local hours', () => {
 });
 
 test('a configured schedule with no enabled row for today is closed today', () => {
-  const [availability] = buildPartnerAvailability([
+  const availability = onlyAvailability([
     row({ weekday: 2 }),
     row({ weekday: 3, enabled: false }),
   ], new Date('2026-08-24T10:00:00Z'));
@@ -38,7 +46,7 @@ test('a configured schedule with no enabled row for today is closed today', () =
 });
 
 test('a partner with no configured schedule is always available', () => {
-  const [availability] = buildPartnerAvailability([
+  const availability = onlyAvailability([
     row({ weekday: null, start_local: null, end_local: null, enabled: null }),
   ], new Date('2026-08-24T10:00:00Z'));
   assert.equal(availability.configured, false);
@@ -47,7 +55,7 @@ test('a partner with no configured schedule is always available', () => {
 });
 
 test('timezone conversion uses the partner timezone for current status', () => {
-  const [availability] = buildPartnerAvailability([
+  const availability = onlyAvailability([
     row({ timezone: 'Europe/Copenhagen', start_local: '11:00:00', end_local: '13:00:00' }),
   ], new Date('2026-08-24T10:00:00Z'));
   assert.equal(availability.localTime, '12:00');
@@ -55,7 +63,7 @@ test('timezone conversion uses the partner timezone for current status', () => {
 });
 
 test('malformed enabled window times fail closed instead of throwing', () => {
-  const [availability] = buildPartnerAvailability([
+  const availability = onlyAvailability([
     row({ start_local: '25:00:00', end_local: '99:00:00' }),
   ], new Date('2026-08-24T10:00:00Z'));
   assert.equal(availability.isOpen, false);

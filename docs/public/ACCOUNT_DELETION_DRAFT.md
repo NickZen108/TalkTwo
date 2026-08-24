@@ -1,8 +1,8 @@
 # Delete your TalkTwo account — DRAFT
 
-> **Not for publication yet.** This page describes the intended external deletion flow. The public web implementation must be completed and tested before Google Play submission.
+> **Not for publication yet.** The external authenticated deletion flow is implemented in `public-site/delete-account/`, but it must still be deployed over the final HTTPS domain, configured in Supabase Auth and tested end to end with a disposable account before Google Play submission.
 
-**Planned public URL:** `https://talktwo.app/delete-account`
+**Planned public URL:** `https://talktwo.app/delete-account/`
 
 TalkTwo users can permanently delete their account at any time.
 
@@ -18,18 +18,20 @@ If you can sign in to TalkTwo:
 
 ## Delete without the app
 
-The public website must provide the same authenticated deletion capability for people who no longer have the app installed.
+The source under `public-site/delete-account/` provides the same authenticated deletion capability for people who no longer have the app installed.
 
-The external flow must:
+The implemented external flow:
 
-1. ask for the email address used for TalkTwo;
-2. send a TalkTwo magic sign-in link to that address;
-3. require the user to follow the verified link and establish a valid TalkTwo session;
-4. show exactly what deletion does before asking for final confirmation;
-5. call the same authenticated account-deletion backend used by the mobile app;
-6. never delete an account merely because someone typed its email address into a form.
+1. asks for the email address used for TalkTwo;
+2. requests a TalkTwo magic sign-in link with account creation disabled;
+3. deliberately shows the same request result whether the address belongs to an account or not, reducing account-enumeration leakage;
+4. requires the user to follow the verified link and establish a valid TalkTwo session;
+5. verifies the current authenticated user before exposing permanent deletion;
+6. explains what deletion does and requires the user to type `DELETE`;
+7. calls the same authenticated `delete-account` Edge Function used by the mobile app;
+8. never deletes an account merely because someone typed its email address into a form.
 
-`{{IMPLEMENT_EXTERNAL_MAGIC_LINK_DELETION_FLOW_BEFORE_PUBLICATION}}`
+Before publication, the final `/delete-account/` HTTPS URL must be allowlisted as a Supabase Auth redirect, the production magic-link template must preserve that redirect, and an end-to-end deletion must pass with an intentionally disposable account. Unknown emails must neither create accounts nor reveal whether an account exists.
 
 ## What deletion removes
 

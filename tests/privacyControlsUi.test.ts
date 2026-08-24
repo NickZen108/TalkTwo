@@ -28,8 +28,13 @@ test('privacy card exposes requested mute and timed block controls', () => {
   assert.match(privacyCard, /setBlock\(member\.user_id, null\)/);
 });
 
-test('chat header cannot deliberately render a partner timezone once server access is removed', () => {
-  // Existing legacy fallback may attempt the RPC, but failure must fall back to
-  // private-conversation copy. The next cleanup removes even that dead request.
+test('chat never fetches or renders participant timezone metadata', () => {
+  assert.doesNotMatch(chat, /getPartnerWindows|partnerTimezone|chat\.timezone/);
   assert.match(chat, /privateConversation/);
+});
+
+test('privacy-first chat has no post-send edit or withdrawal controls', () => {
+  assert.doesNotMatch(chat, /editUnopenedMessage|withdrawMessage|startEdit|async function withdraw/);
+  assert.doesNotMatch(chat, /t\('chat\.edit'\)|t\('chat\.withdraw'\)|t\('chat\.saveEdited'\)/);
+  assert.match(chat, /await sendMessage\(relationship\.id, message\.trim\(\)\)/);
 });

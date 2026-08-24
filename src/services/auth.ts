@@ -21,21 +21,36 @@ export async function sendMagicLink(email: string) {
 }
 
 export async function createSessionFromMagicLink(url: string) {
-  const hashIndex = url.indexOf('#');
-  const queryIndex = url.indexOf('?');
-  const raw = hashIndex >= 0 ? url.slice(hashIndex + 1) : queryIndex >= 0 ? url.slice(queryIndex + 1) : '';
-  const params = new URLSearchParams(raw);
-  const accessToken = params.get('access_token');
-  const refreshToken = params.get('refresh_token');
-  const errorDescription = params.get('error_description');
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('The sign-in link is malformed. Please request a new link.');
+  }
+  if (parsed.protocol !== 'talktwo:' || parsed.hostname.toLowerCase() !== 'auth') {
+    throw new Error('The sign-in link is not a TalkTwo authentication callback.');
+  }
 
-  if (errorDescription) throw new Error(decodeURIComponent(errorDescription));
-  if (!accessToken || !refreshToken) return null;
+  const fragment = new URLSearchParams(parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash);
+  const errorDescription = parsed.searchParams.get('error_description') ?? fragment.get('error_description');
+  if (errorDescription) throw new Error(errorDescription);
 
-  const { data, error } = await supabase.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-  });
+  // Never import access or refresh credentials directly from a custom-scheme URL.
+  // Mobile authentication uses PKCE, so an intercepted redirect contains only a
+  // short-lived one-time code whose verifier remains in device-protected storage.
+  if (fragment.has('access_token') || fragment.has('refresh_token')
+      || parsed.searchParams.has('access_token') || parsed.searchParams.has('refresh_token')) {
+    throw new Error('This sign-in link uses an unsupported legacy authentication flow. Please request a new link.');
+  }
+
+  const codes = parsed.searchParams.getAll('code').filter(Boolean);
+  if (codes.length !== 1) return null;
+  const code = codes[0];
+  if (!code || code.length > 2048 || /[\u0000-\u001f\u007f]/.test(code)) {
+    throw new Error('The sign-in code is invalid. Please request a new link.');
+  }
+
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) throw error;
   return data.session;
 }

@@ -5,6 +5,7 @@ import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
 import { useNativeStoreBilling } from '../hooks/useNativeStoreBilling';
 import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, installMyActiveMemberKeys, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
+import { createMemberWriteUpgradeRequest, listMyMemberWriteUpgradeRequests, listPendingMemberWriteUpgradeApprovals, respondMemberWriteUpgrade, type MemberWriteUpgradeRequest, type PendingMemberWriteUpgradeApproval } from '../services/memberBilling';
 import { releaseWaitingMessages } from '../services/windows';
 import { useAppTheme, type AppColors, type AppearanceMode } from '../theme/AppTheme';
 import ChatScreen from './ChatScreen';
@@ -35,11 +36,13 @@ function conversationTitle(members: RelationshipMember[], me: string, memberLabe
 
 export default function HomeScreen({ session, pendingInvite, clearPendingInvite, pendingRecovery, clearPendingRecovery }: { session: Session; pendingInvite: PendingInvite | null; clearPendingInvite: () => void; pendingRecovery: PendingRecovery | null; clearPendingRecovery: () => void }) {
   const { colors, mode, resolved, setMode } = useAppTheme();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
   const [members, setMembers] = useState<Record<string, RelationshipMember[]>>({});
   const [pendingMemberships, setPendingMemberships] = useState<PendingMembership[]>([]);
+  const [writeUpgrades, setWriteUpgrades] = useState<MemberWriteUpgradeRequest[]>([]);
+  const [writeUpgradeApprovals, setWriteUpgradeApprovals] = useState<PendingMemberWriteUpgradeApproval[]>([]);
   const [missingSecureKeys, setMissingSecureKeys] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<RelationshipSummary | null>(null);
@@ -48,6 +51,34 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   const [showPremiumGifts, setShowPremiumGifts] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
+  const upgradeCopy = locale === 'da' ? {
+    title: 'Skriveadgang',
+    requestBody: 'Du er skrivebeskyttet i denne chat. Du kan anmode om deltageradgang. Alle andre nuværende medlemmer skal godkende først.',
+    requestAction: 'Anmod om skriveadgang',
+    waiting: 'Venter på godkendelse fra alle nuværende chatmedlemmer. Der kan ikke ske nogen betaling endnu.',
+    ready: 'Alle har godkendt. Butikken viser den præcise forholdsmæssige pris for skiftet. Derefter fornyes medlemskabet til 99 kr./md.',
+    checkoutPending: 'Butiksopgraderingen er startet. Hvis den blev afbrudt, kan du fortsætte den samme godkendte opgradering igen.',
+    approval: (name: string) => `${name} anmoder om skriveadgang`,
+    approvalHelp: 'Skriveadgang aktiveres kun, hvis alle nuværende medlemmer godkender. Din godkendelse koster dig ikke noget.',
+    requested: 'Anmodning sendt',
+    requestedBody: 'De andre nuværende chatmedlemmer skal godkende, før en eventuel butiksopgradering bliver mulig.',
+    rejected: 'Skriveadgang blev ikke godkendt.',
+    approved: 'Din godkendelse er registreret.',
+  } : {
+    title: 'Writing access',
+    requestBody: 'You are read-only in this chat. You can request participant access. Every other current member must approve first.',
+    requestAction: 'Request writing access',
+    waiting: 'Waiting for every current chat member to approve. No payment can happen yet.',
+    ready: 'Everyone approved. The store shows the exact prorated price for the change. The membership then renews at 99 DKK/month.',
+    checkoutPending: 'The store upgrade has started. If it was interrupted, you can continue the same approved upgrade again.',
+    approval: (name: string) => `${name} requests writing access`,
+    approvalHelp: 'Writing access is enabled only if every current member approves. Your approval does not charge you.',
+    requested: 'Request sent',
+    requestedBody: 'The other current chat members must approve before any store upgrade becomes available.',
+    rejected: 'Writing access was not approved.',
+    approved: 'Your approval was recorded.',
+  };
+
   const storeBilling = useNativeStoreBilling(session.user.id, {
     onError: (message) => Alert.alert(t('home.storeUnavailable'), message),
     onPurchaseVerified: async () => {
@@ -66,10 +97,17 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   async function refreshRelationships() {
     await installFulfilledKeyRecoveries();
     const keyResult = await installMyActiveMemberKeys();
-    const [nextRelationships, nextPending] = await Promise.all([listRelationships(), listMyPendingMemberships()]);
+    const [nextRelationships, nextPending, nextWriteUpgrades, nextWriteApprovals] = await Promise.all([
+      listRelationships(),
+      listMyPendingMemberships(),
+      listMyMemberWriteUpgradeRequests(),
+      listPendingMemberWriteUpgradeApprovals(),
+    ]);
     const memberPairs = await Promise.all(nextRelationships.map(async (rel) => [rel.id, await listRelationshipMembers(rel.id)] as const));
     setRelationships(nextRelationships);
     setPendingMemberships(nextPending);
+    setWriteUpgrades(nextWriteUpgrades);
+    setWriteUpgradeApprovals(nextWriteApprovals);
     setMembers(Object.fromEntries(memberPairs));
     setMissingSecureKeys(keyResult.missing);
   }
@@ -187,6 +225,50 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
     }
   }
 
+  async function requestWriteAccess(relationshipId: string) {
+    try {
+      setBusy(true);
+      await createMemberWriteUpgradeRequest(relationshipId);
+      await refreshRelationships();
+      Alert.alert(upgradeCopy.requested, upgradeCopy.requestedBody);
+    } catch (error) {
+      Alert.alert(upgradeCopy.title, error instanceof Error ? error.message : t('common.tryAgain'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function respondWriteAccess(requestId: string, approve: boolean) {
+    try {
+      setBusy(true);
+      const result = await respondMemberWriteUpgrade(requestId, approve);
+      await refreshRelationships();
+      Alert.alert(upgradeCopy.title, result === 'rejected' ? upgradeCopy.rejected : upgradeCopy.approved);
+    } catch (error) {
+      Alert.alert(upgradeCopy.title, error instanceof Error ? error.message : t('common.tryAgain'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function continueWriteUpgrade(relationshipId: string) {
+    Alert.alert(
+      t('home.monthlyPrice', { price: 99 }),
+      upgradeCopy.ready,
+      [
+        { text: t('home.notNow'), style: 'cancel' },
+        {
+          text: t('home.continueStore'),
+          onPress: () => {
+            void storeBilling.purchaseMemberUpgrade(relationshipId)
+              .then(() => refreshRelationships())
+              .catch((error) => Alert.alert(t('home.purchaseStartError'), error instanceof Error ? error.message : t('common.tryAgain')));
+          },
+        },
+      ],
+    );
+  }
+
   async function checkWaiting() {
     try {
       setBusy(true);
@@ -284,6 +366,45 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
         ) : null}
 
         {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.viewMembership')} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
+
+        {writeUpgradeApprovals.map((approval) => {
+          const requester = (members[approval.relationship_id] ?? []).find((member) => member.user_id === approval.requester_id);
+          const requesterName = requester?.display_name?.trim() || t('chat.member');
+          return (
+            <View key={approval.request_id} style={styles.pendingNotice}>
+              <Text style={styles.upgradeTitle}>{upgradeCopy.approval(requesterName)}</Text>
+              <Text style={styles.pendingNoticeText}>{upgradeCopy.approvalHelp}</Text>
+              <View style={styles.approvalActions}>
+                <View style={styles.approvalAction}><Action styles={styles} title={t('settings.reject')} onPress={() => void respondWriteAccess(approval.request_id, false)} disabled={busy} quiet /></View>
+                <View style={styles.approvalAction}><Action styles={styles} title={t('settings.approve')} onPress={() => void respondWriteAccess(approval.request_id, true)} disabled={busy} /></View>
+              </View>
+            </View>
+          );
+        })}
+
+        {relationships.filter((relationship) => relationship.my_role === 'observer').map((relationship) => {
+          const request = writeUpgrades.find((item) => item.relationship_id === relationship.id);
+          const relMembers = members[relationship.id] ?? [];
+          const title = conversationTitle(relMembers, session.user.id, t('chat.member'), t('home.newConversation'));
+          const activeStatus = request && !['completed', 'rejected', 'expired'].includes(request.status) ? request.status : null;
+          const body = activeStatus === 'awaiting_approvals'
+            ? upgradeCopy.waiting
+            : activeStatus === 'awaiting_payment'
+              ? upgradeCopy.ready
+              : activeStatus === 'checkout_pending'
+                ? upgradeCopy.checkoutPending
+                : upgradeCopy.requestBody;
+          return (
+            <View key={`write-upgrade-${relationship.id}`} style={styles.pendingNotice}>
+              <Text style={styles.upgradeTitle}>{upgradeCopy.title} · {title}</Text>
+              <Text style={styles.pendingNoticeText}>{body}</Text>
+              {!activeStatus ? <Action styles={styles} title={upgradeCopy.requestAction} onPress={() => void requestWriteAccess(relationship.id)} disabled={busy} quiet /> : null}
+              {activeStatus === 'awaiting_payment' || activeStatus === 'checkout_pending' ? (
+                <Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.continueStore')} onPress={() => continueWriteUpgrade(relationship.id)} disabled={busy || storeBilling.processing || !storeBilling.connected} />
+              ) : null}
+            </View>
+          );
+        })}
 
         {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>{t('home.keyNeeded')}</Text><Text style={styles.securityText}>{t('home.keyNeededBody')}</Text></View> : null}
 
@@ -392,6 +513,9 @@ function makeStyles(colors: AppColors) {
     pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: colors.notice, padding: 12, gap: 10 },
     pendingNoticeText: { color: colors.noticeText, lineHeight: 19, flexShrink: 1 },
     pendingAction: { alignSelf: 'stretch' },
+    upgradeTitle: { color: colors.noticeText, fontWeight: '800', fontSize: 15, flexShrink: 1 },
+    approvalActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    approvalAction: { flex: 1, minWidth: 120 },
     securityNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger, padding: 12, gap: 5 },
     securityTitle: { color: colors.danger, fontWeight: '800', flexShrink: 1 },
     securityText: { color: colors.muted, lineHeight: 18, flexShrink: 1 },

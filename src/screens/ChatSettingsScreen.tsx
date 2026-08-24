@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
-import { exportableMessages } from '../domain/conversationExport';
+import { exportableMessages, validateExportDateRange } from '../domain/conversationExport';
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
 import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
@@ -67,6 +67,8 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
   const [plan, setPlan] = useState<UserPlan | null>(null);
   const [boundaries, setBoundaries] = useState<PersonalBoundaryRow[]>([]);
   const [boundaryDraft, setBoundaryDraft] = useState('');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
 
   async function refresh() {
     const [nextMembers, approvals, savedBackground, preferences, nextPlan, nextBoundaries] = await Promise.all([
@@ -114,6 +116,11 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
         : boundaryValidation.error === 'Use at least two letters or numbers.' ? t('settings.boundaryMin')
           : boundaryValidation.error === 'Use at most five words.' ? t('settings.boundaryMaxWords')
             : t('settings.boundaryEssential');
+  const exportRangeValidation = validateExportDateRange(exportStartDate, exportEndDate);
+  const exportRangeError = exportRangeValidation.valid ? null
+    : exportRangeValidation.error === 'invalid_start' ? exportCopy.invalidStart
+      : exportRangeValidation.error === 'invalid_end' ? exportCopy.invalidEnd
+        : exportCopy.reversedRange;
 
   async function addBoundary() {
     if (!premiumActive || !boundaryValidation.valid || busy) return;
@@ -144,8 +151,9 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
   }
 
   function confirmExport() {
-    if (!premiumActive || busy) return;
-    const exportableCount = exportableMessages(exportMessages).length;
+    if (!premiumActive || busy || !exportRangeValidation.valid) return;
+    const range = exportRangeValidation.range;
+    const exportableCount = exportableMessages(exportMessages, range).length;
     Alert.alert(
       exportCopy.confirmTitle,
       exportCopy.confirmBody(exportableCount),
@@ -162,6 +170,7 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
                 members.map((member) => ({ id: member.user_id, name: localStates[member.user_id]?.alias.trim() || member.display_name })),
                 exportMessages,
                 locale === 'da' ? 'da-DK' : 'en',
+                range,
               );
             } catch (error) {
               Alert.alert(exportCopy.failed, error instanceof Error ? error.message : t('common.tryAgain'));
@@ -446,8 +455,36 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{exportCopy.title}</Text>
           <Text style={styles.help}>{exportCopy.help}</Text>
+          <Text style={styles.help}>{exportCopy.rangeHelp}</Text>
           {!premiumActive ? <Text accessibilityLiveRegion="polite" style={styles.premiumNote}>{exportCopy.premiumRequired}</Text> : null}
-          <Button styles={styles} title={exportCopy.action} onPress={confirmExport} secondary disabled={busy || !premiumActive} />
+          <Text style={styles.smallLabel}>{exportCopy.startDate}</Text>
+          <TextInput
+            accessibilityLabel={exportCopy.startDate}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={premiumActive && !busy}
+            maxLength={10}
+            onChangeText={setExportStartDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.subtle}
+            style={styles.aliasInput}
+            value={exportStartDate}
+          />
+          <Text style={styles.smallLabel}>{exportCopy.endDate}</Text>
+          <TextInput
+            accessibilityLabel={exportCopy.endDate}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={premiumActive && !busy}
+            maxLength={10}
+            onChangeText={setExportEndDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.subtle}
+            style={styles.aliasInput}
+            value={exportEndDate}
+          />
+          {exportRangeError ? <Text accessibilityLiveRegion="polite" style={styles.inputError}>{exportRangeError}</Text> : null}
+          <Button styles={styles} title={exportCopy.action} onPress={confirmExport} secondary disabled={busy || !premiumActive || !exportRangeValidation.valid} />
         </View>
       </ScrollView>
     </SafeAreaView>

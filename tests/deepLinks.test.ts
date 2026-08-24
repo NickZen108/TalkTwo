@@ -11,6 +11,11 @@ import {
 } from '../src/domain/deepLinks';
 
 const secret = 'A'.repeat(64);
+const inviteToken = 'b'.repeat(48);
+const memberToken = 'c'.repeat(48);
+const recoveryToken = 'd'.repeat(64);
+const giftToken = 'e'.repeat(48);
+const giftId = '11111111-1111-4111-8111-111111111111';
 const originalSiteUrl = process.env.EXPO_PUBLIC_TALKTWO_SITE_URL;
 delete process.env.EXPO_PUBLIC_TALKTWO_SITE_URL;
 
@@ -31,57 +36,62 @@ process.on('exit', () => {
 });
 
 test('parses invitation bearer token and envelope secret only from the fragment', () => {
-  assert.deepEqual(invitationFromUrl(`talktwo://invite#token=invite+1&s=${secret}`), {
+  assert.deepEqual(invitationFromUrl(`talktwo://invite#token=${inviteToken}&s=${secret}`), {
     kind: 'invite',
-    token: 'invite 1',
+    token: inviteToken,
     secret: secret.toLowerCase(),
   });
-  assert.deepEqual(invitationFromUrl(`TALKTWO://member#x=1&token=member-1&s=${secret}`), {
+  assert.deepEqual(invitationFromUrl(`TALKTWO://member#x=1&token=${memberToken}&s=${secret}`), {
     kind: 'member',
-    token: 'member-1',
+    token: memberToken,
     secret: secret.toLowerCase(),
   });
 });
 
-test('rejects legacy path/query invitation tokens and ambiguous fragment values', () => {
-  assert.equal(invitationFromUrl(`talktwo://invite/id#s=${secret}`), null);
-  assert.equal(invitationFromUrl(`talktwo://invite?token=id#s=${secret}`), null);
-  assert.equal(invitationFromUrl(`talktwo://invite#token=id&token=id2&s=${secret}`), null);
-  assert.equal(invitationFromUrl(`talktwo://invite#token=id&s=${secret}&s=${secret}`), null);
-  assert.equal(invitationFromUrl(`talktwo://invite#token=${'a'.repeat(513)}&s=${secret}`), null);
-  assert.equal(invitationFromUrl(`talktwo://invite#token=id&s=${'a'.repeat(63)}`), null);
+test('rejects legacy, ambiguous, encoded and noncanonical invitation tokens', () => {
+  assert.equal(invitationFromUrl(`talktwo://invite/${inviteToken}#s=${secret}`), null);
+  assert.equal(invitationFromUrl(`talktwo://invite?token=${inviteToken}#s=${secret}`), null);
+  assert.equal(invitationFromUrl(`talktwo://invite#token=${inviteToken}&token=${memberToken}&s=${secret}`), null);
+  assert.equal(invitationFromUrl(`talktwo://invite#token=${inviteToken}&s=${secret}&s=${secret}`), null);
+  assert.equal(invitationFromUrl(`talktwo://invite#token=${'a'.repeat(47)}&s=${secret}`), null);
+  assert.equal(invitationFromUrl(`talktwo://invite#token=${'g'.repeat(48)}&s=${secret}`), null);
+  assert.equal(invitationFromUrl(`talktwo://invite#token=%2562${'b'.repeat(46)}&s=${secret}`), null);
+  assert.equal(invitationFromUrl(`talktwo://invite#token=${inviteToken}&s=${'a'.repeat(63)}`), null);
 });
 
-test('parses one unambiguous Premium gift token only from the fragment', () => {
-  assert.deepEqual(premiumGiftFromUrl('talktwo://premium-gift/gift%201#token=token-1'), {
-    giftId: 'gift 1',
-    token: 'token-1',
+test('parses only canonical Premium gift id and fragment token', () => {
+  assert.deepEqual(premiumGiftFromUrl(`talktwo://premium-gift/${giftId}#token=${giftToken}`), {
+    giftId,
+    token: giftToken,
   });
-  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/id#token=one&token=two'), null);
-  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/%E0%A4%A#token=one'), null);
-  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/id?token=legacy-query-token'), null);
+  assert.equal(premiumGiftFromUrl(`talktwo://premium-gift/${giftId}#token=${giftToken}&token=${giftToken}`), null);
+  assert.equal(premiumGiftFromUrl(`talktwo://premium-gift/not-a-uuid#token=${giftToken}`), null);
+  assert.equal(premiumGiftFromUrl(`talktwo://premium-gift/${giftId}?token=${giftToken}`), null);
+  assert.equal(premiumGiftFromUrl(`talktwo://premium-gift/${giftId}#token=${'e'.repeat(47)}`), null);
 });
 
 test('parses recovery bearer token and envelope secret only from the fragment', () => {
-  assert.deepEqual(keyRecoveryFromUrl(`talktwo://recover-key#token=request+1&s=${secret}`), {
-    token: 'request 1',
+  assert.deepEqual(keyRecoveryFromUrl(`talktwo://recover-key#token=${recoveryToken}&s=${secret}`), {
+    token: recoveryToken,
     secret: secret.toLowerCase(),
   });
-  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key/request-1#s=${secret}`), null);
-  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key?token=request-1#s=${secret}`), null);
-  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key#token=request-1&token=request-2&s=${secret}`), null);
-  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key#token=request-1&s=${secret}&s=${secret}`), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key/${recoveryToken}#s=${secret}`), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key?token=${recoveryToken}#s=${secret}`), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key#token=${recoveryToken}&token=${recoveryToken}&s=${secret}`), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key#token=${'d'.repeat(63)}&s=${secret}`), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key#token=%2564${'d'.repeat(62)}&s=${secret}`), null);
+  assert.equal(keyRecoveryFromUrl(`talktwo://recover-key#token=${recoveryToken}&s=${secret}&s=${secret}`), null);
 });
 
 test('recognizes only exact TalkTwo link families and canonical path shapes', () => {
   assert.equal(isInvitationUrl('talktwo://invite'), true);
-  assert.equal(isInvitationUrl('talktwo://invite/id'), false);
+  assert.equal(isInvitationUrl(`talktwo://invite/${inviteToken}`), false);
   assert.equal(isInvitationUrl('talktwo://invited'), false);
-  assert.equal(isPremiumGiftUrl('talktwo://premium-gift/id'), true);
+  assert.equal(isPremiumGiftUrl(`talktwo://premium-gift/${giftId}`), true);
   assert.equal(isPremiumGiftUrl('talktwo://premium-gift'), false);
-  assert.equal(isPremiumGiftUrl('talktwo://premium-gifts/id'), false);
+  assert.equal(isPremiumGiftUrl(`talktwo://premium-gifts/${giftId}`), false);
   assert.equal(isKeyRecoveryUrl('talktwo://recover-key'), true);
-  assert.equal(isKeyRecoveryUrl('talktwo://recover-key/id'), false);
+  assert.equal(isKeyRecoveryUrl(`talktwo://recover-key/${recoveryToken}`), false);
   assert.equal(isKeyRecoveryUrl('talktwo://recover-keys'), false);
   assert.equal(isAuthCallbackUrl('talktwo://auth?code=x'), true);
   assert.equal(isAuthCallbackUrl('talktwo://authentication?code=x'), false);
@@ -90,23 +100,23 @@ test('recognizes only exact TalkTwo link families and canonical path shapes', ()
 
 test('configured builds accept only same-origin HTTPS app paths with bearer secrets in fragments', () => {
   withSiteUrl('https://secure.example', () => {
-    assert.deepEqual(invitationFromUrl(`https://secure.example/app/invite#token=invite+1&s=${secret}`), {
+    assert.deepEqual(invitationFromUrl(`https://secure.example/app/invite#token=${inviteToken}&s=${secret}`), {
       kind: 'invite',
-      token: 'invite 1',
+      token: inviteToken,
       secret: secret.toLowerCase(),
     });
-    assert.deepEqual(premiumGiftFromUrl('https://secure.example/app/premium-gift/gift%201#token=token-1'), {
-      giftId: 'gift 1',
-      token: 'token-1',
+    assert.deepEqual(premiumGiftFromUrl(`https://secure.example/app/premium-gift/${giftId}#token=${giftToken}`), {
+      giftId,
+      token: giftToken,
     });
-    assert.deepEqual(keyRecoveryFromUrl(`https://secure.example/app/recover-key#token=request+1&s=${secret}`), {
-      token: 'request 1',
+    assert.deepEqual(keyRecoveryFromUrl(`https://secure.example/app/recover-key#token=${recoveryToken}&s=${secret}`), {
+      token: recoveryToken,
       secret: secret.toLowerCase(),
     });
     assert.equal(isAuthCallbackUrl('https://secure.example/app/auth?code=x'), true);
     assert.equal(isAuthCallbackUrl('talktwo://auth?code=x'), false);
-    assert.equal(isInvitationUrl(`https://secure.example.evil.invalid/app/invite#token=id&s=${secret}`), false);
-    assert.equal(invitationFromUrl(`https://secure.example/app/invite/id#s=${secret}`), null);
-    assert.equal(keyRecoveryFromUrl(`https://secure.example/app/recover-key/id#s=${secret}`), null);
+    assert.equal(isInvitationUrl(`https://secure.example.evil.invalid/app/invite#token=${inviteToken}&s=${secret}`), false);
+    assert.equal(invitationFromUrl(`https://secure.example/app/invite/${inviteToken}#s=${secret}`), null);
+    assert.equal(keyRecoveryFromUrl(`https://secure.example/app/recover-key/${recoveryToken}#s=${secret}`), null);
   });
 });

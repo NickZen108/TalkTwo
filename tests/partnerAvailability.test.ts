@@ -53,3 +53,11 @@ test('timezone conversion uses the partner timezone for current status', () => {
   assert.equal(availability.localTime, '12:00');
   assert.equal(availability.isOpen, true);
 });
+
+test('malformed enabled window times fail closed instead of throwing', () => {
+  const [availability] = buildPartnerAvailability([
+    row({ start_local: '25:00:00', end_local: '99:00:00' }),
+  ], new Date('2026-08-24T10:00:00Z'));
+  assert.equal(availability.isOpen, false);
+  assert.equal(availability.configured, true);
+});

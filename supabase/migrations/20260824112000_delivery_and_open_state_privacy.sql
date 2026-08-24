@@ -17,7 +17,6 @@ begin
   where m.recipient_id=uid
     and m.available_at<=now()
     and m.withdrawn_at is null
-    and m.rejected_at is null
     and m.delivered_at is null;
   get diagnostics changed=row_count;
   return changed;

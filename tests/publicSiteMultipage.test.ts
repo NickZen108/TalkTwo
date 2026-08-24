@@ -33,7 +33,7 @@ test('legal and support pages remain visibly draft until explicit publication ap
   }
 });
 
-test('public-site release preflight requires reviewed identity, contact and legal text', () => {
+test('public-site release preflight requires reviewed identity, contact, legal text and a current publishable key', () => {
   for (const name of [
     'VITE_LEGAL_ENTITY',
     'VITE_POSTAL_ADDRESS',
@@ -48,6 +48,7 @@ test('public-site release preflight requires reviewed identity, contact and lega
     'VITE_PUBLICATION_APPROVED',
   ]) assert.match(preflight, new RegExp(name));
 
-  assert.match(preflight, /service\[_-\]\?role/i);
+  assert.match(preflight, /\^sb_publishable_/i);
+  assert.match(preflight, /secret and legacy service-role keys are forbidden/i);
   assert.equal(packageJson.scripts?.['release:preflight'], 'node scripts/release-preflight.mjs');
 });

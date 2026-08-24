@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
+import { exportableMessages } from '../domain/conversationExport';
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
 import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
@@ -9,7 +10,10 @@ import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 import { MAX_PERSONAL_BOUNDARIES, MAX_PERSONAL_BOUNDARY_LENGTH, validatePersonalBoundary } from '../domain/personalBoundaries';
 import { getMyPlan, type UserPlan } from '../services/premium';
 import { addMyPersonalBoundary, listMyPersonalBoundaries, removeMyPersonalBoundary, type PersonalBoundaryRow } from '../services/personalBoundaries';
+import { shareConversationPdf } from '../services/conversationExport';
+import type { ChatMessage } from '../services/messages';
 import { useI18n } from '../i18n/I18nContext';
+import { getConversationExportCopy } from '../i18n/exportCopy';
 import type { TranslationKey } from '../i18n/translations';
 
 const BACKGROUND_THEME_KEYS: Record<BackgroundThemeName, TranslationKey> = {
@@ -42,9 +46,10 @@ interface LocalMemberState {
   bubble: BubbleThemeName;
 }
 
-export default function ChatSettingsScreen({ relationship, session, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
+export default function ChatSettingsScreen({ relationship, session, exportMessages, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
   relationship: RelationshipSummary;
   session: Session;
+  exportMessages: ChatMessage[];
   onBack: () => void;
   onAppearanceChanged: () => void;
   onPurchasePremium: (productKey: PremiumSubscriptionProductKey, relationshipId?: string | null, beneficiaryUserId?: string | null) => Promise<void>;
@@ -53,6 +58,7 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
   const { colors, resolved } = useAppTheme();
   const { locale, t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const exportCopy = useMemo(() => getConversationExportCopy(locale), [locale]);
   const [members, setMembers] = useState<RelationshipMember[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [background, setBackground] = useState<BackgroundThemeName>('paper');
@@ -135,6 +141,37 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     } finally {
       setBusy(false);
     }
+  }
+
+  function confirmExport() {
+    if (!premiumActive || busy) return;
+    const exportableCount = exportableMessages(exportMessages).length;
+    Alert.alert(
+      exportCopy.confirmTitle,
+      exportCopy.confirmBody(exportableCount),
+      [
+        { text: t('chat.cancel'), style: 'cancel' },
+        {
+          text: exportCopy.create,
+          onPress: () => void (async () => {
+            try {
+              setBusy(true);
+              const title = memberNames.length ? memberNames.join(', ') : exportCopy.fallbackTitle;
+              await shareConversationPdf(
+                title,
+                members.map((member) => ({ id: member.user_id, name: localStates[member.user_id]?.alias.trim() || member.display_name })),
+                exportMessages,
+                locale === 'da' ? 'da-DK' : 'en',
+              );
+            } catch (error) {
+              Alert.alert(exportCopy.failed, error instanceof Error ? error.message : t('common.tryAgain'));
+            } finally {
+              setBusy(false);
+            }
+          })(),
+        },
+      ],
+    );
   }
 
   function buyTwoPersonPremium(member: RelationshipMember, productKey: 'premium_two_monthly' | 'premium_two_annual') {
@@ -404,6 +441,13 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
           <Button styles={styles} title={t('settings.inviteParticipant')} onPress={() => void invite('participant')} disabled={busy} />
           <Button styles={styles} title={t('settings.inviteObserver')} onPress={() => void invite('observer')} secondary disabled={busy} />
           <Text style={styles.privacyNote}>{t('settings.extraPrivacy')}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{exportCopy.title}</Text>
+          <Text style={styles.help}>{exportCopy.help}</Text>
+          {!premiumActive ? <Text accessibilityLiveRegion="polite" style={styles.premiumNote}>{exportCopy.premiumRequired}</Text> : null}
+          <Button styles={styles} title={exportCopy.action} onPress={confirmExport} secondary disabled={busy || !premiumActive} />
         </View>
       </ScrollView>
     </SafeAreaView>

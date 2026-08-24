@@ -39,7 +39,7 @@ function invitationUrl(path: 'invite' | 'member', token: string, secret: string)
 
 async function prepareInvitationEnvelope(token: string, relationshipId: string) {
   const threadKey = await ensureThreadKey(relationshipId);
-  const { secret, envelope } = await createInvitationEnvelope(token, threadKey);
+  const { secret, envelope } = await createInvitationEnvelope(token, relationshipId, threadKey);
   const { data, error } = await supabase.rpc('set_invitation_key_envelope', { invite_token: token, envelope });
   if (error) throw error;
   if (!data) throw new Error('The secure invitation envelope could not be stored.');
@@ -88,7 +88,7 @@ export async function listRelationships() {
   // Delivery means the authenticated app has synchronized available messages,
   // not that a particular relationship or message was opened.
   const { error: deliveryError } = await supabase.rpc('ack_all_available_messages_delivered');
-  if (deliveryError) throw deliveryError;
+  if (deliveryAckError) throw deliveryAckError;
   const { data, error } = await supabase.rpc('list_my_relationships');
   if (error) throw error;
   return (data ?? []) as RelationshipSummary[];

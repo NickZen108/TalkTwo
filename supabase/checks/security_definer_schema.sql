@@ -38,17 +38,25 @@ begin
     raise exception 'Untrusted API roles must not have CREATE privilege on public schema';
   end if;
 
-  -- These privacy-sensitive legacy/internal surfaces must never be callable by
-  -- a signed-in client even though other narrowly-authenticated SECURITY DEFINER
-  -- RPCs are intentionally part of TalkTwo's client API.
+  -- These privacy-sensitive or service-only legacy/internal surfaces must never
+  -- be callable by a signed-in client even though other narrowly-authenticated
+  -- SECURITY DEFINER RPCs are intentionally part of TalkTwo's client API.
   foreach target in array array[
     pg_catalog.to_regprocedure('public.withdraw_message(uuid)')::oid,
     pg_catalog.to_regprocedure('public.edit_unopened_message(uuid,text,text)')::oid,
-    pg_catalog.to_regprocedure('public.get_relationship_partner_settings(uuid)')::oid
+    pg_catalog.to_regprocedure('public.get_relationship_partner_settings(uuid)')::oid,
+    pg_catalog.to_regprocedure('public.get_member_write_upgrade_offer(uuid)')::oid,
+    pg_catalog.to_regprocedure('public.get_member_upgrade_verification_context(uuid,uuid)')::oid,
+    pg_catalog.to_regprocedure('public.confirm_verified_member_write_upgrade(uuid,uuid,text,text,text,timestamptz,timestamptz)')::oid,
+    pg_catalog.to_regprocedure('public.confirm_member_write_upgrade(uuid,uuid,text)')::oid,
+    pg_catalog.to_regprocedure('public.complete_billing_intent(uuid,text,text,timestamptz,timestamptz)')::oid
   ]
   loop
     if target is not null and pg_catalog.has_function_privilege('authenticated', target, 'execute') then
-      raise exception 'Privacy-sensitive RPC must not be executable by authenticated clients: %', target::regprocedure;
+      raise exception 'Privacy-sensitive or service-only RPC must not be executable by authenticated clients: %', target::regprocedure;
+    end if;
+    if target is not null and pg_catalog.has_function_privilege('anon', target, 'execute') then
+      raise exception 'Privacy-sensitive or service-only RPC must not be executable by anon clients: %', target::regprocedure;
     end if;
   end loop;
 

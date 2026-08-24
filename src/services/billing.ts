@@ -37,9 +37,10 @@ export async function createMemberUpgradeCheckoutIntent(relationshipId: string) 
 }
 
 export async function createPremiumGiftCheckoutIntent(recipientEmail: string, months = 1) {
+  if (months !== 1) throw new Error('TalkTwo Premium gifts are one month only.');
   const { data, error } = await supabase.rpc('create_premium_gift_checkout_intent', {
     recipient: recipientEmail,
-    months,
+    months: 1,
   });
   if (error) throw error;
   return oneRow<BillingIntentOffer>(data, 'Premium gift checkout could not be prepared.');

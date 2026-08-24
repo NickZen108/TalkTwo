@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import test from 'node:test';
+
+const migration = fs.readFileSync('supabase/migrations/20260824110000_privacy_controls_and_notification_mutes.sql', 'utf8');
+
+test('partner timezone/window RPC is not participant-readable', () => {
+  assert.match(migration, /revoke execute on function public\.get_relationship_partner_settings\(uuid\) from authenticated/i);
+  assert.match(migration, /grant execute on function public\.get_relationship_partner_settings\(uuid\) to service_role/i);
+});
+
+test('sender message rows reveal neither opens nor rejection decisions', () => {
+  const mine = migration.match(/with mine as \([\s\S]*?\), incoming as \(/i)?.[0] ?? '';
+  assert.match(mine, /null::timestamptz as opened_at/i);
+  assert.match(mine, /null::timestamptz as rejected_at/i);
+  assert.match(mine, /null::text as reject_reason/i);
+  assert.match(mine, /0::int as rejected_count/i);
+  assert.doesNotMatch(mine, /count\(\*\) filter\s*\(where m\.rejected_at/i);
+});
+
+test('blocking is owner-only and supports exactly the requested durations', () => {
+  assert.match(migration, /expires_at timestamptz/i);
+  assert.match(migration, /block_minutes not in \(60,240,1440\)/i);
+  assert.match(migration, /expires_at is null or b\.expires_at>now\(\)/i);
+  assert.match(migration, /list_my_member_blocks/i);
+});
+
+test('notification mutes are owner-only and can target app chat or sender', () => {
+  assert.match(migration, /create table if not exists public\.notification_mutes/i);
+  assert.match(migration, /alter table public\.notification_mutes enable row level security/i);
+  assert.match(migration, /revoke all on table public\.notification_mutes from public,anon,authenticated/i);
+  assert.match(migration, /set_my_notification_mute/i);
+  assert.match(migration, /m\.relationship_id=new\.relationship_id/i);
+  assert.match(migration, /m\.sender_id=new\.sender_id/i);
+  assert.match(migration, /m\.relationship_id is null and m\.sender_id is null/i);
+});
+
+test('public names and every stored message pass neutralization gates', () => {
+  assert.match(migration, /safe_public_display_name/i);
+  assert.match(migration, /symbolic_tone_block_reason/i);
+  assert.match(migration, /before insert or update of body on public\.messages/i);
+  assert.match(migration, /hader\|hate\|hates/i);
+});

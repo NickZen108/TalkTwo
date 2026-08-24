@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { buildTalkTwoLink } from '../domain/appLinks';
 
 export interface PendingPremiumGift {
   gift_id: string;
@@ -44,6 +45,6 @@ export async function rotatePremiumGiftLink(giftId: string) {
   const token = String(data);
   return {
     token,
-    url: `talktwo://premium-gift/${encodeURIComponent(giftId)}?token=${encodeURIComponent(token)}`,
+    url: buildTalkTwoLink('premium-gift', giftId, { query: { token } }),
   };
 }

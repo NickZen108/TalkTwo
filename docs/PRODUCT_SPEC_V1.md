@@ -86,14 +86,15 @@ The message cannot be sent. The author receives a clear explanation. If Coach is
 - Outside the window the recipient may manually use a Check waiting messages action. If messages are waiting, the recipient may voluntarily open them early.
 - No emergency bypass in v1.
 
-## Delivery and editing
+## Delivery and message finality
 - Push notifications never contain message text.
 - A sender may see only whether a message is Sent or Delivered to the recipient app. Delivery is not a read receipt.
+- Delivery is acknowledged by app-level synchronization of all currently available messages, not by opening one specific chat or message.
 - A sender must not be shown open/read state, opening time, recipient rejection, recipient blocking, mute state, online state or last-seen information.
 - In multi-person chats, delivery may be shown as an aggregate count, not recipient-level behavioural identities.
 - Users communicate acknowledgment naturally by replying if they choose.
-- A sender may edit or withdraw a message only while the server still records it as unopened, but that internal rule must not reveal the recipient's open state to the sender.
-- Once opened, the message is immutable.
+- Privacy-first v1 treats a message as final once sent: ordinary messages and text-document attachments cannot be edited or withdrawn after sending.
+- This deliberately removes the side channel where success/failure of an edit or withdrawal could reveal whether the recipient already opened or rejected something.
 
 ## Blocking and notification control
 Blocking and notifications are separate owner-only controls.
@@ -123,15 +124,15 @@ Premium:
 - Entire extracted document text is scanned in one server review. Document content is treated as untrusted data, not AI instructions.
 - If any disallowed passage is found, the entire document is blocked.
 - The triggering passage is shown to the author only.
-- Approved text is encrypted with the conversation key and follows the same communication-window, unopened-rejection, withdrawal and local-cache lifecycle as a message. The original file is not uploaded to object storage.
-- Documents cannot be edited after sending. A sender can withdraw one only while it remains unopened.
+- Approved text is encrypted with the conversation key and follows the same communication-window, unopened-rejection and local-cache lifecycle as a message. The original file is not uploaded to object storage.
+- Documents cannot be edited or withdrawn after sending.
 - Recipients do not see the file name or text before opening. Personal Boundaries are enforced over the full document at send time.
 
 ## Personal Boundaries
 Premium only.
 - Up to 10 blocked words or phrases.
 - The feature is visible but disabled in Free.
-- Matching uses complete normalized words, ignores capitalisation and punctuation, and applies to new or edited messages while the recipient has active Premium or trial access.
+- Matching uses complete normalized words, ignores capitalisation and punctuation, and applies at send time while the recipient has active Premium or trial access.
 - Essential logistics words such as child, school, doctor or emergency cannot be blocked on their own, preventing the feature becoming a communication weapon.
 - If a draft is rejected because of a personal boundary, the author is told which word or phrase caused the rejection; the intended recipient receives no indication that the draft existed.
 
@@ -156,7 +157,7 @@ Export includes:
 Export excludes:
 - unopened or locally unavailable messages
 - blocked drafts
-- withdrawn messages
+- historically withdrawn messages
 - text-document attachment contents
 - AI judgments
 - AI scores
@@ -189,6 +190,7 @@ The generated PDF is readable and unencrypted. The app warns the user before cre
 - Automatic read receipts
 - Online/last-seen presence
 - Participant-visible timezone/local-time information
+- Post-send editing or withdrawal
 - Shared calendars
 - Therapy or mediation functionality
 - Organisation access to private conversations

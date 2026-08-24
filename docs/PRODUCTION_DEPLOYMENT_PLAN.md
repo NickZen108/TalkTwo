@@ -89,12 +89,15 @@ Do not use real user conversation content in smoke tests.
 
 Before the app exposes public links:
 
-- deploy `public-site` over HTTPS;
-- replace all legal/support placeholders with final reviewed values;
-- allowlist the exact `/delete-account/` redirect in Supabase Auth;
-- verify unknown emails are not auto-created and do not disclose account existence;
-- perform an end-to-end deletion with an intentionally disposable account;
-- verify the built site contains no service-role, OpenAI, store, signing, or other private secret;
+- fill every final reviewed `public-site` environment value and set `VITE_PUBLICATION_APPROVED=true` only after the intended legal/privacy review;
+- from `public-site`, run `npm run release:preflight` and require `TalkTwo public-site release preflight OK.`;
+- run the production `npm run build` from the same reviewed environment;
+- verify the built bundle contains no service-role, OpenAI, store, signing or other private secret;
+- deploy that exact built `public-site` over HTTPS;
+- verify `/`, `/privacy/`, `/terms/`, `/support/` and `/delete-account/` all resolve correctly on the final domain;
+- allowlist the exact final `/delete-account/` redirect in Supabase Auth and verify the production magic-link template preserves it;
+- verify an unknown email neither creates an account nor discloses account existence;
+- perform an end-to-end deletion with an intentionally disposable account and verify an expired/reused link cannot delete anything;
 - only then set `EXPO_PUBLIC_TALKTWO_SITE_URL` for the release build.
 
 ## Phase 5 — native store build and test
@@ -108,4 +111,4 @@ Before the app exposes public links:
 
 ## Stop conditions
 
-Stop the release immediately for any failed schema gate, failed `release:preflight`, missing secret, mismatched store product ID, broken public URL, failed disposable-account deletion, unexpected permission, failed provider verification, red QA job, or migration drift that has not been reconciled.
+Stop the release immediately for any failed schema gate, failed mobile or public-site `release:preflight`, missing secret, mismatched store product ID, broken public URL, failed disposable-account deletion, unexpected permission, failed provider verification, red QA job, or migration drift that has not been reconciled.

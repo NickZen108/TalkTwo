@@ -1,6 +1,6 @@
 # TalkTwo App Store / Google Play setup checklist
 
-This is the external-account work required before native purchases can be tested end to end.
+This is the external-account work required before native purchases and signed release behavior can be tested end to end.
 
 ## Apple
 - Active Apple Developer Program membership.
@@ -13,6 +13,7 @@ This is the external-account work required before native purchases can be tested
 - `APPLE_ENVIRONMENT`, `APPLE_BUNDLE_ID` and production `APPLE_APP_ID` configured as Supabase secrets.
 - StoreKit client sets `appAccountToken` to the authenticated TalkTwo user UUID.
 - Sandbox tester account available for test purchases.
+- Final Apple Team ID is known and used to serve `/.well-known/apple-app-site-association` for `com.talktwo.app`; the signed build contains `applinks:<final-host>` and claims only the intended `/app/*` TalkTwo routes.
 
 ## Google
 - Active Google Play Console developer account.
@@ -27,15 +28,19 @@ This is the external-account work required before native purchases can be tested
 - Play Billing client sets `obfuscatedAccountId` to SHA-256(`talktwo:<TalkTwo user UUID>`).
 - Each extra-member subscription product exposes exactly one eligible monthly Google Play offer; ambiguous offers fail closed in the client.
 - Internal testing track and licensed tester account available.
+- SHA-256 fingerprint of the **actual release signing certificate** is known and used in `/.well-known/assetlinks.json`; the signed build has an `autoVerify` HTTPS App Link for the final host with `pathPrefix: "/app/"`.
 
 ## Deployment gate
 - Freeze the exact release tree and require its QA mirror to be green before any production change.
 - Run `npm run release:preflight` with final release environment values; do not build for stores until it reports `TalkTwo release preflight OK.`
+- Require the final HTTPS domain to be live, serve the signed-build Apple/Android association files, and route `/app/*` browser fallback to the static privacy-minimized page before enabling `EXPO_PUBLIC_TALKTWO_SITE_URL`.
+- Allowlist the exact final `/app/auth` callback in Supabase Auth and verify mobile sign-in is PKCE code exchange; never accept an implicit URL carrying access/refresh tokens.
 - Apply the account-wide lifecycle migration before `20260820112904_store_notification_event_ingestion.sql`.
 - Apply `20260820125229_recurring_premium_subscription_lifecycle.sql` before enabling recurring Premium products. It implements initial activation plus renewal/recovery/grace-period, cancellation/on-hold, expiry and revocation/refund processing.
 - Apply `20260820150217_account_deletion.sql` before enabling public account deletion, then run `supabase/checks/account_deletion_schema.sql` and require `account_deletion_schema_ok`.
 - Run `supabase/checks/security_definer_schema.sql` after the complete migration stack and require `security_definer_schema_ok`.
 - Apply `20260824084500_ai_budget_reservations.sql` before deploying the current AI review functions; the functions reserve the monthly budget atomically before calling OpenAI.
+- Apply `20260824113000_storage_boundary_enforcement.sql` and verify new message rows retain no plaintext body after trusted send-time checks; unopened recipient APIs must not expose body, ciphertext or body hash.
 - Re-run Supabase Security and Performance Advisors after migrations and resolve launch-blocking findings.
 - Configure all provider secrets before deploying the functions; they fail closed when configuration is absent.
 - Deploy `verify-store-purchase` with Supabase JWT verification enabled.
@@ -53,6 +58,7 @@ This is the external-account work required before native purchases can be tested
 - An existing qualifying subscription means a newly approved chat activates without a second purchase.
 - Observer-to-participant upgrade is prorated for the current period and renews at 99 DKK/month.
 - Premium gifts are durable recipient entitlements; a lost link never destroys the paid value.
+- Premium-gift possession tokens, invitation secrets and key-recovery secrets remain in URL fragments rather than query strings.
 - Recurring Premium lifecycle state comes from verified Apple/Google transactions and notifications, not from client claims.
 
 ## Test cases before release
@@ -78,3 +84,9 @@ This is the external-account work required before native purchases can be tested
 20. Account deletion after a purchase/sponsorship succeeds while retained payment history is pseudonymized and another person's already-paid entitlement survives.
 21. AI review cannot start when the atomic monthly budget reservation would exceed the configured hard limit; no send approval is created on failure.
 22. Public deletion works end-to-end for a disposable account and an unknown email neither creates an account nor reveals whether one exists.
+23. Signed iOS Universal Links for every `/app/*` family open TalkTwo; a look-alike domain does not.
+24. Signed Android verified App Links for every `/app/*` family open TalkTwo without an app chooser after verification; a look-alike domain does not.
+25. Mobile magic-link login succeeds through PKCE and rejects a legacy redirect containing `access_token` or `refresh_token`.
+26. If an app link falls back to the website, the static `/app/` page does not read or transmit URL fragments and has no analytics/script execution.
+27. A signed release reports non-empty SQLCipher `cipher_version`; Android app-data backup remains disabled.
+28. A disposable sent text/document row is ciphertext-only at rest immediately, and an unopened recipient cannot retrieve its deterministic body hash.

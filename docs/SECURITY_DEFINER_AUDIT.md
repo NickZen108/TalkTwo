@@ -1,43 +1,48 @@
-# SECURITY DEFINER and RPC-only table audit
+# SECURITY DEFINER audit
 
-Audit date: 2026-08-20. Project: TalkTwo Supabase production schema. This is a read-only audit; no production privileges, policies or data were changed.
+TalkTwo deliberately keeps sensitive tables behind RPC-only access. `SECURITY DEFINER` is therefore used only for narrow server-side entry points that must enforce the signed-in user's identity before touching protected state.
 
-## Result
+## Live re-check — 2026-08-24
 
-The current Supabase security advisor reports 46 `public` `SECURITY DEFINER` functions executable by `authenticated`. These are intentional client RPC entry points, not accidental public helpers. The warning should remain visible and be re-reviewed whenever one of these functions changes; it is not safe to suppress it globally.
+The connected production database was re-checked read-only against the Postgres catalog:
 
-Live catalog checks confirmed:
+- 46 public `SECURITY DEFINER` functions were executable by `authenticated`;
+- all 46 contained an `auth.uid()` caller binding;
+- all 46 had an explicit fixed `search_path` configuration;
+- none were executable by `anon` or `PUBLIC`;
+- neither `authenticated` nor `anon` had `CREATE` on the `public` schema.
 
-- all 46 are owned by `postgres`;
-- all 46 explicitly set `search_path=public`;
-- all 46 call `auth.uid()` to bind work to the signed-in account;
-- `PUBLIC` and `anon` have no execute privilege on any of the 46 functions;
-- only `authenticated` has the expected client execute path;
-- `PUBLIC`, `anon` and `authenticated` cannot create objects in the `public` schema, so an untrusted role cannot shadow objects on that search path;
-- all 20 tables reported as “RLS enabled, no policy” deny direct SELECT/INSERT/UPDATE/DELETE to both `anon` and `authenticated` and are intentionally RPC-only.
+The same trust boundary is now encoded in `supabase/checks/security_definer_schema.sql`. A production release must require `security_definer_schema_ok` after migrations. The check is intentionally generic, so a later authenticated `SECURITY DEFINER` RPC fails the gate if it omits caller binding, fixed search path or narrow grants.
 
-## Why SECURITY DEFINER remains intentional
+## Why the Supabase advisor still warns
 
-TalkTwo denies direct client table access for messages, invitations, membership, AI budgets, feedback and billing ledgers. The client instead calls narrow RPCs that check the caller and apply multi-row invariants in one transaction. Converting these functions mechanically to `SECURITY INVOKER` would break the RPC-only boundary; granting direct table access to compensate would widen the attack surface.
+Supabase correctly flags `SECURITY DEFINER` as a pattern requiring review. In TalkTwo, an advisor warning is not automatically a defect because authenticated clients are intentionally allowed to execute a small RPC surface while direct table access remains restricted. Each warning must still be reviewed; it must never be dismissed merely because another TalkTwo function uses the same pattern.
 
-## Required review for every changed or new RPC
+## Required invariant for authenticated RPCs
 
-1. Revoke execute from `PUBLIC` and `anon`, then grant only the minimum required role.
-2. Set a fixed search path and schema-qualify security-sensitive objects.
-3. Reject a missing `auth.uid()` before reading or writing user data.
-4. Check relationship membership, role, ownership and current subscription period inside the function; never trust IDs supplied by the client.
-5. Bound text, arrays, row counts and time windows before writes.
-6. Use a single transaction and lock rows where duplicate approvals, purchases or claims could race.
-7. Return only the minimum columns required by the app.
-8. Add a negative test for anonymous callers, non-members, self-approval, expired tokens and cross-account receipts as applicable.
-9. Re-run both Supabase security and performance advisors after the migration.
+A public `SECURITY DEFINER` function executable by `authenticated` must:
 
-## RPC-only tables checked
+1. derive authority from `auth.uid()` and reject missing/unauthorized callers;
+2. use a fixed `search_path` and schema-qualify trusted objects;
+3. expose only the minimum return data needed by the client;
+4. revoke execution from `PUBLIC` and `anon`;
+5. grant execution only to the intended role(s);
+6. avoid dynamic SQL unless identifiers/values are independently constrained;
+7. keep sensitive service-only mutation functions non-executable by `authenticated`.
 
-`ai_budget_settings`, `ai_cost_events`, `ai_message_reviews`, `ai_usage_daily`, `billing_checkout_intents`, `extra_member_access_subscriptions`, `feedback`, `invitations`, `member_invitation_approvals`, `member_invitations`, `messages`, `personal_boundaries`, `premium_sponsorship_credits`, `relationship_blocks`, `relationship_entitlements`, `relationship_member_subscriptions`, `relationship_members`, `relationships`, `store_purchase_events`, `user_plans`.
+## RPC-only tables
 
-The “RLS enabled, no policy” advisor notices are expected for these tables only while the direct DML grants remain absent. A future direct grant must be treated as a security regression even if RLS is enabled.
+Advisor `rls_enabled_no_policy` INFO findings can be intentional for tables that are not a direct client API. RLS with no client policy, plus revoked direct privileges, provides deny-all direct access while reviewed RPCs mediate the operation. Do not add broad table policies merely to silence the INFO finding.
 
-## Post-audit additions
+## Performance-advisor follow-up
 
-Later launch-stack migrations add Coach aggregate statistics and organization sponsorship RPCs. Those newer functions use fixed empty search paths with schema-qualified objects and have their own privilege/regression tests. Re-run the live catalog audit after the complete migration stack is staged, because the counts above intentionally describe the 2026-08-20 production schema rather than claiming to describe undeployed work.
+The 2026-08-24 live advisor also reported seven unindexed foreign keys and the known `premium_gifts` policy init-plan/multiple-policy findings. These are addressed by the pending `20260820152500_database_advisor_hardening.sql` migration. `unused_index` notices are not a launch reason to drop indexes on a database with negligible production traffic; reassess them only after representative usage exists.
+
+## Release review
+
+After the complete migration stack is applied, run both:
+
+- `supabase/checks/security_definer_schema.sql` and require `security_definer_schema_ok`;
+- Supabase Security Advisor and inspect every remaining `SECURITY DEFINER` warning against this invariant.
+
+No warning should be waived solely by function name or historical approval.

@@ -4,7 +4,7 @@ Snapshot: 24 August 2026. This file separates repository work from external deci
 
 ## Account-independent repository state
 
-These items are implemented in the current `feat/launch-readiness-audit` integration tree and must stay green in exact-tree QA:
+These items are implemented in the current unmerged release-candidate stack, culminating in `feat/privacy-controls-handoff`, and must stay green in exact-tree QA:
 
 - iOS + Android Expo application with API 36 Android target/compile SDK;
 - Free deterministic filter and Premium AI message/document review;
@@ -13,7 +13,9 @@ These items are implemented in the current `feat/launch-readiness-audit` integra
 - text-document attachments, private push architecture and Danish/English localization;
 - Coach explicit opt-in with owner-only aggregate statistics;
 - organization-funded server-assigned Premium without consumer redemption-code UI;
-- privacy-safe aggregate delivery acknowledgement and communication-window status;
+- privacy-safe aggregate delivery acknowledgement that exposes no read/rejection side channel;
+- private communication windows/timezones, app/chat/person notification mutes and timed/indefinite member blocks;
+- storage-level Personal Boundary enforcement after timed-block resolution for text and text-document messages;
 - Premium PDF export from locally visible ordinary messages only;
 - store purchase/restore/webhook architecture and recurring entitlement lifecycle;
 - public multi-page site source for `/`, `/privacy/`, `/terms/`, `/support/`, `/delete-account/`;

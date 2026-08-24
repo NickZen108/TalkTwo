@@ -42,6 +42,7 @@ If additional migrations exist on the frozen release commit, they also run in le
 ### Mandatory database gates after migrations
 
 - run `supabase/checks/account_deletion_schema.sql`; require `account_deletion_schema_ok`;
+- run `supabase/checks/security_definer_schema.sql`; require `security_definer_schema_ok`;
 - verify every public FK referencing `auth.users` is `CASCADE` or `SET NULL`, never `RESTRICT`/`NO ACTION` for a row that can exist when a user deletes their account;
 - run Supabase security and performance advisors and resolve launch-blocking findings;
 - verify RLS is enabled on user-facing tables and service-only tables/RPCs have no `anon`/`authenticated` direct privileges;

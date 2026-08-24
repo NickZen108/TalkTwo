@@ -43,18 +43,27 @@ export function buildTalkTwoLink(
   options: TalkTwoLinkOptions = {},
   siteUrl = configuredSiteUrl(),
 ) {
+  const configured = siteUrl.trim();
+  const origin = talkTwoHttpsOrigin(configured);
+  if (configured && !origin) {
+    throw new Error('TalkTwo public link configuration is invalid.');
+  }
+
   const idPath = identifier === undefined ? '' : `/${encodeURIComponent(identifier)}`;
   const route = `${family}${idPath}`;
   const query = encodedParams(options.query);
   const fragment = encodedParams(options.fragment);
   const suffix = `${query ? `?${query}` : ''}${fragment ? `#${fragment}` : ''}`;
-  const origin = talkTwoHttpsOrigin(siteUrl);
   return origin
     ? `${origin}/${APP_PATH_PREFIX}/${route}${suffix}`
     : `${CUSTOM_SCHEME}//${route}${suffix}`;
 }
 
 export function parseTalkTwoLink(url: string, siteUrl = configuredSiteUrl()): ParsedTalkTwoLink | null {
+  const configured = siteUrl.trim();
+  const expectedOrigin = talkTwoHttpsOrigin(configured);
+  if (configured && !expectedOrigin) return null;
+
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -62,9 +71,7 @@ export function parseTalkTwoLink(url: string, siteUrl = configuredSiteUrl()): Pa
     return null;
   }
 
-  const expectedOrigin = talkTwoHttpsOrigin(siteUrl);
   let pathSegments: string[];
-
   if (expectedOrigin) {
     if (parsed.protocol !== 'https:' || parsed.origin !== expectedOrigin) return null;
     pathSegments = parsed.pathname.split('/').filter(Boolean);

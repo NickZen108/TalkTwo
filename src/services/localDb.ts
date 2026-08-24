@@ -22,10 +22,23 @@ async function databaseKey() {
   return created;
 }
 
+async function assertSqlCipher(db: SQLite.SQLiteDatabase) {
+  const row = await db.getFirstAsync<{ cipher_version?: string }>('PRAGMA cipher_version;');
+  if (!row?.cipher_version?.trim()) {
+    try {
+      await db.closeAsync();
+    } catch {
+      // The important invariant is to fail closed before any local plaintext table is used.
+    }
+    throw new Error('Encrypted local storage is unavailable on this build.');
+  }
+}
+
 async function openDatabase() {
   const db = await SQLite.openDatabaseAsync(DB_NAME);
   const key = await databaseKey();
   await db.execAsync(`PRAGMA key = '${key}';`);
+  await assertSqlCipher(db);
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS local_messages (
@@ -151,7 +164,8 @@ export async function getConversationTheme(ownerUserId: string, relationshipId: 
   const db = await getLocalDatabase();
   const row = await db.getFirstAsync<{ background_theme: string }>(
     'SELECT background_theme FROM conversation_preferences WHERE owner_user_id=? AND relationship_id=?',
-    ownerUserId, relationshipId,
+    ownerUserId,
+    relationshipId,
   );
   return row?.background_theme ?? 'paper';
 }
@@ -175,7 +189,8 @@ export async function listMemberPreferences(ownerUserId: string, relationshipId:
   const db = await getLocalDatabase();
   return db.getAllAsync<MemberPreference>(
     'SELECT member_user_id,local_alias,bubble_theme FROM member_preferences WHERE owner_user_id=? AND relationship_id=?',
-    ownerUserId, relationshipId,
+    ownerUserId,
+    relationshipId,
   );
 }
 

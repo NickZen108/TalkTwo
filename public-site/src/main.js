@@ -22,15 +22,19 @@ const deleteStatus = document.querySelector('#delete-status');
 const confirmationInput = document.querySelector('#confirmation');
 const signOutButton = document.querySelector('#sign-out-button');
 const supportLink = document.querySelector('#support-link');
+const genericLinkMessage = 'If this email belongs to an existing TalkTwo account, a secure sign-in link has been sent. Open the newest link on this device.';
 
-if (config.supportEmail && config.supportEmail.includes('@')) {
-  supportLink.href = `mailto:${config.supportEmail}`;
+function validEmail(value) {
+  return Boolean(value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
 }
 
 function validPublicConfig() {
   try {
     const url = new URL(config.supabaseUrl ?? '');
-    return url.protocol === 'https:' && Boolean(config.publishableKey) && !/service_role/i.test(config.publishableKey);
+    return url.protocol === 'https:'
+      && Boolean(config.publishableKey)
+      && !/service_role/i.test(config.publishableKey)
+      && validEmail(config.supportEmail);
   } catch {
     return false;
   }
@@ -47,9 +51,11 @@ function setBusy(button, busy, label, busyLabel) {
 
 if (!validPublicConfig()) {
   configError.hidden = false;
-  configError.textContent = 'TalkTwo account deletion is not configured correctly yet. Please contact support.';
+  configError.textContent = 'TalkTwo account deletion is not configured correctly yet.';
   showOnly(null);
 } else {
+  supportLink.href = `mailto:${config.supportEmail}`;
+
   const supabase = createClient(config.supabaseUrl, config.publishableKey, {
     auth: {
       detectSessionInUrl: true,
@@ -58,20 +64,20 @@ if (!validPublicConfig()) {
     },
   });
 
+  async function verifiedCurrentUser() {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user?.email) return null;
+    return user;
+  }
+
   async function renderSession() {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error) {
-      requestStatus.textContent = 'The secure session could not be loaded. Please request a new link.';
+    const user = await verifiedCurrentUser();
+    if (!user) {
       showOnly(requestSection);
       return;
     }
 
-    if (!session?.user?.email) {
-      showOnly(requestSection);
-      return;
-    }
-
-    signedInEmail.textContent = session.user.email;
+    signedInEmail.textContent = user.email;
     confirmationInput.value = '';
     deleteButton.disabled = true;
     deleteStatus.textContent = '';
@@ -81,24 +87,23 @@ if (!validPublicConfig()) {
   requestForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const email = emailInput.value.trim().toLowerCase();
-    if (!email || !email.includes('@')) return;
+    if (!validEmail(email)) return;
 
     requestStatus.textContent = '';
     setBusy(requestButton, true, 'Email me a secure sign-in link', 'Sending…');
     try {
       const redirectTo = new URL('/delete-account/', window.location.origin).toString();
-      const { error } = await supabase.auth.signInWithOtp({
+      await supabase.auth.signInWithOtp({
         email,
         options: {
           shouldCreateUser: false,
           emailRedirectTo: redirectTo,
         },
       });
-      if (error) throw error;
-      requestStatus.textContent = 'If this email belongs to an existing TalkTwo account, a secure sign-in link has been sent. Open the newest link on this device.';
-    } catch {
-      requestStatus.textContent = 'A sign-in link could not be requested right now. Please try again later or contact support.';
     } finally {
+      // Keep the same response for existing and unknown addresses so the page
+      // does not become an account-enumeration endpoint.
+      requestStatus.textContent = genericLinkMessage;
       setBusy(requestButton, false, 'Email me a secure sign-in link', 'Sending…');
     }
   });
@@ -114,8 +119,8 @@ if (!validPublicConfig()) {
     deleteStatus.textContent = '';
     setBusy(deleteButton, true, 'Delete account permanently', 'Deleting…');
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session) throw new Error('authentication_required');
+      const user = await verifiedCurrentUser();
+      if (!user) throw new Error('authentication_required');
 
       const { data, error } = await supabase.functions.invoke('delete-account', {
         body: { confirmation: 'DELETE' },
@@ -143,8 +148,7 @@ if (!validPublicConfig()) {
 
   supabase.auth.onAuthStateChange((_event, session) => {
     if (session?.user?.email) {
-      signedInEmail.textContent = session.user.email;
-      showOnly(deleteSection);
+      void renderSession();
     }
   });
 

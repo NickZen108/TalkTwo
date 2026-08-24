@@ -63,7 +63,9 @@ function hhmm(value: string | null) {
 function minuteOfDay(value: string | null) {
   const normalized = hhmm(value);
   if (!normalized) return null;
-  const [hour, minute] = normalized.split(':').map(Number);
+  const hour = Number(normalized.slice(0, 2));
+  const minute = Number(normalized.slice(3, 5));
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
   return hour * 60 + minute;
 }
 

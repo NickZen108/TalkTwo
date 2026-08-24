@@ -11,22 +11,24 @@ const values = {
   privacyEffectiveDate: import.meta.env.VITE_PRIVACY_EFFECTIVE_DATE?.trim() ?? '',
 };
 
+const publicationApproved = import.meta.env.VITE_PUBLICATION_APPROVED?.trim().toLowerCase() === 'true';
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function publicSiteConfig() {
   return { ...values };
 }
 
-export function missingPublicationFields(config = values) {
+export function missingPublicationFields(config = values, approved = publicationApproved) {
   const missing = [];
   for (const [key, value] of Object.entries(config)) {
     if (!value) missing.push(key);
   }
   if (config.supportEmail && !emailPattern.test(config.supportEmail)) missing.push('supportEmail(valid email)');
   if (config.privacyEmail && !emailPattern.test(config.privacyEmail)) missing.push('privacyEmail(valid email)');
+  if (!approved) missing.push('publicationApproved');
   return [...new Set(missing)];
 }
 
-export function publicationReady(config = values) {
-  return missingPublicationFields(config).length === 0;
+export function publicationReady(config = values, approved = publicationApproved) {
+  return missingPublicationFields(config, approved).length === 0;
 }

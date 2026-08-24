@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { assertNoSymbolicTone } from '../domain/symbolicTone';
 import { listCachedMessages } from './localDb';
 
 export interface UserPlan {
@@ -35,6 +36,7 @@ export async function startPremiumTrial() {
 }
 
 export async function analyzePremiumMessage(relationshipId: string, message: string) {
+  assertNoSymbolicTone(message);
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) throw new Error('Please sign in again.');
   const cached = await listCachedMessages(user.id, relationshipId);

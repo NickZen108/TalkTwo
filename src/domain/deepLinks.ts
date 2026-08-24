@@ -1,3 +1,5 @@
+import { parseTalkTwoLink } from './appLinks';
+
 const MAX_DEEP_LINK_LENGTH = 4096;
 const MAX_IDENTIFIER_LENGTH = 512;
 const INVITATION_SECRET_PATTERN = /^[0-9a-f]{64}$/i;
@@ -27,58 +29,61 @@ function safeIdentifier(value: string) {
   }
 }
 
-function singleParameter(value: string, name: string) {
-  const params = new URLSearchParams(value);
+function singleParameter(params: URLSearchParams, name: string) {
   const matches = params.getAll(name);
   return matches.length === 1 && matches[0] ? matches[0] : null;
 }
 
-export function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
+function parsed(url: string) {
   if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
-  const match = url.match(/^talktwo:\/\/(invite|member)\/([^?#]+)(?:\?[^#]*)?(?:#(.*))?$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const token = safeIdentifier(match[2]);
-  const secret = singleParameter(match[3] ?? '', 's');
+  return parseTalkTwoLink(url);
+}
+
+export function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
+  const link = parsed(url);
+  if (!link || !['invite', 'member'].includes(link.family) || link.pathSegments.length !== 2) return null;
+  const token = safeIdentifier(link.pathSegments[1] ?? '');
+  const secret = singleParameter(link.fragment, 's');
   if (!token || !secret || !INVITATION_SECRET_PATTERN.test(secret)) return null;
   return {
-    kind: match[1].toLowerCase() === 'member' ? 'member' : 'invite',
+    kind: link.family === 'member' ? 'member' : 'invite',
     token,
     secret: secret.toLowerCase(),
   };
 }
 
 export function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
-  if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
-  const match = url.match(/^talktwo:\/\/premium-gift\/([^?#]+)\?([^#]+)$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const giftId = safeIdentifier(match[1]);
-  const token = singleParameter(match[2], 'token');
+  const link = parsed(url);
+  if (!link || link.family !== 'premium-gift' || link.pathSegments.length !== 2) return null;
+  const giftId = safeIdentifier(link.pathSegments[1] ?? '');
+  const token = singleParameter(link.query, 'token');
   if (!giftId || !token || token.length > MAX_IDENTIFIER_LENGTH || /[\u0000-\u001f\u007f]/.test(token)) return null;
   return { giftId, token };
 }
 
 export function keyRecoveryFromUrl(url: string): (PendingKeyRecoveryApproval & { secret: string }) | null {
-  if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
-  const match = url.match(/^talktwo:\/\/recover-key\/([^?#]+)#(.*)$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const token = safeIdentifier(match[1]);
-  const secret = singleParameter(match[2], 's');
+  const link = parsed(url);
+  if (!link || link.family !== 'recover-key' || link.pathSegments.length !== 2) return null;
+  const token = safeIdentifier(link.pathSegments[1] ?? '');
+  const secret = singleParameter(link.fragment, 's');
   if (!token || !secret || !INVITATION_SECRET_PATTERN.test(secret)) return null;
   return { token, secret: secret.toLowerCase() };
 }
 
 export function isInvitationUrl(url: string) {
-  return /^talktwo:\/\/(invite|member)(?:\/|$)/i.test(url);
+  const link = parsed(url);
+  return Boolean(link && (link.family === 'invite' || link.family === 'member'));
 }
 
 export function isPremiumGiftUrl(url: string) {
-  return /^talktwo:\/\/premium-gift(?:\/|$)/i.test(url);
+  return parsed(url)?.family === 'premium-gift';
 }
 
 export function isKeyRecoveryUrl(url: string) {
-  return /^talktwo:\/\/recover-key(?:\/|$)/i.test(url);
+  return parsed(url)?.family === 'recover-key';
 }
 
 export function isAuthCallbackUrl(url: string) {
-  return /^talktwo:\/\/auth(?:[/?#]|$)/i.test(url) && url.length <= MAX_DEEP_LINK_LENGTH;
+  const link = parsed(url);
+  return Boolean(link && link.family === 'auth' && link.pathSegments.length === 1);
 }

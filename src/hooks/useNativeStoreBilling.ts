@@ -107,6 +107,41 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
     }
   }; }, [completePurchase]);
 
+  // A purchase can succeed in the native store just before the app is killed.
+  // Reconcile a still-authorized pending intent on the next connection so paid
+  // access does not depend on the original callback surviving process death.
+  useEffect(() => {
+    if (!iap.connected || Platform.OS === 'web') return;
+    let active = true;
+    void (async () => {
+      const pending = await loadPendingStorePurchase().catch(() => null);
+      if (!pending || pending.userId !== userId) return;
+      if (new Date(pending.expiresAt).valueOf() <= Date.now()) {
+        await abandonPendingCheckout();
+        return;
+      }
+      const platform = nativeStorePlatform();
+      const purchases = await getAvailablePurchases({
+        onlyIncludeActiveItemsIOS: true,
+        includeSuspendedAndroid: false,
+      });
+      const matching = purchases.find((purchase) => pendingPurchaseMatches(pending, platform, purchase));
+      if (!matching || !active) return;
+      setProcessing(true);
+      try {
+        const completed = await completePurchase(matching);
+        if (completed && active) await callbacksRef.current.onPurchaseVerified();
+      } catch (error) {
+        if (active) callbacksRef.current.onError(messageFor(error));
+      } finally {
+        if (active) setProcessing(false);
+      }
+    })().catch((error) => {
+      if (active) callbacksRef.current.onError(messageFor(error));
+    });
+    return () => { active = false; };
+  }, [iap.connected, completePurchase, userId]);
+
   useEffect(() => {
     if (!iap.connected || Platform.OS === 'web') return;
     const platform = nativeStorePlatform();

@@ -30,7 +30,7 @@ function sameHostVerifiedAndroidLink(filter, host) {
   const categories = Array.isArray(filter.category) ? filter.category : [];
   if (!categories.includes('BROWSABLE') || !categories.includes('DEFAULT')) return false;
   const data = Array.isArray(filter.data) ? filter.data : [];
-  return data.some((entry) => entry?.scheme === 'https' && entry?.host === host);
+  return data.some((entry) => entry?.scheme === 'https' && entry?.host === host && entry?.pathPrefix === '/app/');
 }
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '';
@@ -60,7 +60,7 @@ if (publicSiteHost) {
   }
   const intentFilters = Array.isArray(app.android?.intentFilters) ? app.android.intentFilters : [];
   if (!intentFilters.some((filter) => sameHostVerifiedAndroidLink(filter, publicSiteHost))) {
-    fail(`Android production config must include an autoVerify HTTPS App Link for ${publicSiteHost}; custom URL schemes alone are not sufficient for auth/invitation/recovery secrets.`);
+    fail(`Android production config must include an autoVerify HTTPS App Link for https://${publicSiteHost}/app/; custom URL schemes alone are not sufficient for auth/invitation/recovery secrets.`);
   }
 }
 

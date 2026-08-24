@@ -30,6 +30,10 @@ requireText('chat', files.chat, "inputShell: { flex: 1, minWidth: 0", 'composer 
 requireText('chat', files.chat, "bubble: { maxWidth: '82%'", 'message bubbles need a bounded responsive width');
 requireText('chat', files.chat, "senderControls: {", 'sender controls must remain in the responsive style sheet');
 requireText('chat', files.chat, "flexWrap: 'wrap'", 'chat actions need a wrap path for narrow screens or large text');
+requireText('chat', files.chat, "compactButton: { minHeight: 44", 'Open/Reject/View-document touch targets must remain at least 44pt high');
+requireText('chat', files.chat, "trialStrip: { minHeight: 44", 'Premium-trial action must remain at least 44pt high');
+requireText('chat', files.chat, "cancelAttachmentButton: { minHeight: 44, minWidth: 44", 'attachment cancel touch target must remain at least 44x44pt');
+requireText('chat', files.chat, "rewriteButton: { minHeight: 44", 'AI rewrite action must remain at least 44pt high');
 requireText('home', files.home, "chatText: { flex: 1, minWidth: 0 }", 'chat titles must shrink beside avatar and chevron');
 requireText('home', files.home, "invitationBanner: {", 'invitation banner style is missing');
 requireText('home', files.home, "flexWrap: 'wrap'", 'home banners/actions need a wrap path for narrow screens');
@@ -49,4 +53,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('Layout safety gate passed. Responsive shrink/wrap guards and no-profile-photo rule are intact.');
+console.log('Layout safety gate passed. Responsive shrink/wrap guards, core touch targets and no-profile-photo rule are intact.');

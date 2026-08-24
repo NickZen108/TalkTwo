@@ -3,18 +3,20 @@ name: QA
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  pull_request: {}
+
+permissions:
+  contents: read
 
 jobs:
   qa:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -22,6 +24,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run typecheck:tests
       - run: npm test
+      - run: npm install --no-audit --no-fund
+        working-directory: public-site
+      - run: npm run build
+        working-directory: public-site
       - run: npm run layout:check
       - run: npm run privacy:check
       - run: npx expo-doctor
@@ -29,19 +35,24 @@ jobs:
       - run: npx expo export --platform android --output-dir dist-qa
       - run: npx expo prebuild --platform android --no-install --clean
       - run: node scripts/check-android-permissions.mjs
-      - run: cd android && ./gradlew assembleRelease --no-daemon
+      - run: cd android && ./gradlew assembleRelease bundleRelease --no-daemon
       - run: node scripts/check-android-permissions.mjs --merged --release
       - uses: actions/upload-artifact@v4
         with:
           name: talktwo-qa-release-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talktwo-qa-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
 
   ios-prebuild:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund

@@ -1,7 +1,7 @@
 create table public.organization_sponsorships (
   id uuid primary key default gen_random_uuid(),
   organization_name text not null check (char_length(trim(organization_name)) between 2 and 120),
-  recipient_email_hash text not null check (recipient_email_hash ~ '^[0-9a-f]{64}$'),
+  recipient_email_hash text check (recipient_email_hash ~ '^[0-9a-f]{64}$'),
   duration_months smallint not null check (duration_months between 1 and 24),
   status text not null default 'pending' check (status in ('pending', 'claimed', 'revoked', 'expired')),
   claim_expires_at timestamptz not null default (now() + interval '180 days'),
@@ -11,7 +11,11 @@ create table public.organization_sponsorships (
   external_reference text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check ((status = 'claimed') = (claimed_at is not null and premium_ends_at is not null))
+  check ((status = 'claimed') = (claimed_at is not null and premium_ends_at is not null)),
+  constraint organization_sponsorship_recipient_match_lifecycle check (
+    (status = 'pending' and recipient_email_hash is not null)
+    or (status <> 'pending' and recipient_email_hash is null)
+  )
 );
 
 create index organization_sponsorships_pending_email_hash_idx
@@ -112,7 +116,9 @@ begin
   );
 
   update public.organization_sponsorships s
-     set status = 'expired', updated_at = now()
+     set status = 'expired',
+         recipient_email_hash = null,
+         updated_at = now()
    where s.recipient_email_hash = verified_email_hash
      and s.status = 'pending'
      and s.claim_expires_at <= now();
@@ -153,6 +159,7 @@ begin
 
     update public.organization_sponsorships s
        set status = 'claimed',
+           recipient_email_hash = null,
            claimed_by = uid,
            claimed_at = now(),
            premium_ends_at = entitlement_end,

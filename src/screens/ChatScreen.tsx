@@ -14,6 +14,7 @@ import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import ChatSettingsScreen from './ChatSettingsScreen';
 import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 import { useI18n } from '../i18n/I18nContext';
+import { sentDeliveryStatusText } from '../i18n/deliveryCopy';
 import type { SupportedLocale } from '../i18n/translations';
 import type { TranslationKey } from '../i18n/translations';
 import type { FilterReason } from '../filter/types';
@@ -376,6 +377,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       <ChatSettingsScreen
         relationship={relationship}
         session={session}
+        exportMessages={messages}
         onPurchasePremium={onPurchasePremium}
         storePurchaseBusy={storePurchaseBusy}
         onBack={() => {
@@ -444,7 +446,9 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
               const showDate = !previous || !sameDay(previous.created_at, item.created_at);
               const unopened = !mine && !item.opened_at;
               const blocked = !mine && item.blocked_for_recipient;
-              const rejectedCount = mine ? item.rejected_count : 0;
+              const senderStatus = mine
+                ? sentDeliveryStatusText(item.delivered_count ?? 0, item.recipient_count, item.rejected_count, locale)
+                : '';
               const isAttachment = item.message_kind === 'text_attachment';
 
               return (
@@ -490,7 +494,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                       </View>
                       {mine ? (
                         <View style={styles.senderControls}>
-                          <Text style={[styles.sentStatus, { color: textColor }]}>{rejectedCount > 0 ? t('chat.rejectedUnread', { count: `${rejectedCount}${item.recipient_count > 1 ? `/${item.recipient_count}` : ''}` }) : t('chat.sent')}</Text>
+                          <Text accessibilityLabel={senderStatus} style={[styles.sentStatus, { color: textColor }]}>{senderStatus}</Text>
                           <View style={styles.inlineActions}>
                             {item.body && !isAttachment ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.edit')}</Text></TouchableOpacity> : null}
                             <TouchableOpacity accessibilityRole="button" onPress={() => void withdraw(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.withdraw')}</Text></TouchableOpacity>

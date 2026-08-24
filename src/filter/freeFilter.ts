@@ -1,6 +1,7 @@
 import { FilterReason, FilterResult } from './types';
 
 const MAX_FREE_LENGTH = 160;
+export const FREE_SEMANTIC_LANGUAGES = ['en', 'da'] as const;
 
 const PROFANITY_PATTERNS: Array<{ label: string; regex: RegExp }> = [
   { label: 'fuck', regex: /(?:^|[^\p{L}])(?:fuck(?:ing|ed|er)?|motherfucker)(?=$|[^\p{L}])/iu },

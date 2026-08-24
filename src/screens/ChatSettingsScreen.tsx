@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
+import PartnerAvailabilityCard from '../components/PartnerAvailabilityCard';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
+import { exportableMessages, validateExportDateRange } from '../domain/conversationExport';
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
 import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
@@ -9,7 +11,10 @@ import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 import { MAX_PERSONAL_BOUNDARIES, MAX_PERSONAL_BOUNDARY_LENGTH, validatePersonalBoundary } from '../domain/personalBoundaries';
 import { getMyPlan, type UserPlan } from '../services/premium';
 import { addMyPersonalBoundary, listMyPersonalBoundaries, removeMyPersonalBoundary, type PersonalBoundaryRow } from '../services/personalBoundaries';
+import { shareConversationPdf } from '../services/conversationExport';
+import type { ChatMessage } from '../services/messages';
 import { useI18n } from '../i18n/I18nContext';
+import { getConversationExportCopy } from '../i18n/exportCopy';
 import type { TranslationKey } from '../i18n/translations';
 
 const BACKGROUND_THEME_KEYS: Record<BackgroundThemeName, TranslationKey> = {
@@ -42,9 +47,10 @@ interface LocalMemberState {
   bubble: BubbleThemeName;
 }
 
-export default function ChatSettingsScreen({ relationship, session, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
+export default function ChatSettingsScreen({ relationship, session, exportMessages, onBack, onAppearanceChanged, onPurchasePremium, storePurchaseBusy }: {
   relationship: RelationshipSummary;
   session: Session;
+  exportMessages: ChatMessage[];
   onBack: () => void;
   onAppearanceChanged: () => void;
   onPurchasePremium: (productKey: PremiumSubscriptionProductKey, relationshipId?: string | null, beneficiaryUserId?: string | null) => Promise<void>;
@@ -53,6 +59,7 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
   const { colors, resolved } = useAppTheme();
   const { locale, t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const exportCopy = useMemo(() => getConversationExportCopy(locale), [locale]);
   const [members, setMembers] = useState<RelationshipMember[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [background, setBackground] = useState<BackgroundThemeName>('paper');
@@ -61,6 +68,8 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
   const [plan, setPlan] = useState<UserPlan | null>(null);
   const [boundaries, setBoundaries] = useState<PersonalBoundaryRow[]>([]);
   const [boundaryDraft, setBoundaryDraft] = useState('');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
 
   async function refresh() {
     const [nextMembers, approvals, savedBackground, preferences, nextPlan, nextBoundaries] = await Promise.all([
@@ -108,6 +117,11 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
         : boundaryValidation.error === 'Use at least two letters or numbers.' ? t('settings.boundaryMin')
           : boundaryValidation.error === 'Use at most five words.' ? t('settings.boundaryMaxWords')
             : t('settings.boundaryEssential');
+  const exportRangeValidation = validateExportDateRange(exportStartDate, exportEndDate);
+  const exportRangeError = exportRangeValidation.valid ? null
+    : exportRangeValidation.error === 'invalid_start' ? exportCopy.invalidStart
+      : exportRangeValidation.error === 'invalid_end' ? exportCopy.invalidEnd
+        : exportCopy.reversedRange;
 
   async function addBoundary() {
     if (!premiumActive || !boundaryValidation.valid || busy) return;
@@ -135,6 +149,39 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
     } finally {
       setBusy(false);
     }
+  }
+
+  function confirmExport() {
+    if (!premiumActive || busy || !exportRangeValidation.valid) return;
+    const range = exportRangeValidation.range;
+    const exportableCount = exportableMessages(exportMessages, range).length;
+    Alert.alert(
+      exportCopy.confirmTitle,
+      exportCopy.confirmBody(exportableCount),
+      [
+        { text: t('chat.cancel'), style: 'cancel' },
+        {
+          text: exportCopy.create,
+          onPress: () => void (async () => {
+            try {
+              setBusy(true);
+              const title = memberNames.length ? memberNames.join(', ') : exportCopy.fallbackTitle;
+              await shareConversationPdf(
+                title,
+                members.map((member) => ({ id: member.user_id, name: localStates[member.user_id]?.alias.trim() || member.display_name })),
+                exportMessages,
+                locale === 'da' ? 'da-DK' : 'en',
+                range,
+              );
+            } catch (error) {
+              Alert.alert(exportCopy.failed, error instanceof Error ? error.message : t('common.tryAgain'));
+            } finally {
+              setBusy(false);
+            }
+          })(),
+        },
+      ],
+    );
   }
 
   function buyTwoPersonPremium(member: RelationshipMember, productKey: 'premium_two_monthly' | 'premium_two_annual') {
@@ -276,6 +323,8 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
           </View>
         </View>
 
+        <PartnerAvailabilityCard relationshipId={relationship.id} myUserId={session.user.id} />
+
         {premiumPartners.length ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('settings.premiumTwo')}</Text>
@@ -404,6 +453,41 @@ export default function ChatSettingsScreen({ relationship, session, onBack, onAp
           <Button styles={styles} title={t('settings.inviteParticipant')} onPress={() => void invite('participant')} disabled={busy} />
           <Button styles={styles} title={t('settings.inviteObserver')} onPress={() => void invite('observer')} secondary disabled={busy} />
           <Text style={styles.privacyNote}>{t('settings.extraPrivacy')}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{exportCopy.title}</Text>
+          <Text style={styles.help}>{exportCopy.help}</Text>
+          <Text style={styles.help}>{exportCopy.rangeHelp}</Text>
+          {!premiumActive ? <Text accessibilityLiveRegion="polite" style={styles.premiumNote}>{exportCopy.premiumRequired}</Text> : null}
+          <Text style={styles.smallLabel}>{exportCopy.startDate}</Text>
+          <TextInput
+            accessibilityLabel={exportCopy.startDate}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={premiumActive && !busy}
+            maxLength={10}
+            onChangeText={setExportStartDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.subtle}
+            style={styles.aliasInput}
+            value={exportStartDate}
+          />
+          <Text style={styles.smallLabel}>{exportCopy.endDate}</Text>
+          <TextInput
+            accessibilityLabel={exportCopy.endDate}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={premiumActive && !busy}
+            maxLength={10}
+            onChangeText={setExportEndDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.subtle}
+            style={styles.aliasInput}
+            value={exportEndDate}
+          />
+          {exportRangeError ? <Text accessibilityLiveRegion="polite" style={styles.inputError}>{exportRangeError}</Text> : null}
+          <Button styles={styles} title={exportCopy.action} onPress={confirmExport} secondary disabled={busy || !premiumActive || !exportRangeValidation.valid} />
         </View>
       </ScrollView>
     </SafeAreaView>

@@ -1,0 +1,49 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import test from 'node:test';
+import { STORE_PRODUCTS } from '../src/domain/storeProducts';
+
+const pack = fs.readFileSync('docs/STORE_SUBMISSION_PACK.md', 'utf8');
+const checklist = fs.readFileSync('docs/STORE_SETUP_CHECKLIST.md', 'utf8');
+
+test('submission pack contains every canonical store product ID and price', () => {
+  for (const product of Object.values(STORE_PRODUCTS)) {
+    assert.match(pack, new RegExp(product.appleProductId.replaceAll('.', '\\.'), 'i'));
+    assert.match(pack, new RegExp(product.googleProductId, 'i'));
+    assert.match(pack, new RegExp(`${product.expectedDkk} DKK`, 'i'));
+  }
+});
+
+test('store copy avoids an unsupported end-to-end encryption claim', () => {
+  assert.doesNotMatch(pack, /TalkTwo is end[- ]to[- ]end encrypted/i);
+  assert.match(pack, /do not describe the whole product as end-to-end encrypted/i);
+});
+
+test('account and subscription disclosures are ready for the final gate', () => {
+  assert.match(pack, /public web deletion path is still required/i);
+  assert.match(pack, /renew automatically unless cancelled/i);
+  assert.match(pack, /monthly only/i);
+  assert.match(pack, /unanimous approval/i);
+});
+
+test('organization-funded access is documented without a consumer redemption-code path', () => {
+  assert.match(pack, /server-assigned entitlement/i);
+  assert.match(pack, /no activation-code or external-checkout UI/i);
+  assert.match(pack, /consumer Premium is also available through IAP/i);
+  assert.match(pack, /one-way SHA-256 match value/i);
+});
+
+test('review notes cover the current privacy-explicit PDF export', () => {
+  assert.match(pack, /explicit unencrypted-file warning/i);
+  assert.match(pack, /date interval controls/i);
+  assert.match(pack, /text-document attachment contents/i);
+});
+
+test('store setup checklist requires the fail-closed production gates', () => {
+  assert.match(checklist, /npm run release:preflight/i);
+  assert.match(checklist, /account_deletion_schema_ok/i);
+  assert.match(checklist, /security_definer_schema_ok/i);
+  assert.match(checklist, /20260824084500_ai_budget_reservations\.sql/i);
+  assert.match(checklist, /Final app\/adaptive icon and store artwork must be approved/i);
+  assert.match(checklist, /unknown email neither creates an account nor reveals/i);
+});

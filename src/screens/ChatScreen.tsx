@@ -486,7 +486,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                   <Text style={styles.reviewTitle}>{review?.level === 'green' ? t('chat.ready') : review?.level === 'yellow' ? t('chat.caution') : t('chat.blocked')}</Text>
                   <Text numberOfLines={3} style={styles.reviewReason}>{review?.reason}</Text>
                 </View>
-                {review?.rewrite ? <TouchableOpacity accessibilityRole="button" onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>{t('chat.useRewrite')}</Text></TouchableOpacity> : null}
+                {review?.rewrite ? <TouchableOpacity accessibilityRole="button" style={styles.rewriteButton} onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>{t('chat.useRewrite')}</Text></TouchableOpacity> : null}
               </View>
             ) : null}
             {!premiumAi && hasText && !freeResult.canSend && translatedProblem ? (
@@ -561,7 +561,7 @@ function makeStyles(colors: AppColors) {
     headerText: { flex: 1, minWidth: 0 },
     headerTitle: { fontWeight: '800', fontSize: 16, color: colors.text, flexShrink: 1 },
     headerSubtitle: { marginTop: 2, color: colors.subtle, fontSize: 12, flexShrink: 1 },
-    trialStrip: { minHeight: 38, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.invite, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    trialStrip: { minHeight: 44, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.invite, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     trialText: { color: colors.inviteText, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
     infoStrip: { paddingHorizontal: 12, paddingVertical: 7, backgroundColor: colors.notice },
     infoText: { color: colors.noticeText, textAlign: 'center', fontSize: 12, flexShrink: 1 },
@@ -587,7 +587,7 @@ function makeStyles(colors: AppColors) {
     documentExcerpt: { fontSize: 13, lineHeight: 18, opacity: 0.82, flexShrink: 1 },
     blockedTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', marginBottom: 3, flexShrink: 1 },
     bubbleActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-    compactButton: { minHeight: 36, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center', backgroundColor: colors.accentStrong },
+    compactButton: { minHeight: 44, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center', backgroundColor: colors.accentStrong },
     compactSecondary: { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.18)' },
     compactButtonText: { fontSize: 12, color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
     compactSecondaryText: { color: '#242424' },
@@ -619,6 +619,7 @@ function makeStyles(colors: AppColors) {
     reviewTextWrap: { flex: 1, minWidth: 160 },
     reviewTitle: { fontSize: 12, fontWeight: '800', color: colors.reviewText, flexShrink: 1 },
     reviewReason: { marginTop: 2, fontSize: 11, lineHeight: 15, color: colors.reviewMuted, flexShrink: 1 },
+    rewriteButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
     rewrite: { fontSize: 12, fontWeight: '800', color: colors.accent, textDecorationLine: 'underline', flexShrink: 0 },
     attachmentComposer: { minHeight: 92, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSoft, padding: 10, flexDirection: 'row', gap: 10, alignItems: 'center' },
     attachmentComposerText: { flex: 1, minWidth: 0 },
@@ -628,7 +629,7 @@ function makeStyles(colors: AppColors) {
     attachmentReviewDanger: { color: colors.danger, fontWeight: '700' },
     attachmentProblem: { color: colors.danger, fontSize: 11, lineHeight: 15, marginTop: 3, fontStyle: 'italic', flexShrink: 1 },
     attachmentComposerActions: { alignItems: 'center', gap: 7, flexShrink: 0 },
-    cancelAttachmentButton: { minHeight: 32, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
+    cancelAttachmentButton: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
     cancelAttachmentText: { color: colors.danger, fontSize: 11, fontWeight: '800' },
     documentViewer: { padding: 18, paddingBottom: 40 },
     documentText: { color: colors.text, fontSize: 16, lineHeight: 24 },

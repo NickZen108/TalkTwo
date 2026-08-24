@@ -1,11 +1,7 @@
 create table public.organization_sponsorships (
   id uuid primary key default gen_random_uuid(),
   organization_name text not null check (char_length(trim(organization_name)) between 2 and 120),
-  recipient_email text not null check (
-    recipient_email = lower(trim(recipient_email))
-    and char_length(recipient_email) between 3 and 320
-    and recipient_email like '%@%'
-  ),
+  recipient_email_hash text not null check (recipient_email_hash ~ '^[0-9a-f]{64}$'),
   duration_months smallint not null check (duration_months between 1 and 24),
   status text not null default 'pending' check (status in ('pending', 'claimed', 'revoked', 'expired')),
   claim_expires_at timestamptz not null default (now() + interval '180 days'),
@@ -18,8 +14,8 @@ create table public.organization_sponsorships (
   check ((status = 'claimed') = (claimed_at is not null and premium_ends_at is not null))
 );
 
-create index organization_sponsorships_pending_email_idx
-  on public.organization_sponsorships(recipient_email, claim_expires_at)
+create index organization_sponsorships_pending_email_hash_idx
+  on public.organization_sponsorships(recipient_email_hash, claim_expires_at)
   where status = 'pending';
 
 alter table public.organization_sponsorships enable row level security;
@@ -41,6 +37,7 @@ as $$
 declare
   normalized_email text := lower(trim(coalesce(recipient, '')));
   normalized_name text := trim(coalesce(sponsor_name, ''));
+  email_hash text;
   created_id uuid;
 begin
   if char_length(normalized_name) < 2 or char_length(normalized_name) > 120 then
@@ -58,15 +55,17 @@ begin
     raise exception 'Claim expiry must be in the future';
   end if;
 
+  email_hash := pg_catalog.encode(extensions.digest(normalized_email, 'sha256'), 'hex');
+
   insert into public.organization_sponsorships(
     organization_name,
-    recipient_email,
+    recipient_email_hash,
     duration_months,
     claim_expires_at,
     external_reference
   ) values (
     normalized_name,
-    normalized_email,
+    email_hash,
     sponsored_months::smallint,
     expires_at,
     nullif(trim(reference), '')
@@ -91,6 +90,7 @@ as $$
 declare
   uid uuid := (select auth.uid());
   verified_email text;
+  verified_email_hash text;
   plan_row public.user_plans%rowtype;
   sponsorship public.organization_sponsorships%rowtype;
   entitlement_base timestamptz;
@@ -105,6 +105,7 @@ begin
      and u.email_confirmed_at is not null;
 
   if verified_email is null then raise exception 'Verified email required'; end if;
+  verified_email_hash := pg_catalog.encode(extensions.digest(verified_email, 'sha256'), 'hex');
 
   perform pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('talktwo:org-sponsor:' || uid::text, 0)
@@ -112,7 +113,7 @@ begin
 
   update public.organization_sponsorships s
      set status = 'expired', updated_at = now()
-   where s.recipient_email = verified_email
+   where s.recipient_email_hash = verified_email_hash
      and s.status = 'pending'
      and s.claim_expires_at <= now();
 
@@ -129,7 +130,7 @@ begin
   for sponsorship in
     select s.*
       from public.organization_sponsorships s
-     where s.recipient_email = verified_email
+     where s.recipient_email_hash = verified_email_hash
        and s.status = 'pending'
        and s.claim_expires_at > now()
      order by s.created_at, s.id

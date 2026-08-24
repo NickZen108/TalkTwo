@@ -24,9 +24,10 @@ test('sender delivery RPC exposes aggregate counts only', () => {
   assert.doesNotMatch(baseMigration, /returns table\([\s\S]*recipient_id/i);
 });
 
-test('blocked messages can still be acknowledged as delivered to avoid a block side-channel', () => {
+test('blocked and privately rejected messages can still be acknowledged as delivered', () => {
   const ackBody = privacyMigration.match(/create or replace function public\.ack_all_available_messages_delivered[\s\S]*?\$\$;/i)?.[0] ?? '';
   assert.doesNotMatch(ackBody, /blocked_for_recipient\s*=\s*false/i);
+  assert.doesNotMatch(ackBody, /rejected_at\s+is\s+null/i);
 });
 
 test('home relationship sync acknowledges app delivery independently of opening a chat', () => {

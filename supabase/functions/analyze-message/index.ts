@@ -249,8 +249,6 @@ Explain the decision briefly. problematic_text must contain only short exact fra
       ? Array.from(review.rewrite.trim()).slice(0, MAX_MESSAGE_CHARACTERS).join("")
       : null;
 
-    await recordOutcome(review.level as "green" | "yellow" | "red");
-
     const inputTokens = Number(aiData?.usage?.input_tokens ?? 0);
     const outputTokens = Number(aiData?.usage?.output_tokens ?? 0);
     const estimatedCostUsd = estimateCost(model, inputTokens, outputTokens);
@@ -279,6 +277,7 @@ Explain the decision briefly. problematic_text must contain only short exact fra
       }
     }
 
+    await recordOutcome(review.level as "green" | "yellow" | "red");
     return json({ ...review, usage: usageRow ?? null });
   } catch (error) {
     await refundTrialReservation();

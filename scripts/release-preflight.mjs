@@ -21,13 +21,17 @@ function present(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function validSupabasePublishableKey(value) {
+  return /^sb_publishable_[A-Za-z0-9_-]+$/.test(value);
+}
+
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '';
 const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '';
 const publicSiteUrl = process.env.EXPO_PUBLIC_TALKTWO_SITE_URL?.trim() ?? '';
 
 if (!validHttps(supabaseUrl)) fail('EXPO_PUBLIC_SUPABASE_URL must be a valid HTTPS URL.');
-if (!publishableKey || /replace|service[_-]?role/i.test(publishableKey)) {
-  fail('EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be a real publishable key and never a service-role key.');
+if (!validSupabasePublishableKey(publishableKey)) {
+  fail('EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be a current sb_publishable_ key; secret and legacy service-role keys are forbidden in the mobile client.');
 }
 if (!validHttps(publicSiteUrl)) {
   fail('EXPO_PUBLIC_TALKTWO_SITE_URL must be the final live HTTPS public site before release.');

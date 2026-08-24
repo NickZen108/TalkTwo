@@ -16,6 +16,7 @@ import {
   type PendingPremiumGift,
 } from './src/domain/deepLinks';
 import { createSessionFromMagicLink } from './src/services/auth';
+import { claimMyOrganizationSponsorships } from './src/services/organizationSponsorships';
 import { claimPremiumGift, listMyPendingPremiumGifts } from './src/services/premiumGifts';
 import { storePendingInviteSecret, storePendingKeyRecoveryApproval } from './src/services/threadKeys';
 import HomeScreen from './src/screens/HomeScreen';
@@ -77,6 +78,7 @@ function AppContent() {
   const [pendingGift, setPendingGift] = useState<PendingPremiumGift | null>(null);
   const [pendingRecovery, setPendingRecovery] = useState<PendingKeyRecoveryApproval | null>(null);
   const [giftPromptedForUserId, setGiftPromptedForUserId] = useState<string | null>(null);
+  const [sponsorshipReadyForUserId, setSponsorshipReadyForUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -235,6 +237,23 @@ function AppContent() {
   }, [session, pendingGift, giftPromptedForUserId]);
 
   useEffect(() => {
+    if (!session) {
+      setSponsorshipReadyForUserId(null);
+      return;
+    }
+    if (sponsorshipReadyForUserId === session.user.id) return;
+
+    let active = true;
+    void claimMyOrganizationSponsorships()
+      .catch(() => [])
+      .finally(() => {
+        if (active) setSponsorshipReadyForUserId(session.user.id);
+      });
+
+    return () => { active = false; };
+  }, [session?.user.id, sponsorshipReadyForUserId]);
+
+  useEffect(() => {
     if (!session) return;
     void syncAccountPreference().catch(() => undefined);
     void refreshPushRegistrationIfEnabled().catch(() => undefined);
@@ -252,7 +271,8 @@ function AppContent() {
     void SecureStore.deleteItemAsync(PENDING_RECOVERY_KEY, secureOptions).catch(() => undefined);
   }
 
-  if (loading) {
+  const waitingForSponsorships = Boolean(session && sponsorshipReadyForUserId !== session.user.id);
+  if (loading || waitingForSponsorships) {
     return <SafeAreaView style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.accent} /><Text style={[styles.note, { color: colors.muted }]}>{t('app.loading')}</Text></SafeAreaView>;
   }
 

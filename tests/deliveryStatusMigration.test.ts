@@ -38,10 +38,14 @@ test('home relationship sync acknowledges app delivery independently of opening 
   assert.match(privacyMigration, /return public\.ack_all_available_messages_delivered\(\)/i);
 });
 
-test('sent messages are final in both chat UI and the client service API', () => {
+test('sent messages are final in UI, client API and authenticated database surface', () => {
   assert.doesNotMatch(chat, /editUnopenedMessage|withdrawMessage|startEdit|async function withdraw/);
   assert.doesNotMatch(client, /export async function (editUnopenedMessage|withdrawMessage)/);
   assert.doesNotMatch(client, /supabase\.rpc\('(edit_unopened_message|withdraw_message)'/);
+  assert.match(privacyMigration, /revoke execute on function public\.withdraw_message\(uuid\) from public,anon,authenticated/i);
+  assert.match(privacyMigration, /revoke execute on function public\.edit_unopened_message\(uuid,text,text\) from public,anon,authenticated/i);
+  assert.doesNotMatch(privacyMigration, /grant execute on function public\.withdraw_message\(uuid\) to authenticated/i);
+  assert.doesNotMatch(privacyMigration, /grant execute on function public\.edit_unopened_message\(uuid,text,text\) to authenticated/i);
 });
 
 test('chat renders only the aggregate privacy-safe delivery formatter for sender status', () => {

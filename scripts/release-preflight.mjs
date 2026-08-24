@@ -11,7 +11,7 @@ function fail(message) {
 function validHttps(value) {
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password;
+    return url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password;
   } catch {
     return false;
   }
@@ -23,6 +23,14 @@ function present(value) {
 
 function validSupabasePublishableKey(value) {
   return /^sb_publishable_[A-Za-z0-9_-]+$/.test(value);
+}
+
+function sameHostVerifiedAndroidLink(filter, host) {
+  if (!filter || filter.action !== 'VIEW' || filter.autoVerify !== true) return false;
+  const categories = Array.isArray(filter.category) ? filter.category : [];
+  if (!categories.includes('BROWSABLE') || !categories.includes('DEFAULT')) return false;
+  const data = Array.isArray(filter.data) ? filter.data : [];
+  return data.some((entry) => entry?.scheme === 'https' && entry?.host === host);
 }
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '';
@@ -37,10 +45,24 @@ if (!validHttps(publicSiteUrl)) {
   fail('EXPO_PUBLIC_TALKTWO_SITE_URL must be the final live HTTPS public site before release.');
 }
 
+let publicSiteHost = '';
+if (validHttps(publicSiteUrl)) publicSiteHost = new URL(publicSiteUrl).hostname;
+
 if (app.name !== 'TalkTwo') fail('Expo app name must remain TalkTwo.');
 if (!present(app.version)) fail('Expo user-facing version is required.');
 if (app.ios?.bundleIdentifier !== 'com.talktwo.app') fail('iOS bundle identifier must be com.talktwo.app.');
 if (app.android?.package !== 'com.talktwo.app') fail('Android package must be com.talktwo.app.');
+
+if (publicSiteHost) {
+  const associatedDomains = Array.isArray(app.ios?.associatedDomains) ? app.ios.associatedDomains : [];
+  if (!associatedDomains.includes(`applinks:${publicSiteHost}`)) {
+    fail(`iOS production config must include applinks:${publicSiteHost}; custom URL schemes alone are not sufficient for auth/invitation/recovery secrets.`);
+  }
+  const intentFilters = Array.isArray(app.android?.intentFilters) ? app.android.intentFilters : [];
+  if (!intentFilters.some((filter) => sameHostVerifiedAndroidLink(filter, publicSiteHost))) {
+    fail(`Android production config must include an autoVerify HTTPS App Link for ${publicSiteHost}; custom URL schemes alone are not sufficient for auth/invitation/recovery secrets.`);
+  }
+}
 
 const androidProps = app.plugins?.find((plugin) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties')?.[1]?.android;
 if (!androidProps || Number(androidProps.compileSdkVersion) < 36 || Number(androidProps.targetSdkVersion) < 36) {

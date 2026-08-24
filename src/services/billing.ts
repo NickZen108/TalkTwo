@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
+import type { PremiumSubscriptionProductKey, StorePlatform } from '../domain/storeProducts';
 
 export interface BillingIntentOffer {
   intent_id: string;
@@ -30,10 +30,27 @@ export async function createExtraMemberCheckoutIntent(invitationId: string) {
   return oneRow<BillingIntentOffer>(data, 'Membership checkout could not be prepared.');
 }
 
+export async function getMyMemberUpgradeStoreProvider() {
+  const { data, error } = await supabase.rpc('get_my_member_upgrade_store_context');
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  const provider = row?.payment_provider;
+  if (provider !== 'apple' && provider !== 'google') {
+    throw new Error('The original membership store could not be verified.');
+  }
+  return provider as StorePlatform;
+}
+
 export async function createMemberUpgradeCheckoutIntent(relationshipId: string) {
   const { data, error } = await supabase.rpc('create_member_upgrade_checkout_intent', { rel_id: relationshipId });
   if (error) throw error;
   return oneRow<BillingIntentOffer>(data, 'Upgrade checkout could not be prepared.');
+}
+
+export async function cancelMyBillingCheckoutIntent(intentId: string) {
+  const { data, error } = await supabase.rpc('cancel_my_billing_checkout_intent', { intent_id: intentId });
+  if (error) throw error;
+  return Boolean(data);
 }
 
 export async function createPremiumGiftCheckoutIntent(recipientEmail: string, months = 1) {

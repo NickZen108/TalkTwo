@@ -2,6 +2,17 @@
 
 TalkTwo is a private, low-conflict messaging app for conversations that deserve more care. The repository contains the Expo mobile client, Supabase migrations/Edge Functions, privacy-focused local storage, store billing integration, public account-deletion site source, and launch QA.
 
+## Start here
+
+Do not begin by reading the whole repository. Open [`docs/START_HERE.md`](docs/START_HERE.md) and choose the path for your role:
+
+- TalkTwo user / usability reviewer;
+- municipality, family centre, clinic or other sponsoring organisation;
+- developer/operator;
+- new owner/buyer.
+
+The role hub links to the canonical product, privacy, access, release and ownership-transfer documents.
+
 ## Development
 
 ```sh

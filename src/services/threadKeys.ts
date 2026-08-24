@@ -116,8 +116,10 @@ function envelopeAad(token: string) {
   return encoder.encode(`talktwo-key-envelope-v1:${token.trim()}`);
 }
 
-function recoveryAad(token: string) {
-  return encoder.encode(`talktwo-key-recovery-v1:${token.trim()}`);
+function recoveryAad(token: string, relationshipId: string) {
+  const cleanRelationshipId = relationshipId.trim();
+  if (!cleanRelationshipId) throw new Error('The recovery relationship is missing.');
+  return encoder.encode(`talktwo-key-recovery-v2:${token.trim()}:${cleanRelationshipId}`);
 }
 
 async function recoveryVerificationCode(secret: string) {
@@ -246,7 +248,7 @@ export async function createKeyRecoveryEnvelope(token: string, relationshipId: s
   if (!secret) throw new Error('This recovery link is missing its one-time secret. Ask for a new recovery request.');
   if (!threadKey) throw new Error('This device does not have the conversation key and cannot approve recovery.');
   const wrappingKey = await AESEncryptionKey.import(assertKey(secret), 'hex');
-  const sealed = await aesEncryptAsync(encoder.encode(threadKey), wrappingKey, { additionalData: recoveryAad(token) });
+  const sealed = await aesEncryptAsync(encoder.encode(threadKey), wrappingKey, { additionalData: recoveryAad(token, relationshipId) });
   return await sealed.combined('base64') as string;
 }
 
@@ -269,7 +271,7 @@ export async function installKeyRecoveryEnvelope(requestId: string, token: strin
   }
   const wrappingKey = await AESEncryptionKey.import(assertKey(parsed.secret), 'hex');
   const sealed = AESSealedData.fromCombined(envelope);
-  const decrypted = await aesDecryptAsync(sealed, wrappingKey, { additionalData: recoveryAad(token), output: 'bytes' });
+  const decrypted = await aesDecryptAsync(sealed, wrappingKey, { additionalData: recoveryAad(token, relationshipId), output: 'bytes' });
   await storeThreadKey(relationshipId, assertKey(decoder.decode(decrypted as Uint8Array).trim()));
   await deleteTrackedSecret(requestName);
   return true;

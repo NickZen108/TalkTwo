@@ -82,6 +82,10 @@ export async function installMyActiveMemberKeys() {
 }
 
 export async function listRelationships() {
+  // Delivery means the authenticated app has synchronized available messages,
+  // not that a particular relationship or message was opened.
+  const { error: deliveryError } = await supabase.rpc('ack_all_available_messages_delivered');
+  if (deliveryError) throw deliveryError;
   const { data, error } = await supabase.rpc('list_my_relationships');
   if (error) throw error;
   return (data ?? []) as RelationshipSummary[];

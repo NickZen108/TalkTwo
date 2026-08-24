@@ -28,12 +28,17 @@ function validEmail(value) {
   return Boolean(value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
 }
 
+function validPublishableKey(value) {
+  return Boolean(value && /^sb_publishable_[A-Za-z0-9_-]+$/.test(value));
+}
+
 function validPublicConfig() {
   try {
     const url = new URL(config.supabaseUrl ?? '');
     return url.protocol === 'https:'
-      && Boolean(config.publishableKey)
-      && !/service_role/i.test(config.publishableKey)
+      && !url.username
+      && !url.password
+      && validPublishableKey(config.publishableKey)
       && validEmail(config.supportEmail);
   } catch {
     return false;

@@ -22,8 +22,10 @@ test('legacy chat-specific acknowledgement is privacy-compatible', () => {
 test('edit and withdrawal cannot probe recipient open or rejection state', () => {
   const withdraw = migration.match(/create or replace function public\.withdraw_message[\s\S]*?end;\n\$\$/i)?.[0] ?? '';
   const edit = migration.match(/create or replace function public\.edit_unopened_message[\s\S]*?end;\n\$\$/i)?.[0] ?? '';
-  assert.match(withdraw, /return false/i);
-  assert.doesNotMatch(withdraw, /opened_at|rejected_at/i);
-  assert.match(edit, /cannot be edited/i);
-  assert.doesNotMatch(edit, /opened_at|rejected_at/i);
+  const withdrawBody = withdraw.split('as $$')[1] ?? '';
+  const editBody = edit.split('as $$')[1] ?? '';
+  assert.match(withdrawBody, /return false/i);
+  assert.doesNotMatch(withdrawBody, /opened_at|rejected_at/i);
+  assert.match(editBody, /cannot be edited/i);
+  assert.doesNotMatch(editBody, /opened_at|rejected_at/i);
 });

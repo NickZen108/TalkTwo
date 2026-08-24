@@ -49,6 +49,28 @@ const android = app?.expo?.android ?? {};
 if (Array.isArray(android.permissions) && android.permissions.length > 0) {
   failures.push(`app.json: explicit Android permissions should stay empty until a feature genuinely requires one (${android.permissions.join(', ')})`);
 }
+if (android.allowBackup !== false) {
+  failures.push('app.json: Android app-data backup must remain disabled for the encrypted local message cache and device-only secrets');
+}
+
+const sqlitePlugin = (app?.expo?.plugins ?? []).find(
+  (plugin) => Array.isArray(plugin) && plugin[0] === 'expo-sqlite',
+);
+if (!sqlitePlugin || sqlitePlugin[1]?.useSQLCipher !== true) {
+  failures.push('app.json: expo-sqlite must keep useSQLCipher=true so PRAGMA key is backed by SQLCipher');
+}
+
+const localDb = fs.readFileSync('src/services/localDb.ts', 'utf8');
+const keyPosition = localDb.indexOf('PRAGMA key');
+const cipherVersionPosition = localDb.indexOf('PRAGMA cipher_version');
+const firstTablePosition = localDb.indexOf('CREATE TABLE');
+if (keyPosition < 0 || cipherVersionPosition < 0 || firstTablePosition < 0
+  || !(keyPosition < cipherVersionPosition && cipherVersionPosition < firstTablePosition)) {
+  failures.push('src/services/localDb.ts: local DB must apply its key, verify SQLCipher, then access/create plaintext tables');
+}
+if (!/Encrypted local storage is unavailable on this build/.test(localDb)) {
+  failures.push('src/services/localDb.ts: SQLCipher verification must fail closed instead of silently using plain SQLite');
+}
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 if (packageJson.dependencies?.['@react-native-async-storage/async-storage']) {
@@ -62,4 +84,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('Privacy surface gate passed. No invasive permission code or unencrypted AsyncStorage is present; SecureStore and SQLCipher remain required.');
+console.log('Privacy surface gate passed. Sensitive Android backups are disabled; SecureStore and fail-closed SQLCipher remain required.');

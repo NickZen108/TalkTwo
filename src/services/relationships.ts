@@ -32,7 +32,9 @@ export interface RelationshipMember {
 }
 
 function invitationUrl(path: 'invite' | 'member', token: string, secret: string) {
-  return buildTalkTwoLink(path, token, { fragment: { s: secret } });
+  // Both values are possession secrets. Keep them in the fragment so an HTTPS
+  // browser fallback never sends either one to the web server or access logs.
+  return buildTalkTwoLink(path, undefined, { fragment: { token, s: secret } });
 }
 
 async function prepareInvitationEnvelope(token: string, relationshipId: string) {

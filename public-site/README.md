@@ -1,14 +1,22 @@
 # TalkTwo public site
 
-This folder contains account-independent source for the public TalkTwo support surface. It is **not deployed by this repository**.
+This folder contains the account-independent source for TalkTwo's store-facing public support surface. It is **not deployed by this repository**.
+
+## Routes
+
+The Vite production build includes:
+
+- `/` — public landing page;
+- `/privacy/` — Privacy Policy;
+- `/terms/` — Terms of Service;
+- `/support/` — support information;
+- `/delete-account/` — authenticated external account-deletion flow.
+
+Privacy, Terms, Support and the landing page can be built in draft mode during ordinary CI. They display a visible publication warning until every required reviewed field is configured **and** `VITE_PUBLICATION_APPROVED=true` is deliberately supplied. This prevents a technically successful build from being mistaken for legal/publication approval.
 
 ## External account deletion
 
-The implemented page is intended to be served at:
-
-`https://talktwo.app/delete-account/`
-
-It uses the browser Supabase client with the public/publishable key only.
+The deletion page uses the browser Supabase client with the public/publishable key only.
 
 Flow:
 
@@ -32,28 +40,35 @@ npm install
 npm run build
 ```
 
-Required build variables:
+Ordinary draft-mode builds do not require final legal values.
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `VITE_SUPPORT_EMAIL`
+## Publication preflight
 
-Only the Supabase publishable key belongs in this browser build. Never place the service-role key, OpenAI key, store secrets, signing keys or other credentials in `VITE_*` variables.
+Before deploying a store-facing build, fill the final reviewed environment values and run:
+
+```sh
+npm run release:preflight
+npm run build
+```
+
+The publication preflight requires the final Supabase public configuration, legal entity/address, support/privacy contacts, minimum-age/capacity rule, professional-services wording, consumer-rights text, governing-law text, international-transfer disclosure, privacy effective date, and explicit `VITE_PUBLICATION_APPROVED=true`.
+
+Only the Supabase publishable key belongs in this browser build. Never place the service-role key, OpenAI key, store secrets, signing keys or other private credentials in `VITE_*` variables.
 
 ## Final deployment gate
 
-Before the page can be treated as launch-ready:
+Before the public site can be treated as launch-ready:
 
-- choose/configure the real support email;
+- obtain appropriate final legal/privacy review and set `VITE_PUBLICATION_APPROVED=true` only after that review;
+- run the public-site release preflight successfully;
 - deploy the built static site over HTTPS at the final public domain;
-- configure `https://talktwo.app/delete-account/` in Supabase Auth's allowed redirect URLs;
+- configure the exact `/delete-account/` URL in Supabase Auth's allowed redirect URLs;
 - verify the production magic-link email template preserves the requested redirect URL;
 - test an existing account end-to-end, including actual deletion, only with an intentionally disposable store-test account;
 - verify an unknown email does not reveal account existence and is not auto-created;
 - verify an expired/reused magic link cannot delete anything;
-- verify the page contains no service-role or other private key in source/network bundles;
-- publish final privacy/support/terms pages and replace all `{{...}}` placeholders in `docs/public/`;
-- add working privacy/support/terms links inside the mobile app only after the public URLs are live;
-- enter the final account-deletion URL in Google Play Console.
+- verify the built bundle contains no service-role or other private key;
+- verify all four store-facing URLs work without redirects to missing pages;
+- only then enable `EXPO_PUBLIC_TALKTWO_SITE_URL` in the mobile release build and enter the final URLs in App Store Connect / Google Play Console.
 
 No deploy or production deletion should be performed as part of ordinary repository QA.

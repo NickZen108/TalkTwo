@@ -33,14 +33,25 @@ test('current message, context and Coach flag are untrusted data under strict st
   assert.match(source, /message\.includes\(fragment\)/i);
 });
 
-test('AI privacy, budget, quota, refund and cost guards precede send approval', () => {
+test('AI privacy, quota, refund and atomic budget guards precede send approval', () => {
   assert.match(source, /store: false/i);
   assert.match(source, /get_ai_budget_status/i);
   assert.match(source, /consume_ai_analysis_for_user/i);
   assert.match(source, /refund_trial_ai_analysis/i);
-  assert.match(source, /from\("ai_cost_events"\)\.insert/i);
+  assert.match(source, /reserve_ai_budget_call/i);
+  assert.match(source, /commit_ai_budget_call/i);
+  assert.match(source, /finalize_ai_budget_call/i);
+  assert.doesNotMatch(source, /from\("ai_cost_events"\)\.insert/i);
   assert.match(source, /if \(review\.can_send\)[\s\S]*from\("ai_message_reviews"\)\.insert/i);
   assert.match(source, /body_hash: bodyHash[\s\S]*risk_level: review\.level[\s\S]*can_send: true/i);
+
+  const quota = source.indexOf('consume_ai_analysis_for_user');
+  const reserve = source.indexOf('reserve_ai_budget_call');
+  const commit = source.indexOf('commit_ai_budget_call');
+  const provider = source.indexOf('fetch("https://api.openai.com/v1/responses"');
+  const finalize = source.indexOf('finalize_ai_budget_call');
+  const approval = source.indexOf('from("ai_message_reviews").insert');
+  assert.ok(quota >= 0 && reserve > quota && commit > reserve && provider > commit && finalize > provider && approval > finalize);
 });
 
 test('hard blocks are deterministic and do not consume an AI analysis', () => {

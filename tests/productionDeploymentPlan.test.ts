@@ -43,9 +43,11 @@ test('deployment plan preserves JWT/custom-auth boundaries', () => {
   assert.match(plan, /Never turn JWT verification off for a user-facing function/i);
 });
 
-test('deployment plan requires deletion, RPC trust-boundary, public-site and exact-tree QA gates', () => {
+test('deployment plan requires deletion, RPC trust-boundary, public-site, native preflight and exact-tree QA gates', () => {
   assert.match(plan, /account_deletion_schema_ok/i);
   assert.match(plan, /security_definer_schema_ok/i);
+  assert.match(plan, /npm run release:preflight/i);
+  assert.match(plan, /TalkTwo release preflight OK\./i);
   assert.match(plan, /exact \/delete-account\/ redirect/i);
   assert.match(plan, /unknown emails are not auto-created/i);
   assert.match(plan, /exact tree is green/i);

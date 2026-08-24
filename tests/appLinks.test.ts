@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { buildTalkTwoLink, parseTalkTwoLink, talkTwoHttpsOrigin } from '../src/domain/appLinks';
 
@@ -48,4 +49,17 @@ test('query and fragment values are encoded by one canonical builder', () => {
     link,
     `https://secure.example/app/premium-gift/gift%2F1?token=one+two%26three#s=${secret}`,
   );
+});
+
+test('auth, invitations, recovery and gift services cannot reintroduce raw custom-scheme generators', () => {
+  for (const path of [
+    'src/services/auth.ts',
+    'src/services/relationships.ts',
+    'src/services/keyRecovery.ts',
+    'src/services/premiumGifts.ts',
+  ]) {
+    const source = fs.readFileSync(path, 'utf8');
+    assert.match(source, /buildTalkTwoLink/);
+    assert.doesNotMatch(source, /talktwo:\/\//i);
+  }
 });

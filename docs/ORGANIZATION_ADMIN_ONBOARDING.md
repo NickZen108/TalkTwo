@@ -38,17 +38,12 @@ Paying for access does not grant monitoring rights.
 6. Recipient signs in with the verified email; the mobile app claims the entitlement automatically.
 7. Organisation admin sees only the administrative outcome needed to manage the sponsorship.
 
-## Admin portal v1 requirements
+## Admin portal v1
 The dedicated organisation portal is a future operational surface; do not expose Supabase dashboards or `service_role` to customers as a shortcut.
 
-When built, it should have:
-- organisation-scoped authentication and MFA;
-- role-scoped API endpoints rather than direct unrestricted table access;
-- a small dashboard: sponsored accounts, pending/active/expired/revoked state, period, external reference and billing status;
-- an audit log for administrator actions;
-- no message-search screen and no decrypt/export feature;
-- explicit privacy copy on every recipient-management screen;
-- export limited to organisation-owned commercial/admin data.
+The full privacy-safe portal contract is in `docs/ORGANIZATION_ADMIN_PORTAL_V1.md`. In short, it is a small sponsorship/billing/admin portal with organisation-scoped MFA/RBAC, action audit logs and tenant isolation — **not** a message or case-monitoring portal.
+
+Consumer launch does not need to wait for this portal. The first organisation customers can use the controlled manual sponsorship process while real commercial workflow requirements are learned.
 
 ## Support handoff
 If an organisation reports a technical problem, collect the smallest reproducible technical facts: account/sponsorship reference, app version, platform, approximate time and error wording. Do not ask for screenshots containing private conversation text unless absolutely necessary and voluntarily supplied.
@@ -59,4 +54,4 @@ If an organisation reports a technical problem, collect the smallest reproducibl
 - preserve required organisation audit records under the applicable retention policy;
 - do not change end-user conversation access merely because an organisation staff member leaves.
 
-Canonical access rules: `docs/ACCESS_ROLE_MODEL.md` and `docs/PRIVACY_INVARIANTS.md`.
+Canonical references: `docs/ORGANIZATION_ADMIN_PORTAL_V1.md`, `docs/ACCESS_ROLE_MODEL.md` and `docs/PRIVACY_INVARIANTS.md`.

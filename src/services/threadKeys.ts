@@ -64,48 +64,52 @@ async function writeSecretIndex(names: string[]) {
   await SecureStore.setItemAsync(SECRET_INDEX_NAME, JSON.stringify(unique), secureOptions);
 }
 
-async function mutateSecretIndex(mutator: (current: string[]) => string[]) {
-  const operation = registryQueue.then(async () => {
-    await writeSecretIndex(mutator(await readSecretIndex()));
-  });
-  registryQueue = operation.catch(() => undefined);
-  await operation;
-}
-
-async function trackSecretName(name: string) {
-  if (!trackedSecretName(name)) throw new Error('Unexpected secure secret name.');
-  await mutateSecretIndex((current) => current.includes(name) ? current : [...current, name]);
-}
-
-async function untrackSecretName(name: string) {
-  await mutateSecretIndex((current) => current.filter((item) => item !== name));
+async function withRegistryLock<T>(operation: () => Promise<T>): Promise<T> {
+  const result = registryQueue.then(operation, operation);
+  registryQueue = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 async function setTrackedSecret(name: string, value: string) {
-  // Register first so an interrupted write can leave at worst a harmless stale
-  // index entry, never an untracked secret that account deletion cannot find.
-  await trackSecretName(name);
-  await SecureStore.setItemAsync(name, value, secureOptions);
+  if (!trackedSecretName(name)) throw new Error('Unexpected secure secret name.');
+  await withRegistryLock(async () => {
+    const current = await readSecretIndex();
+    if (!current.includes(name)) await writeSecretIndex([...current, name]);
+    // Index first: a process interruption can leave a harmless stale index entry,
+    // never a new secret that permanent account cleanup cannot discover.
+    await SecureStore.setItemAsync(name, value, secureOptions);
+  });
 }
 
 async function getTrackedSecret(name: string) {
-  const value = await SecureStore.getItemAsync(name, secureOptions);
-  // This also migrates secrets written by pre-index TalkTwo builds as they are used.
-  if (value) await trackSecretName(name);
-  return value;
+  if (!trackedSecretName(name)) throw new Error('Unexpected secure secret name.');
+  return withRegistryLock(async () => {
+    const value = await SecureStore.getItemAsync(name, secureOptions);
+    if (value) {
+      // This also migrates secrets written by pre-index TalkTwo builds as they are used.
+      const current = await readSecretIndex();
+      if (!current.includes(name)) await writeSecretIndex([...current, name]);
+    }
+    return value;
+  });
 }
 
 async function deleteTrackedSecret(name: string) {
-  await SecureStore.deleteItemAsync(name, secureOptions);
-  await untrackSecretName(name);
+  if (!trackedSecretName(name)) throw new Error('Unexpected secure secret name.');
+  await withRegistryLock(async () => {
+    await SecureStore.deleteItemAsync(name, secureOptions);
+    const current = await readSecretIndex();
+    if (current.includes(name)) await writeSecretIndex(current.filter((item) => item !== name));
+  });
 }
 
 async function clearTrackedSecrets(predicate: (name: string) => boolean) {
-  await registryQueue;
-  const names = await readSecretIndex();
-  const deleting = names.filter(predicate);
-  await Promise.all(deleting.map((name) => SecureStore.deleteItemAsync(name, secureOptions)));
-  await writeSecretIndex(names.filter((name) => !predicate(name)));
+  await withRegistryLock(async () => {
+    const names = await readSecretIndex();
+    const deleting = names.filter(predicate);
+    await Promise.all(deleting.map((name) => SecureStore.deleteItemAsync(name, secureOptions)));
+    await writeSecretIndex(names.filter((name) => !predicate(name)));
+  });
 }
 
 function envelopeAad(token: string) {
@@ -203,11 +207,9 @@ export async function installActiveMemberEnvelope(invitationId: string, relation
 }
 
 export async function removeThreadKeys(relationshipIds: string[]) {
-  await Promise.all(
-    [...new Set(relationshipIds)]
-      .filter(Boolean)
-      .map((relationshipId) => deleteTrackedSecret(`${THREAD_PREFIX}${relationshipId}`)),
-  );
+  for (const relationshipId of [...new Set(relationshipIds)].filter(Boolean)) {
+    await deleteTrackedSecret(`${THREAD_PREFIX}${relationshipId}`);
+  }
 }
 
 export async function clearPendingThreadSecrets() {
@@ -239,10 +241,8 @@ export async function keyRecoveryApprovalCode(token: string) {
 
 export async function createKeyRecoveryEnvelope(token: string, relationshipId: string) {
   const secretName = `${RECOVERY_APPROVAL_PREFIX}${token.trim()}`;
-  const [secret, threadKey] = await Promise.all([
-    getTrackedSecret(secretName),
-    getThreadKey(relationshipId),
-  ]);
+  const secret = await getTrackedSecret(secretName);
+  const threadKey = await getThreadKey(relationshipId);
   if (!secret) throw new Error('This recovery link is missing its one-time secret. Ask for a new recovery request.');
   if (!threadKey) throw new Error('This device does not have the conversation key and cannot approve recovery.');
   const wrappingKey = await AESEncryptionKey.import(assertKey(secret), 'hex');

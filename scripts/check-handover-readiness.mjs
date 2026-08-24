@@ -8,6 +8,7 @@ const requiredFiles = [
   'docs/NEW_OWNER_ONBOARDING.md',
   'docs/HANDOVER_RUNBOOK.md',
   'docs/ASSET_REGISTER.md',
+  'docs/CONFIGURATION_INVENTORY.md',
   'docs/ACCESS_ROLE_MODEL.md',
   'docs/PRIVACY_INVARIANTS.md',
   'docs/PRODUCT_SPEC_V1.md',
@@ -43,6 +44,30 @@ if (fs.existsSync('docs/ASSET_REGISTER.md')) {
   }
   if (/sb_secret_|service_role\s*[:=]\s*['"][^'"]+|sk-[A-Za-z0-9_-]{16,}/i.test(assets)) {
     failures.push('Asset register appears to contain a private credential.');
+  }
+}
+
+if (fs.existsSync('docs/CONFIGURATION_INVENTORY.md')) {
+  const config = read('docs/CONFIGURATION_INVENTORY.md');
+  for (const key of [
+    'EXPO_PUBLIC_SUPABASE_URL',
+    'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'EXPO_PUBLIC_TALKTWO_SITE_URL',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'OPENAI_API_KEY',
+    'PUSH_DISPATCH_SECRET',
+    'EXPO_ACCESS_TOKEN',
+    'APPLE_BUNDLE_ID',
+    'APPLE_ROOT_CA_DER_BASE64_JSON',
+    'GOOGLE_PACKAGE_NAME',
+    'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
+    'GOOGLE_PUBSUB_AUDIENCE',
+  ]) {
+    if (!config.includes(`\`${key}\``)) failures.push(`Configuration inventory does not document: ${key}`);
+  }
+  if (!/Never place service-role\/secret keys, AI keys, store credentials or dispatcher secrets/i.test(config)) {
+    failures.push('Configuration inventory is missing the public-mobile secret boundary.');
   }
 }
 

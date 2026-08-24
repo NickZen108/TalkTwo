@@ -45,6 +45,6 @@ export async function rotatePremiumGiftLink(giftId: string) {
   const token = String(data);
   return {
     token,
-    url: buildTalkTwoLink('premium-gift', giftId, { query: { token } }),
+    url: buildTalkTwoLink('premium-gift', giftId, { fragment: { token } }),
   };
 }

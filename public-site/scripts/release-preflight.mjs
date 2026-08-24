@@ -29,6 +29,10 @@ function httpsUrl(value) {
   }
 }
 
+function publishableSupabaseKey(value) {
+  return typeof value === 'string' && /^sb_publishable_[A-Za-z0-9_-]+$/.test(value.trim());
+}
+
 for (const [name, value] of Object.entries(required)) {
   if (!nonPlaceholder(value)) errors.push(`${name} is missing or still a placeholder.`);
 }
@@ -36,8 +40,8 @@ for (const [name, value] of Object.entries(required)) {
 if (required.VITE_SUPABASE_URL && !httpsUrl(required.VITE_SUPABASE_URL)) {
   errors.push('VITE_SUPABASE_URL must be a credential-free HTTPS URL.');
 }
-if (required.VITE_SUPABASE_PUBLISHABLE_KEY && /service[_-]?role/i.test(required.VITE_SUPABASE_PUBLISHABLE_KEY)) {
-  errors.push('The public site must never contain a Supabase service-role key.');
+if (!publishableSupabaseKey(required.VITE_SUPABASE_PUBLISHABLE_KEY)) {
+  errors.push('VITE_SUPABASE_PUBLISHABLE_KEY must be a current sb_publishable_ key; secret and legacy service-role keys are forbidden in the browser.');
 }
 for (const name of ['VITE_SUPPORT_EMAIL', 'VITE_PRIVACY_EMAIL']) {
   const value = required[name];

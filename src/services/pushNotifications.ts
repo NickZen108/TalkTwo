@@ -46,12 +46,33 @@ async function registerToken(token: string) {
   await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token, secureOptions);
 }
 
-export async function pushNotificationStatus() {
-  const localToken = await SecureStore.getItemAsync(PUSH_TOKEN_KEY, secureOptions);
-  if (!localToken) return { enabled: false, permission: (await Notifications.getPermissionsAsync()).status };
-  const { data, error } = await supabase.rpc('is_push_device_registered', { expo_token: localToken });
+async function setGlobalNotificationMute(muted: boolean) {
+  const { error } = await supabase.rpc('set_my_notification_mute', {
+    rel_id: null,
+    target_sender: null,
+    muted,
+  });
   if (error) throw error;
-  return { enabled: Boolean(data), permission: (await Notifications.getPermissionsAsync()).status };
+}
+
+async function globalNotificationsMuted() {
+  const { data, error } = await supabase.rpc('list_my_notification_mutes', { rel_id: null });
+  if (error) throw error;
+  return (data ?? []).some((item: { relationship_id?: string | null; sender_id?: string | null }) => (
+    item.relationship_id == null && item.sender_id == null
+  ));
+}
+
+export async function pushNotificationStatus() {
+  const permission = (await Notifications.getPermissionsAsync()).status;
+  const localToken = await SecureStore.getItemAsync(PUSH_TOKEN_KEY, secureOptions);
+  if (!localToken) return { enabled: false, permission };
+  const [{ data, error }, globallyMuted] = await Promise.all([
+    supabase.rpc('is_push_device_registered', { expo_token: localToken }),
+    globalNotificationsMuted(),
+  ]);
+  if (error) throw error;
+  return { enabled: Boolean(data) && !globallyMuted, permission };
 }
 
 export async function enablePushNotifications() {
@@ -64,18 +85,28 @@ export async function enablePushNotifications() {
   if (permission.status !== 'granted') throw new Error('Notification permission was not granted. You can enable it later in device settings.');
   const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
   await registerToken(token);
+  await setGlobalNotificationMute(false);
   return token;
 }
 
 export async function disablePushNotifications() {
   const token = await SecureStore.getItemAsync(PUSH_TOKEN_KEY, secureOptions);
+  let globalMuteError: unknown = null;
   let remoteError: unknown = null;
+
+  try {
+    await setGlobalNotificationMute(true);
+  } catch (error) {
+    globalMuteError = error;
+  }
+
   if (token) {
     const { error } = await supabase.rpc('disable_push_device', { expo_token: token });
     remoteError = error;
   }
   await SecureStore.deleteItemAsync(PUSH_TOKEN_KEY, secureOptions);
   await Notifications.unregisterForNotificationsAsync().catch(() => undefined);
+  if (globalMuteError) throw globalMuteError;
   if (remoteError) throw remoteError;
 }
 

@@ -56,7 +56,9 @@ export function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
   const link = parsed(url);
   if (!link || link.family !== 'premium-gift' || link.pathSegments.length !== 2) return null;
   const giftId = safeIdentifier(link.pathSegments[1] ?? '');
-  const token = singleParameter(link.query, 'token');
+  // Keep the possession token in the fragment so an HTTPS browser fallback never
+  // sends it to the public web server, reverse proxy or request logs.
+  const token = singleParameter(link.fragment, 'token');
   if (!giftId || !token || token.length > MAX_IDENTIFIER_LENGTH || /[\u0000-\u001f\u007f]/.test(token)) return null;
   return { giftId, token };
 }

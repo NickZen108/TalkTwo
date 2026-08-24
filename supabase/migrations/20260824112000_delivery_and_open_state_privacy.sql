@@ -30,44 +30,4 @@ returns integer
 language plpgsql
 security definer
 set search_path = ''
-as $$
-begin
-  if auth.uid() is null then raise exception 'Authentication required'; end if;
-  return public.ack_all_available_messages_delivered();
-end;
-$$;
-
--- Privacy-first v1 does not let the sender probe recipient open state by asking
--- whether an edit or withdrawal is still possible.
-create or replace function public.withdraw_message(message_id uuid)
-returns boolean
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if auth.uid() is null then raise exception 'Authentication required'; end if;
-  return false;
-end;
-$$;
-
-create or replace function public.edit_unopened_message(message_id uuid,new_body text,encrypted_body text)
-returns table(id uuid,logical_id uuid,relationship_id uuid,sender_id uuid,recipient_id uuid,body text,body_hash text,ciphertext text,risk_level text,created_at timestamptz,available_at timestamptz,opened_at timestamptz,withdrawn_at timestamptz,edited_at timestamptz,rejected_at timestamptz,reject_reason text,blocked_for_recipient boolean,recipient_count integer,rejected_count integer)
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if auth.uid() is null then raise exception 'Authentication required'; end if;
-  raise exception 'Sent messages cannot be edited. This avoids exposing recipient open state.';
-end;
-$$;
-
-revoke execute on function public.ack_all_available_messages_delivered() from public,anon;
-revoke execute on function public.ack_available_messages_delivered(uuid) from public,anon;
-revoke execute on function public.withdraw_message(uuid) from public,anon;
-revoke execute on function public.edit_unopened_message(uuid,text,text) from public,anon;
-grant execute on function public.ack_all_available_messages_delivered() to authenticated,service_role;
-grant execute on function public.ack_available_messages_delivered(uuid) to authenticated,service_role;
-grant execute on function public.withdraw_message(uuid) to authenticated,service_role;
-grant execute on function public.edit_unopened_message(uuid,text,text) to authenticated,service_role;
+as $$;

@@ -22,10 +22,12 @@ test('privacy controls do not request partner timezone or availability', () => {
   assert.match(privacyCard, /listMyMemberBlocks/);
 });
 
-test('participant client API does not expose partner routing metadata', () => {
+test('participant client has no partner routing metadata API or display helper', () => {
   assert.doesNotMatch(windowsService, /getPartnerWindows|PartnerWindow|get_relationship_partner_settings/);
   assert.match(windowsService, /getMyTimezone/);
   assert.match(windowsService, /listMyWindows/);
+  assert.equal(fs.existsSync('src/domain/partnerAvailability.ts'), false);
+  assert.equal(fs.existsSync('src/i18n/partnerAvailabilityCopy.ts'), false);
 });
 
 test('privacy card exposes requested mute and timed block controls', () => {

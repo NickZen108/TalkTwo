@@ -6,28 +6,33 @@ import { buildTalkTwoLink, parseTalkTwoLink, talkTwoHttpsOrigin } from '../src/d
 const secret = 'a'.repeat(64);
 
 test('development links use the custom scheme only when no site URL is configured', () => {
-  const link = buildTalkTwoLink('invite', 'invite 1', { fragment: { s: secret } }, '');
-  assert.equal(link, `talktwo://invite/invite%201#s=${secret}`);
+  const link = buildTalkTwoLink('invite', undefined, { fragment: { token: 'invite 1', s: secret } }, '');
+  assert.equal(link, `talktwo://invite#token=invite+1&s=${secret}`);
   const parsed = parseTalkTwoLink(link, '');
   assert.equal(parsed?.family, 'invite');
-  assert.deepEqual(parsed?.pathSegments, ['invite', 'invite%201']);
+  assert.deepEqual(parsed?.pathSegments, ['invite']);
 });
 
 test('configured production links use the HTTPS origin and app namespace', () => {
   const site = 'https://secure.example/public/path';
   assert.equal(talkTwoHttpsOrigin(site), 'https://secure.example');
-  const link = buildTalkTwoLink('recover-key', 'request 1', { fragment: { s: secret } }, site);
-  assert.equal(link, `https://secure.example/app/recover-key/request%201#s=${secret}`);
+  const link = buildTalkTwoLink(
+    'recover-key',
+    undefined,
+    { fragment: { token: 'request 1', s: secret } },
+    site,
+  );
+  assert.equal(link, `https://secure.example/app/recover-key#token=request+1&s=${secret}`);
   const parsed = parseTalkTwoLink(link, site);
   assert.equal(parsed?.family, 'recover-key');
-  assert.deepEqual(parsed?.pathSegments, ['recover-key', 'request%201']);
+  assert.deepEqual(parsed?.pathSegments, ['recover-key']);
 });
 
 test('production parser rejects custom schemes, look-alike origins and non-app paths', () => {
   const site = 'https://secure.example';
-  assert.equal(parseTalkTwoLink(`talktwo://invite/id#s=${secret}`, site), null);
-  assert.equal(parseTalkTwoLink(`https://secure.example.evil.invalid/app/invite/id#s=${secret}`, site), null);
-  assert.equal(parseTalkTwoLink(`https://secure.example/invite/id#s=${secret}`, site), null);
+  assert.equal(parseTalkTwoLink(`talktwo://invite#token=id&s=${secret}`, site), null);
+  assert.equal(parseTalkTwoLink(`https://secure.example.evil.invalid/app/invite#token=id&s=${secret}`, site), null);
+  assert.equal(parseTalkTwoLink(`https://secure.example/invite#token=id&s=${secret}`, site), null);
 });
 
 test('invalid configured site URL fails closed rather than falling back to a custom scheme', () => {
@@ -38,9 +43,17 @@ test('invalid configured site URL fails closed rather than falling back to a cus
   assert.equal(parseTalkTwoLink('talktwo://auth?code=abc', 'http://insecure.example'), null);
 });
 
-test('auth codes use query encoding while possession secrets can stay in fragments', () => {
+test('auth codes use query encoding while possession secrets stay in fragments', () => {
   const auth = buildTalkTwoLink('auth', undefined, { query: { code: 'one two&three' } }, 'https://secure.example');
   assert.equal(auth, 'https://secure.example/app/auth?code=one+two%26three');
+
+  const invite = buildTalkTwoLink(
+    'invite',
+    undefined,
+    { fragment: { token: 'one two&three', s: secret } },
+    'https://secure.example',
+  );
+  assert.equal(invite, `https://secure.example/app/invite#token=one+two%26three&s=${secret}`);
 
   const gift = buildTalkTwoLink(
     'premium-gift',
@@ -62,6 +75,16 @@ test('auth, invitations, recovery and gift services cannot reintroduce raw custo
     assert.match(source, /buildTalkTwoLink/);
     assert.doesNotMatch(source, /talktwo:\/\//i);
   }
+});
+
+test('invitation and recovery generators keep bearer tokens out of URL paths and queries', () => {
+  const relationships = fs.readFileSync('src/services/relationships.ts', 'utf8');
+  const recovery = fs.readFileSync('src/services/keyRecovery.ts', 'utf8');
+
+  assert.match(relationships, /buildTalkTwoLink\(path,\s*undefined,\s*\{\s*fragment:\s*\{\s*token,\s*s:\s*secret\s*\}\s*\}\)/s);
+  assert.doesNotMatch(relationships, /buildTalkTwoLink\(path,\s*token/);
+  assert.match(recovery, /buildTalkTwoLink\('recover-key',\s*undefined,\s*\{\s*fragment:\s*\{\s*token,\s*s:\s*material\.secret\s*\}\s*\}\)/s);
+  assert.doesNotMatch(recovery, /buildTalkTwoLink\('recover-key',\s*token/);
 });
 
 test('Premium gift generator keeps its claim token out of the HTTPS query string', () => {

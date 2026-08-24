@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { buildTalkTwoLink } from '../domain/appLinks';
 import {
   clearKeyRecoveryApproval,
   createKeyRecoveryEnvelope,
@@ -29,7 +30,7 @@ export async function createKeyRecoveryRequest(relationshipId: string) {
       requestId,
       expiresAt: String(row.expires_at),
       verificationCode: material.verificationCode,
-      url: `talktwo://recover-key/${encodeURIComponent(token)}#s=${material.secret}`,
+      url: buildTalkTwoLink('recover-key', token, { fragment: { s: material.secret } }),
     };
   } catch (error) {
     try {

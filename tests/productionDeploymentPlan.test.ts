@@ -21,6 +21,9 @@ const criticalMigrations = [
   '20260824043000_organization_sponsorships.sql',
   '20260824061500_delivery_acknowledgements.sql',
   '20260824084500_ai_budget_reservations.sql',
+  '20260824110000_privacy_controls_and_notification_mutes.sql',
+  '20260824111000_cancel_muted_and_blocked_push_jobs.sql',
+  '20260824112000_delivery_and_open_state_privacy.sql',
 ];
 
 test('production plan names every current critical launch migration in order', () => {
@@ -43,9 +46,14 @@ test('deployment plan preserves JWT/custom-auth boundaries', () => {
   assert.match(plan, /Never turn JWT verification off for a user-facing function/i);
 });
 
-test('deployment plan requires deletion, RPC trust-boundary, public-site, native preflight and exact-tree QA gates', () => {
+test('deployment plan requires deletion, privacy, public-site, native and exact-tree gates', () => {
   assert.match(plan, /account_deletion_schema_ok/i);
   assert.match(plan, /security_definer_schema_ok/i);
+  assert.match(plan, /partner timezone\/window RPC/i);
+  assert.match(plan, /notification_mutes/i);
+  assert.match(plan, /emoji\/emoticon storage is rejected/i);
+  assert.match(plan, /editing\/withdrawal cannot be used to probe recipient open state/i);
+  assert.match(plan, /Android-to-iOS and iOS-to-Android chat delivery/i);
   assert.match(plan, /npm run release:preflight/i);
   assert.match(plan, /TalkTwo release preflight OK\./i);
   assert.match(plan, /TalkTwo public-site release preflight OK\./i);

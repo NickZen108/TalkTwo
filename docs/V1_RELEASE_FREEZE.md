@@ -1,59 +1,68 @@
-# TalkTwo v1 release freeze
+# TalkTwo v1 release-freeze criteria
 
-TalkTwo v1 is **feature-frozen** on the `feat/privacy-controls-handoff` release-candidate stack.
+TalkTwo v1 is **not currently feature-frozen**. The current phase is a systematic launch audit of the account-independent code and configuration. The purpose is to inspect the complete v1 surface area once, area by area, and fix concrete, well-founded launch/security/privacy/billing defects before declaring the repository ready to freeze.
 
-The purpose of this freeze is to stop moving the finish line. Passing exact-tree QA and completing external release configuration are still required, but ordinary refactoring, speculative hardening and new product ideas do not belong in v1 anymore.
+This document defines the criteria for the **future** freeze. It does not authorize endless speculative refactoring: audit findings should have a concrete failure mode, violated invariant, broken core flow, material privacy/security risk, billing risk, release-platform risk or testable launch benefit.
 
-## What may break the freeze
+## Current audit rule
 
-Only a demonstrated launch-critical defect may change v1 code:
+During the systematic audit, changes are appropriate when they address a concrete issue such as:
+
+- account takeover, credential/secret exposure or unsafe auth/deep-link behavior;
+- conversation plaintext/private recipient data exposure contrary to documented invariants;
+- destructive data loss/corruption;
+- incorrect, duplicate or unauthorized billing/entitlement changes;
+- unauthorized relationship/message/key access;
+- a broken documented core v1 flow on iOS or Android;
+- configuration likely to make a signed production build unsafe or rejectable;
+- a reproducible privacy/security/UX defect that materially affects launch use;
+- a stale release/deployment assumption that could cause an unsafe launch.
+
+Avoid broad refactors, architecture churn or cosmetic cleanup without a concrete benefit. Every substantive defect fix should get targeted regression coverage when practical.
+
+## When the freeze becomes active
+
+Activate the v1 freeze only after:
+
+1. auth/deep links, cryptography/local storage, database/RLS/RPC trust boundaries, messaging/privacy controls, AI, billing/store lifecycle, push, deletion/recovery, native/public-site configuration, UX/accessibility/dark mode and release/handover have each received a deliberate audit pass;
+2. no known concrete account-independent launch defect remains unresolved;
+3. `feat/privacy-controls-handoff` and `qa/full-stack-20260824` are exact identical trees;
+4. the exact candidate completes the full QA workflow green in a normal runner execution (a pre-checkout `steps=null` failure is neither green nor a code failure).
+
+Once those conditions are met, record the exact freeze SHA in PR #41 and this document.
+
+## Rules after freeze
+
+After the freeze, only a demonstrated P0/P1 launch defect may change v1 code.
 
 ### P0
 - account takeover or credential/secret exposure;
-- conversation plaintext or private recipient settings exposed contrary to the documented privacy invariants;
+- plaintext/private recipient setting exposure;
 - destructive data loss/corruption;
-- incorrect or unauthorized billing/entitlement changes;
-- a security bypass that permits unauthorized relationship/message/key access;
-- an app crash or build failure that prevents the release from functioning at all.
+- incorrect/unauthorized billing or entitlement changes;
+- unauthorized relationship/message/key access;
+- crash/build failure preventing the release from functioning.
 
 ### P1
-- a documented core v1 flow is broken on a supported launch platform;
-- a code/configuration defect would cause App Store / Google Play rejection or make a signed production build unsafe;
-- a regression violates an existing v1 privacy invariant;
-- exact-tree QA finds a concrete defect rather than an external runner/account failure.
+- documented core v1 flow broken on a supported launch platform;
+- App Store / Google Play rejection or unsafe signed-build defect;
+- regression of an existing privacy invariant;
+- exact-tree QA finding a concrete defect rather than an external runner/account failure.
 
-Any fix that breaks the freeze must include a targeted regression test and must be followed by a new exact-tree QA run.
+Any post-freeze fix should include targeted regression coverage and trigger a new exact-tree QA run.
 
-## What goes to v1.1 instead
+## After repository freeze
 
-Unless it fixes a P0/P1 issue above, defer it to v1.1. Examples:
-
-- new features or additional product modes;
-- aesthetic/UX refinements that do not block a core flow;
-- speculative security improvements without a demonstrated v1 vulnerability;
-- broad refactors or cleanup of harmless dormant code;
-- additional languages or wider linguistic/filter tuning;
-- new analytics, admin, reporting or organization-portal functionality;
-- performance work without a demonstrated launch blocker.
-
-## Current v1 finish line
-
-Repository work is complete when:
-
-1. `feat/privacy-controls-handoff` and `qa/full-stack-20260824` are exact identical trees;
-2. the exact frozen tree completes the full QA workflow green;
-3. no unresolved P0/P1 code defect remains.
-
-After that, remaining work is **release execution**, not continued product development:
+Remaining work is release execution:
 
 - final brand/name/domain decision and due diligence;
-- final app icon/adaptive icon/splash/store artwork;
-- final HTTPS site plus AASA/assetlinks configuration;
-- EAS/APNs/FCM/Expo credentials and signed device builds;
+- final icon/adaptive icon/splash/store artwork;
+- final HTTPS site plus AASA/assetlinks;
+- EAS/APNs/FCM/Expo credentials and signed-device builds;
 - reviewed public/legal configuration;
 - Apple/Google developer accounts, products and sandbox/internal tests;
 - explicitly approved Supabase/public-site/function deployment and production smoke tests.
 
 ## Safety boundary
 
-This freeze does not authorize merging, production migrations, deployment, paid-product activation or store submission. Those remain explicit release decisions.
+Neither the current audit nor the future freeze authorizes merge, production migration, deployment, paid-product activation or store submission. Those remain explicit release decisions.

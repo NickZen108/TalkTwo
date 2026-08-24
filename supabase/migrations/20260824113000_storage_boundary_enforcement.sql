@@ -59,3 +59,61 @@ begin
   return new;
 end;
 $$;
+
+-- A SHA-256 of a short unread message is itself sensitive: a modified client can
+-- dictionary-guess common phrases even when body/ciphertext are withheld. Keep the
+-- server-approved hash hidden from an incoming participant until the message is
+-- actually opened. The opened RPC still returns it so the client can verify that
+-- decrypted ciphertext exactly matches the text TalkTwo approved at send time.
+create or replace function public.list_relationship_messages(rel_id uuid)
+returns table(
+  id uuid,
+  logical_id uuid,
+  relationship_id uuid,
+  sender_id uuid,
+  recipient_id uuid,
+  body text,
+  body_hash text,
+  ciphertext text,
+  risk_level text,
+  created_at timestamptz,
+  available_at timestamptz,
+  opened_at timestamptz,
+  withdrawn_at timestamptz,
+  edited_at timestamptz,
+  rejected_at timestamptz,
+  reject_reason text,
+  blocked_for_recipient boolean,
+  recipient_count integer,
+  rejected_count integer
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with mine as (
+    select m.logical_id as id,m.logical_id,m.relationship_id,m.sender_id,null::uuid as recipient_id,
+      max(m.body) as body,max(m.body_hash) as body_hash,max(m.ciphertext) as ciphertext,max(m.risk_level) as risk_level,
+      min(m.created_at) as created_at,min(m.created_at) as available_at,null::timestamptz as opened_at,
+      max(m.withdrawn_at) as withdrawn_at,max(m.edited_at) as edited_at,null::timestamptz as rejected_at,
+      null::text as reject_reason,false as blocked_for_recipient,count(*)::int as recipient_count,0::int as rejected_count
+    from public.messages m
+    where m.relationship_id=rel_id and m.sender_id=(select auth.uid())
+    group by m.logical_id,m.relationship_id,m.sender_id
+  ), incoming as (
+    select m.id,m.logical_id,m.relationship_id,m.sender_id,m.recipient_id,
+      case when m.blocked_for_recipient or m.opened_at is null then null else m.body end as body,
+      case when m.blocked_for_recipient or m.opened_at is null then null else m.body_hash end as body_hash,
+      case when m.blocked_for_recipient or m.opened_at is null then null else m.ciphertext end as ciphertext,
+      m.risk_level,m.created_at,m.available_at,m.opened_at,m.withdrawn_at,m.edited_at,m.rejected_at,m.reject_reason,
+      m.blocked_for_recipient,1::int as recipient_count,0::int as rejected_count
+    from public.messages m
+    where m.relationship_id=rel_id and m.recipient_id=(select auth.uid()) and m.available_at<=now()
+      and m.withdrawn_at is null and m.rejected_at is null
+  )
+  select * from mine
+  union all
+  select * from incoming
+  order by created_at,id;
+$$;

@@ -31,6 +31,25 @@ Other participants must not be able to learn, directly or by a sender-facing sid
 
 A sender-visible status is deliberately limited to **Sent** or **Delivered to app**. Delivery is not a read receipt.
 
+## Unopened content and verification hashes stay private
+
+Before a recipient opens an incoming message, participant-facing APIs must not expose:
+
+- message plaintext;
+- encrypted payload/ciphertext;
+- the server-approved SHA-256 verification hash;
+- attachment filename or attachment content metadata that would reveal the unopened document.
+
+The verification hash matters because the client compares it with the decrypted plaintext to ensure the ciphertext is exactly the text TalkTwo approved at send time. But a hash of a short predictable message can itself be dictionary-guessed, so the recipient receives that verifier only as part of the explicit open flow. A modified client must not be able to fetch it from the unread-list API.
+
+## Ciphertext-only durable message rows
+
+TalkTwo's trusted send boundary processes plaintext transiently because it must enforce deterministic tone rules, Premium approvals and each recipient's private Personal Boundaries. After those authoritative checks, the final BEFORE INSERT storage trigger removes `body` before PostgreSQL persists the new `messages` row. Durable new message rows therefore retain encrypted payload plus the minimum required verification/operational metadata rather than conversation plaintext.
+
+This is a data-minimization invariant, **not** a claim that TalkTwo is zero-knowledge or universally end-to-end encrypted. The trusted backend sees plaintext while enforcing send-time rules, and user-requested Premium AI review may send selected plaintext to the configured AI provider. Product copy, store disclosures and support material must preserve that distinction.
+
+Legacy rows from an earlier schema may use the existing `maybe_scrub_message` lifecycle; new release rows must not regress to storing plaintext first and scrubbing later.
+
 ## Rejected drafts never become social events
 
 When TalkTwo rejects a draft for tone, symbolic tone, length, boundaries or other sending policy, that event belongs to the author only. The intended recipient must receive no message row, push, counter, status, audit event exposed to them or other indication that an attempted draft existed.

@@ -51,14 +51,14 @@ test('rejects missing, duplicate, malformed and oversized invitation values', ()
   assert.equal(invitationFromUrl(`talktwo://invite/id#s=${'a'.repeat(63)}`), null);
 });
 
-test('parses one unambiguous Premium gift token', () => {
-  assert.deepEqual(premiumGiftFromUrl('talktwo://premium-gift/gift%201?token=token-1'), {
+test('parses one unambiguous Premium gift token only from the fragment', () => {
+  assert.deepEqual(premiumGiftFromUrl('talktwo://premium-gift/gift%201#token=token-1'), {
     giftId: 'gift 1',
     token: 'token-1',
   });
-  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/id?token=one&token=two'), null);
-  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/%E0%A4%A?token=one'), null);
-  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/id?source=share'), null);
+  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/id#token=one&token=two'), null);
+  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/%E0%A4%A#token=one'), null);
+  assert.equal(premiumGiftFromUrl('talktwo://premium-gift/id?token=legacy-query-token'), null);
 });
 
 test('parses a recovery secret only from an unambiguous fragment', () => {
@@ -90,7 +90,7 @@ test('configured builds accept only same-origin HTTPS app paths', () => {
       token: 'invite 1',
       secret: secret.toLowerCase(),
     });
-    assert.deepEqual(premiumGiftFromUrl('https://secure.example/app/premium-gift/gift%201?token=token-1'), {
+    assert.deepEqual(premiumGiftFromUrl('https://secure.example/app/premium-gift/gift%201#token=token-1'), {
       giftId: 'gift 1',
       token: 'token-1',
     });

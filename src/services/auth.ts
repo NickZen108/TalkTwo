@@ -1,11 +1,12 @@
 import { supabase } from '../lib/supabase';
 import { ACCOUNT_DELETE_CONFIRMATION } from '../domain/accountDeletion';
+import { buildTalkTwoLink, parseTalkTwoLink } from '../domain/appLinks';
 import { clearLocalAccountData } from './localDb';
 import { clearPendingStorePurchase } from './storeBilling';
 import { clearAllTalkTwoThreadSecrets, clearPendingThreadSecrets, removeThreadKeys } from './threadKeys';
 import { disablePushNotifications } from './pushNotifications';
 
-export const AUTH_REDIRECT_URL = 'talktwo://auth';
+export const AUTH_REDIRECT_URL = buildTalkTwoLink('auth');
 
 export async function sendMagicLink(email: string) {
   const normalizedEmail = email.trim().toLowerCase();
@@ -21,29 +22,23 @@ export async function sendMagicLink(email: string) {
 }
 
 export async function createSessionFromMagicLink(url: string) {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error('The sign-in link is malformed. Please request a new link.');
-  }
-  if (parsed.protocol !== 'talktwo:' || parsed.hostname.toLowerCase() !== 'auth') {
+  const parsed = parseTalkTwoLink(url);
+  if (!parsed || parsed.family !== 'auth' || parsed.pathSegments.length !== 1) {
     throw new Error('The sign-in link is not a TalkTwo authentication callback.');
   }
 
-  const fragment = new URLSearchParams(parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash);
-  const errorDescription = parsed.searchParams.get('error_description') ?? fragment.get('error_description');
+  const errorDescription = parsed.query.get('error_description') ?? parsed.fragment.get('error_description');
   if (errorDescription) throw new Error(errorDescription);
 
-  // Never import access or refresh credentials directly from a custom-scheme URL.
-  // Mobile authentication uses PKCE, so an intercepted redirect contains only a
-  // short-lived one-time code whose verifier remains in device-protected storage.
-  if (fragment.has('access_token') || fragment.has('refresh_token')
-      || parsed.searchParams.has('access_token') || parsed.searchParams.has('refresh_token')) {
+  // Never import access or refresh credentials directly from a URL. Mobile
+  // authentication uses PKCE, so the callback contains only a short-lived
+  // one-time code whose verifier remains in device-protected storage.
+  if (parsed.fragment.has('access_token') || parsed.fragment.has('refresh_token')
+      || parsed.query.has('access_token') || parsed.query.has('refresh_token')) {
     throw new Error('This sign-in link uses an unsupported legacy authentication flow. Please request a new link.');
   }
 
-  const codes = parsed.searchParams.getAll('code').filter(Boolean);
+  const codes = parsed.query.getAll('code').filter(Boolean);
   if (codes.length !== 1) return null;
   const code = codes[0];
   if (!code || code.length > 2048 || /[\u0000-\u001f\u007f]/.test(code)) {

@@ -13,9 +13,11 @@ This document lists **configuration names and ownership**, never secret values. 
 | --- | --- | --- | --- |
 | `EXPO_PUBLIC_SUPABASE_URL` | Public/mobile | Supabase project URL | Platform owner |
 | `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public/mobile | Current Supabase publishable client key | Platform owner |
-| `EXPO_PUBLIC_TALKTWO_SITE_URL` | Public/mobile | Final HTTPS site base for Privacy/Terms/Support/Delete Account links | Business/platform owner |
+| `EXPO_PUBLIC_TALKTWO_SITE_URL` | Public/mobile | Final HTTPS site base for Privacy/Terms/Support/Delete Account links **and** canonical production origin for `/app/auth`, invitation, member, recovery and Premium-gift links | Business/platform owner |
 
 `EXPO_PUBLIC_*` is public by design. Never place service-role/secret keys, AI keys, store credentials or dispatcher secrets in variables with that prefix.
+
+When `EXPO_PUBLIC_TALKTWO_SITE_URL` is empty, development builds may use the `talktwo://` custom scheme. When it is configured, TalkTwo generates and accepts only same-origin HTTPS `/app/...` links. An invalid non-empty value fails closed. Production release additionally requires matching iOS Universal Link and Android verified App Link ownership for the same host.
 
 ## Public website (`public-site/.env`)
 All `VITE_*` values are browser-visible.
@@ -35,6 +37,8 @@ All `VITE_*` values are browser-visible.
 | `VITE_INTERNATIONAL_TRANSFER_TEXT` | Public/web | Reviewed international-transfer disclosure |
 | `VITE_PRIVACY_EFFECTIVE_DATE` | Public/web | Effective date shown in privacy material |
 | `VITE_PUBLICATION_APPROVED` | Public/web gate | Must remain false until publication text is explicitly approved |
+
+The final public host must also serve the platform-association files used by signed builds: `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`. Their identifiers/fingerprints are configuration derived from the final Apple team and Android release signing identity; do not invent placeholder trust values.
 
 ## Supabase / common Edge Function environment
 Supabase may provide some project variables automatically. The release operator must still understand which credential class each function consumes.

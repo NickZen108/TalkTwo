@@ -200,7 +200,7 @@ function makeStyles(colors: AppColors) {
     smallLabel: { color: colors.muted, fontWeight: '700', fontSize: 12 },
     status: { color: colors.muted, lineHeight: 18 },
     row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    button: { minHeight: 42, justifyContent: 'center', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.surfaceSoft, borderWidth: 1, borderColor: colors.borderStrong },
+    button: { minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.surfaceSoft, borderWidth: 1, borderColor: colors.borderStrong },
     buttonActive: { borderColor: colors.accent, borderWidth: 2 },
     buttonDanger: { borderColor: colors.danger },
     buttonText: { color: colors.text, fontWeight: '800', textAlign: 'center', flexShrink: 1 },

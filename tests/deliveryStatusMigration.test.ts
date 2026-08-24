@@ -5,6 +5,7 @@ import { sentDeliveryStatusText } from '../src/i18n/deliveryCopy';
 
 const migration = fs.readFileSync('supabase/migrations/20260824061500_delivery_acknowledgements.sql', 'utf8');
 const client = fs.readFileSync('src/services/messages.ts', 'utf8');
+const chat = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
 
 test('delivery acknowledgement is recipient-bound and never requires opening', () => {
   assert.match(migration, /recipient_id = uid/i);
@@ -32,6 +33,11 @@ test('client acknowledges arrival before hydrating aggregate sender delivery cou
   const status = client.indexOf("supabase.rpc('list_my_sent_delivery_status'");
   assert.ok(ack >= 0 && list > ack && status > ack);
   assert.match(client, /delivered_count: delivery\?\.delivered_count \?\? 0/i);
+});
+
+test('chat renders only the aggregate privacy-safe delivery formatter for sender status', () => {
+  assert.match(chat, /sentDeliveryStatusText\(item\.delivered_count \?\? 0, item\.recipient_count, item\.rejected_count, locale\)/i);
+  assert.doesNotMatch(chat, /senderStatus[\s\S]{0,300}item\.opened_at/i);
 });
 
 test('delivery copy stays aggregate and contains no read receipt language', () => {

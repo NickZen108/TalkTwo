@@ -37,6 +37,9 @@ Critical ordering invariants:
 13. `20260824043000_organization_sponsorships.sql`
 14. `20260824061500_delivery_acknowledgements.sql`
 15. `20260824084500_ai_budget_reservations.sql`
+16. `20260824110000_privacy_controls_and_notification_mutes.sql`
+17. `20260824111000_cancel_muted_and_blocked_push_jobs.sql`
+18. `20260824112000_delivery_and_open_state_privacy.sql`
 
 If additional migrations exist on the frozen release commit, they also run in lexical filename order.
 
@@ -47,7 +50,11 @@ If additional migrations exist on the frozen release commit, they also run in le
 - verify every public FK referencing `auth.users` is `CASCADE` or `SET NULL`, never `RESTRICT`/`NO ACTION` for a row that can exist when a user deletes their account;
 - run Supabase security and performance advisors and resolve launch-blocking findings;
 - verify RLS is enabled on user-facing tables and service-only tables/RPCs have no `anon`/`authenticated` direct privileges;
-- verify AI budget reservation RPCs are executable by `service_role` only.
+- verify AI budget reservation RPCs are executable by `service_role` only;
+- verify authenticated participants cannot execute the partner timezone/window RPC;
+- verify `notification_mutes` has no direct `anon`/`authenticated` table access;
+- verify sender-visible message rows contain no recipient open/rejection state;
+- verify emoji/emoticon storage is rejected regardless of plan/client.
 
 ## Phase 2 — Edge Functions
 
@@ -74,10 +81,17 @@ Use disposable test identities and sandbox/store-test transactions only.
 
 - Free message send and receive.
 - Premium message analysis and send-approval receipt.
+- Verify Unicode emoji and text emoticons are blocked for both Free and Premium paths.
+- Verify an unsafe public display name is not exposed to other participants.
+- Verify recipient timezone, local time and exact communication window cannot be fetched by another participant.
+- Verify 1-hour, 4-hour, 24-hour and indefinite blocks remain private to the blocker.
+- Verify global/chat/person notification mutes suppress alerts without stopping message routing.
+- Verify queued alerts are cancelled immediately when the device, chat/person notification scope or sender is muted/blocked.
 - AI hard-limit reservation, commit/finalize and fail-closed behavior.
 - Document analysis.
 - Communication-window release and private push payload.
-- Delivery acknowledgement without read/open leakage.
+- Delivery acknowledgement at app sync without read/open/rejection leakage.
+- Verify editing/withdrawal cannot be used to probe recipient open state.
 - Key recovery on a second device.
 - Organization sponsorship claim using a disposable verified email.
 - Store purchase verification/restore with a sandbox or licensed tester.
@@ -106,9 +120,9 @@ Before the app exposes public links:
 - Android `compileSdkVersion` and `targetSdkVersion` remain at least 36;
 - final app icon/splash/store artwork is approved and present;
 - create signed store builds using the Apple/Google accounts;
-- complete TestFlight and Play internal testing, including billing, restore, notifications, account deletion, dark mode, accessibility and fresh-install/new-device flows;
+- complete TestFlight and Play internal testing, including Android-to-iOS and iOS-to-Android chat delivery, billing, restore, notifications, account deletion, dark mode, accessibility and fresh-install/new-device flows;
 - submit only after store metadata, privacy answers and public URLs match the shipped binary and backend.
 
 ## Stop conditions
 
-Stop the release immediately for any failed schema gate, failed mobile or public-site `release:preflight`, missing secret, mismatched store product ID, broken public URL, failed disposable-account deletion, unexpected permission, failed provider verification, red QA job, or migration drift that has not been reconciled.
+Stop the release immediately for any failed schema gate, failed mobile or public-site `release:preflight`, missing secret, mismatched store product ID, broken public URL, failed disposable-account deletion, unexpected permission, failed provider verification, red QA job, privacy-invariant failure, or migration drift that has not been reconciled.

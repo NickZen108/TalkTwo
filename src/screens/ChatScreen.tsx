@@ -1,15 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
 import { countMessageCharacters, evaluateFreeMessage, MAX_FREE_LENGTH } from '../filter/freeFilter';
 import { getConversationTheme, listMemberPreferences } from '../services/localDb';
-import { editUnopenedMessage, listMessages, openMessage, rejectMessageWithoutOpening, sendMessage, sendTextAttachment, withdrawMessage, type ChatMessage } from '../services/messages';
+import { listMessages, openMessage, rejectMessageWithoutOpening, sendMessage, sendTextAttachment, type ChatMessage } from '../services/messages';
 import { analyzePremiumMessage, getMyPlan, startPremiumTrial, type AiReview, type UserPlan } from '../services/premium';
 import { analyzeTextAttachment, pickTextAttachment, type AttachmentReview } from '../services/textAttachments';
 import { attachmentExcerpt, attachmentSizeLabel, type PreparedTextAttachment } from '../domain/textAttachments';
 import { listRelationshipMembers, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
-import { getPartnerWindows } from '../services/windows';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import ChatSettingsScreen from './ChatSettingsScreen';
 import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
@@ -103,8 +102,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
-  const [partnerTimezone, setPartnerTimezone] = useState<string | null>(null);
-  const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [plan, setPlan] = useState<UserPlan | null>(null);
   const [review, setReview] = useState<AiReview | null>(null);
   const [reviewedText, setReviewedText] = useState('');
@@ -114,7 +111,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   const [attachmentReview, setAttachmentReview] = useState<AttachmentReview | null>(null);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [viewingAttachment, setViewingAttachment] = useState<ChatMessage | null>(null);
-  const inputRef = useRef<TextInput>(null);
 
   const freeResult = useMemo(() => evaluateFreeMessage(message), [message]);
   const hasText = message.trim().length > 0;
@@ -162,7 +158,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
       refreshMessages(),
       refreshPlan(),
       refreshAppearance(),
-      getPartnerWindows(relationship.id).then((rows) => setPartnerTimezone(rows[0]?.timezone ?? null)).catch(() => undefined),
     ]);
   }
 
@@ -170,7 +165,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     setAttachment(null);
     setAttachmentReview(null);
     setViewingAttachment(null);
-    setEditing(null);
     setMessage('');
     setReview(null);
     setReviewedText('');
@@ -224,21 +218,19 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     }
   }
 
-  async function saveOrSend() {
+  async function sendCurrentMessage() {
     if (!canSend) return;
     const lastTrialReview = plan?.plan === 'trial' && reviewCurrent && review?.usage?.analyses_remaining === 0;
     try {
       setBusy(true);
-      if (editing) await editUnopenedMessage(editing.logical_id, relationship.id, message.trim());
-      else await sendMessage(relationship.id, message.trim());
+      await sendMessage(relationship.id, message.trim());
       setMessage('');
-      setEditing(null);
       setReview(null);
       setReviewedText('');
       if (lastTrialReview) setTrialFallback(true);
       await refreshMessages();
     } catch (error) {
-      Alert.alert(editing ? t('chat.editError') : t('chat.sendError'), error instanceof Error ? error.message : t('common.tryAgain'));
+      Alert.alert(t('chat.sendError'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusy(false);
     }
@@ -296,15 +288,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     }
   }
 
-  function startEdit(item: ChatMessage) {
-    if (!item.body || item.message_kind === 'text_attachment') return;
-    setEditing(item);
-    setMessage(item.body);
-    setReview(null);
-    setReviewedText('');
-    setTimeout(() => inputRef.current?.focus(), 50);
-  }
-
   async function openIncoming(item: ChatMessage) {
     try {
       await openMessage(item.id);
@@ -324,20 +307,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     }
   }
 
-  async function withdraw(item: ChatMessage) {
-    try {
-      const changed = await withdrawMessage(item.logical_id, relationship.id);
-      if (!changed) Alert.alert(t('chat.messageWithdrawUnavailable'), t('chat.messageWithdrawBody'));
-      if (editing?.logical_id === item.logical_id && changed) {
-        setEditing(null);
-        setMessage('');
-      }
-      await refreshMessages();
-    } catch (error) {
-      Alert.alert(t('chat.messageWithdrawError'), error instanceof Error ? error.message : t('common.tryAgain'));
-    }
-  }
-
   const otherNames = members
     .filter((member) => member.user_id !== session.user.id)
     .map((member) => memberLooks[member.user_id]?.name || member.display_name);
@@ -346,9 +315,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     ? t('chat.observerPeople', { count: members.length })
     : members.length > 2
       ? t('chat.people', { count: members.length })
-      : partnerTimezone
-        ? t('chat.timezone', { timezone: partnerTimezone })
-        : t('chat.privateConversation');
+      : t('chat.privateConversation');
 
   if (viewingAttachment) {
     return (
@@ -495,10 +462,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                       {mine ? (
                         <View style={styles.senderControls}>
                           <Text accessibilityLabel={senderStatus} style={[styles.sentStatus, { color: textColor }]}>{senderStatus}</Text>
-                          <View style={styles.inlineActions}>
-                            {item.body && !isAttachment ? <TouchableOpacity accessibilityRole="button" onPress={() => startEdit(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.edit')}</Text></TouchableOpacity> : null}
-                            <TouchableOpacity accessibilityRole="button" onPress={() => void withdraw(item)}><Text style={[styles.inlineAction, { color: textColor }]}>{t('chat.withdraw')}</Text></TouchableOpacity>
-                          </View>
                         </View>
                       ) : null}
                     </View>
@@ -517,14 +480,6 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
 
         {canCompose ? (
           <View style={styles.composerWrap}>
-            {editing ? (
-              <View style={styles.editingStrip}>
-                <Text numberOfLines={2} style={styles.editingText}>{t('chat.editingBody')}</Text>
-                <TouchableOpacity accessibilityRole="button" onPress={() => { setEditing(null); setMessage(''); setReview(null); setReviewedText(''); }}>
-                  <Text style={styles.cancelEdit}>{t('chat.cancel')}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
             {premiumAi && reviewCurrent ? (
               <View style={[styles.reviewStrip, review?.level === 'red' ? styles.reviewRed : review?.level === 'yellow' ? styles.reviewYellow : styles.reviewGreen]}>
                 <View style={styles.reviewTextWrap}>
@@ -563,13 +518,11 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
               </View>
             ) : (
               <View style={styles.composerRow}>
-                {!editing ? (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.attachDocument')} disabled={busy || attachmentBusy} onPress={() => void chooseAttachment()} style={[styles.attachCircle, (busy || attachmentBusy) && styles.disabled]}>
-                    <Text style={styles.attachGlyph}>{attachmentBusy ? '…' : '+'}</Text>
-                  </TouchableOpacity>
-                ) : null}
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.attachDocument')} disabled={busy || attachmentBusy} onPress={() => void chooseAttachment()} style={[styles.attachCircle, (busy || attachmentBusy) && styles.disabled]}>
+                  <Text style={styles.attachGlyph}>{attachmentBusy ? '…' : '+'}</Text>
+                </TouchableOpacity>
                 <View style={styles.inputShell}>
-                  <TextInput ref={inputRef} multiline value={message} onChangeText={changeMessage} placeholder={t('chat.message')} placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel={t('chat.message')} />
+                  <TextInput multiline value={message} onChangeText={changeMessage} placeholder={t('chat.message')} placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel={t('chat.message')} />
                   <View style={styles.counterRow}>
                     <Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text>
                     <Text style={styles.filterLabel}>{premiumAi ? t('chat.aiReview') : t('chat.freeFilter')}</Text>
@@ -580,7 +533,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
                     <Text style={styles.sendGlyph}>{reviewBusy ? '…' : '✓'}</Text>
                   </TouchableOpacity>
                 ) : (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? t('chat.saveEdited') : t('chat.sendMessage')} disabled={busy || !hasText || !canSend} onPress={() => void saveOrSend()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.sendMessage')} disabled={busy || !hasText || !canSend} onPress={() => void sendCurrentMessage()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
                     <Text style={styles.sendGlyph}>➤</Text>
                   </TouchableOpacity>
                 )}
@@ -640,10 +593,8 @@ function makeStyles(colors: AppColors) {
     compactSecondaryText: { color: '#242424' },
     messageMetaRow: { alignItems: 'flex-end', marginTop: 4 },
     messageMeta: { fontSize: 10, opacity: 0.58, flexShrink: 1 },
-    senderControls: { marginTop: 5, paddingTop: 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.10)', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    senderControls: { marginTop: 5, paddingTop: 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.10)', alignItems: 'flex-end' },
     sentStatus: { fontSize: 10, opacity: 0.62, flexShrink: 1 },
-    inlineActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, flexShrink: 0 },
-    inlineAction: { fontSize: 11, fontWeight: '800', textDecorationLine: 'underline' },
     emptyChat: { flex: 1, minHeight: 220, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 8 },
     emptyChatTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
     emptyChatText: { lineHeight: 20, textAlign: 'center', flexShrink: 1, opacity: 0.78 },
@@ -669,9 +620,6 @@ function makeStyles(colors: AppColors) {
     reviewTitle: { fontSize: 12, fontWeight: '800', color: colors.reviewText, flexShrink: 1 },
     reviewReason: { marginTop: 2, fontSize: 11, lineHeight: 15, color: colors.reviewMuted, flexShrink: 1 },
     rewrite: { fontSize: 12, fontWeight: '800', color: colors.accent, textDecorationLine: 'underline', flexShrink: 0 },
-    editingStrip: { minHeight: 34, paddingHorizontal: 4, paddingBottom: 5, flexDirection: 'row', gap: 8, alignItems: 'center' },
-    editingText: { flex: 1, minWidth: 0, color: colors.muted, fontSize: 11, lineHeight: 15 },
-    cancelEdit: { color: colors.danger, fontWeight: '800', fontSize: 12, flexShrink: 0 },
     attachmentComposer: { minHeight: 92, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSoft, padding: 10, flexDirection: 'row', gap: 10, alignItems: 'center' },
     attachmentComposerText: { flex: 1, minWidth: 0 },
     attachmentComposerName: { color: colors.text, fontWeight: '800', fontSize: 14, flexShrink: 1 },

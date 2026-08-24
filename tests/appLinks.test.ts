@@ -38,17 +38,17 @@ test('invalid configured site URL fails closed rather than falling back to a cus
   assert.equal(parseTalkTwoLink('talktwo://auth?code=abc', 'http://insecure.example'), null);
 });
 
-test('query and fragment values are encoded by one canonical builder', () => {
-  const link = buildTalkTwoLink(
+test('auth codes use query encoding while possession secrets can stay in fragments', () => {
+  const auth = buildTalkTwoLink('auth', undefined, { query: { code: 'one two&three' } }, 'https://secure.example');
+  assert.equal(auth, 'https://secure.example/app/auth?code=one+two%26three');
+
+  const gift = buildTalkTwoLink(
     'premium-gift',
     'gift/1',
-    { query: { token: 'one two&three' }, fragment: { s: secret } },
+    { fragment: { token: 'one two&three' } },
     'https://secure.example',
   );
-  assert.equal(
-    link,
-    `https://secure.example/app/premium-gift/gift%2F1?token=one+two%26three#s=${secret}`,
-  );
+  assert.equal(gift, 'https://secure.example/app/premium-gift/gift%2F1#token=one+two%26three');
 });
 
 test('auth, invitations, recovery and gift services cannot reintroduce raw custom-scheme generators', () => {
@@ -62,4 +62,10 @@ test('auth, invitations, recovery and gift services cannot reintroduce raw custo
     assert.match(source, /buildTalkTwoLink/);
     assert.doesNotMatch(source, /talktwo:\/\//i);
   }
+});
+
+test('Premium gift generator keeps its claim token out of the HTTPS query string', () => {
+  const source = fs.readFileSync('src/services/premiumGifts.ts', 'utf8');
+  assert.match(source, /fragment:\s*\{\s*token\s*\}/);
+  assert.doesNotMatch(source, /query:\s*\{\s*token\s*\}/);
 });

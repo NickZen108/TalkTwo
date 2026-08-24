@@ -48,8 +48,10 @@ test('deployment plan requires deletion, RPC trust-boundary, public-site, native
   assert.match(plan, /security_definer_schema_ok/i);
   assert.match(plan, /npm run release:preflight/i);
   assert.match(plan, /TalkTwo release preflight OK\./i);
+  assert.match(plan, /TalkTwo public-site release preflight OK\./i);
+  assert.match(plan, /VITE_PUBLICATION_APPROVED=true/i);
   assert.match(plan, /allowlist the exact[^\n]*\/delete-account\/[^\n]*redirect/i);
-  assert.match(plan, /unknown emails are not auto-created/i);
+  assert.match(plan, /unknown email neither creates an account nor discloses account existence/i);
   assert.match(plan, /exact tree is green/i);
   assert.match(plan, /final app icon\/splash\/store artwork is approved/i);
 });

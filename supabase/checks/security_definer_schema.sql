@@ -21,7 +21,7 @@ begin
        pg_catalog.pg_get_functiondef(p.oid) !~* 'auth\.uid\s*\('
        or not exists (
          select 1
-           from pg_catalog.unnest(pg_catalog.coalesce(p.proconfig, array[]::text[])) setting
+           from pg_catalog.unnest(coalesce(p.proconfig, array[]::text[])) setting
           where setting ~* '^search_path='
        )
        or pg_catalog.has_function_privilege('anon', p.oid, 'execute')

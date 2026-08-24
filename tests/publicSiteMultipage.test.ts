@@ -13,9 +13,10 @@ const routes = [
   ['terms', 'public-site/terms/index.html'],
   ['support', 'public-site/support/index.html'],
   ['deleteAccount', 'public-site/delete-account/index.html'],
+  ['appLinkFallback', 'public-site/app/index.html'],
 ] as const;
 
-test('Vite production build includes every store-facing public route', () => {
+test('Vite production build includes every store-facing and app-link fallback route', () => {
   for (const [input, path] of routes) {
     assert.ok(fs.existsSync(path), `missing ${path}`);
     assert.match(vite, new RegExp(`${input}:[\\s\\S]*${path.replace('public-site/', '').replace(/[./-]/g, '\\$&')}`, 'i'));
@@ -35,6 +36,17 @@ test('legal and support pages remain visibly draft until explicit publication ap
     assert.match(html, /data-publication-status/i);
     assert.match(html, /\/src\/publicPages\.js/i);
   }
+});
+
+test('app-link fallback is static and never inspects or transmits secret URL state', () => {
+  const html = fs.readFileSync('public-site/app/index.html', 'utf8');
+  assert.match(html, /name="referrer" content="no-referrer"/i);
+  assert.match(html, /Content-Security-Policy/i);
+  assert.match(html, /default-src 'none'/i);
+  assert.match(html, /noindex,nofollow,noarchive/i);
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /location\.(hash|search)|URLSearchParams|fetch\(|XMLHttpRequest|sendBeacon|analytics/i);
+  assert.match(html, /does not read, display, copy or transmit link fragments/i);
 });
 
 test('public-site release preflight requires reviewed identity, contact, legal text and a current publishable key', () => {

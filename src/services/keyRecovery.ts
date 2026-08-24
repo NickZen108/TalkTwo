@@ -30,7 +30,9 @@ export async function createKeyRecoveryRequest(relationshipId: string) {
       requestId,
       expiresAt: String(row.expires_at),
       verificationCode: material.verificationCode,
-      url: buildTalkTwoLink('recover-key', token, { fragment: { s: material.secret } }),
+      // The recovery token authorizes another chat member to inspect/fulfill this
+      // request, so keep it beside the envelope secret in the URL fragment.
+      url: buildTalkTwoLink('recover-key', undefined, { fragment: { token, s: material.secret } }),
     };
   } catch (error) {
     try {

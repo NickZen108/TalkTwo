@@ -22,10 +22,14 @@ test('Vite production build includes every store-facing public route', () => {
   }
 });
 
-test('legal and support pages remain visibly draft until explicit publication approval', () => {
+test('legal and support pages remain visibly draft until explicit publication approval and backend config', () => {
   assert.match(config, /VITE_PUBLICATION_APPROVED/i);
+  assert.match(config, /VITE_SUPABASE_URL/i);
+  assert.match(config, /VITE_SUPABASE_PUBLISHABLE_KEY/i);
   assert.match(config, /publicationApproved[\s\S]*=== 'true'/i);
   assert.match(config, /missing\.push\('publicationApproved'\)/i);
+  assert.match(config, /\^sb_publishable_/i);
+  assert.match(config, /url\.protocol === 'https:'/i);
   for (const path of ['public-site/index.html', 'public-site/privacy/index.html', 'public-site/terms/index.html', 'public-site/support/index.html']) {
     const html = fs.readFileSync(path, 'utf8');
     assert.match(html, /data-publication-status/i);

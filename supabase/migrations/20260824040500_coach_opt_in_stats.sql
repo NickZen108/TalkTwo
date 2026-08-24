@@ -15,6 +15,7 @@ revoke all on table public.coach_review_stats from public, anon, authenticated;
 create or replace function public.get_my_coach_settings()
 returns table(
   enabled boolean,
+  premium_active boolean,
   reviewed_attempts integer,
   green_count integer,
   yellow_count integer,
@@ -29,6 +30,7 @@ as $$
 declare
   uid uuid := (select auth.uid());
   is_enabled boolean;
+  has_premium boolean := false;
   stats public.coach_review_stats;
 begin
   if uid is null then raise exception 'Authentication required'; end if;
@@ -40,6 +42,16 @@ begin
 
   if not found then raise exception 'Profile not found'; end if;
 
+  select exists(
+    select 1
+    from public.user_plans p
+    where p.user_id = uid
+      and (
+        (p.plan = 'trial' and p.trial_ends_at is not null and p.trial_ends_at > now())
+        or (p.plan = 'premium' and (p.premium_ends_at is null or p.premium_ends_at > now()))
+      )
+  ) into has_premium;
+
   select s.*
   into stats
   from public.coach_review_stats s
@@ -48,6 +60,7 @@ begin
   return query
   select
     coalesce(is_enabled, false),
+    has_premium,
     coalesce(stats.reviewed_attempts, 0),
     coalesce(stats.green_count, 0),
     coalesce(stats.yellow_count, 0),

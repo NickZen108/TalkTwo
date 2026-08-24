@@ -12,6 +12,8 @@ The connected production database was re-checked read-only against the Postgres 
 - none were executable by `anon` or `PUBLIC`;
 - neither `authenticated` nor `anon` had `CREATE` on the `public` schema.
 
+This count describes the **current production schema before the pending launch migrations**. The count may legitimately increase when Coach, organization sponsorship, delivery and other reviewed RPCs are deployed. The release invariant is structural, not “exactly 46 functions”.
+
 The same trust boundary is now encoded in `supabase/checks/security_definer_schema.sql`. A production release must require `security_definer_schema_ok` after migrations. The check is intentionally generic, so a later authenticated `SECURITY DEFINER` RPC fails the gate if it omits caller binding, fixed search path or narrow grants.
 
 ## Why the Supabase advisor still warns

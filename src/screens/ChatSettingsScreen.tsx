@@ -5,7 +5,7 @@ import PartnerAvailabilityCard from '../components/PartnerAvailabilityCard';
 import { BACKGROUND_THEMES, BUBBLE_THEMES, initialsForName, safeBackgroundTheme, safeBubbleTheme, textColorForBackground, type BackgroundThemeName, type BubbleThemeName } from '../domain/chatPresentation';
 import { exportableMessages, validateExportDateRange } from '../domain/conversationExport';
 import { getConversationTheme, listMemberPreferences, setConversationTheme, setMemberPreference } from '../services/localDb';
-import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, setMemberBlocked, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
+import { createMemberInvitation, listPendingMemberApprovals, listRelationshipMembers, respondMemberInvitation, setExtraMemberRenewalApproval, type PendingApproval, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import type { PremiumSubscriptionProductKey } from '../domain/storeProducts';
 import { MAX_PERSONAL_BOUNDARIES, MAX_PERSONAL_BOUNDARY_LENGTH, validatePersonalBoundary } from '../domain/personalBoundaries';
@@ -221,33 +221,6 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
     onAppearanceChanged();
   }
 
-  function confirmBlock(member: RelationshipMember) {
-    const currentlyBlocked = member.blocked_by_me;
-    const displayName = localStates[member.user_id]?.alias.trim() || member.display_name;
-    Alert.alert(
-      t(currentlyBlocked ? 'settings.unblockTitle' : 'settings.blockTitle', { name: displayName }),
-      t(currentlyBlocked ? 'settings.unblockBody' : 'settings.blockBody'),
-      [
-        { text: t('chat.cancel'), style: 'cancel' },
-        {
-          text: t(currentlyBlocked ? 'settings.unblock' : 'settings.block'),
-          style: currentlyBlocked ? 'default' : 'destructive',
-          onPress: () => void (async () => {
-            try {
-              setBusy(true);
-              await setMemberBlocked(relationship.id, member.user_id, !currentlyBlocked);
-              await refresh();
-            } catch (error) {
-              Alert.alert(t('settings.blockError'), error instanceof Error ? error.message : t('common.tryAgain'));
-            } finally {
-              setBusy(false);
-            }
-          })(),
-        },
-      ],
-    );
-  }
-
   function changeRenewalApproval(member: RelationshipMember) {
     if (member.renewal_approved_by_me === null) return;
     const displayName = localStates[member.user_id]?.alias.trim() || member.display_name;
@@ -418,7 +391,6 @@ export default function ChatSettingsScreen({ relationship, session, exportMessag
                     <TouchableOpacity key={key} accessibilityLabel={t('settings.bubbleLabel', { theme: t(BUBBLE_THEME_KEYS[key]) })} accessibilityRole="button" accessibilityState={{ selected: state.bubble === key }} onPress={() => void saveMemberPreference(member, { bubble: key })} style={[styles.colorDot, { backgroundColor: theme.background }, state.bubble === key && styles.colorSelected]} />
                   ))}
                 </View>
-                {member.user_id !== session.user.id ? <Button styles={styles} title={t(member.blocked_by_me ? 'settings.unblockPerson' : 'settings.blockPerson')} onPress={() => confirmBlock(member)} secondary={!member.blocked_by_me} danger={member.blocked_by_me} disabled={busy} /> : null}
                 {member.user_id !== session.user.id && member.is_extra && member.renewal_approved_by_me !== null ? <Button styles={styles} title={t(member.renewal_approved_by_me ? 'settings.stopMyApproval' : 'settings.reapproveMonthly')} onPress={() => changeRenewalApproval(member)} secondary={member.renewal_approved_by_me} disabled={busy} /> : null}
               </View>
             );
@@ -528,7 +500,7 @@ function makeStyles(colors: AppColors) {
     aliasInput: { minHeight: 44, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 12, fontSize: 16, color: colors.text, backgroundColor: colors.input },
     smallLabel: { fontSize: 12, color: colors.muted, fontWeight: '700' },
     colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    colorDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.borderStrong },
+    colorDot: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong },
     colorSelected: { borderWidth: 3, borderColor: colors.accent },
     approvalCard: { gap: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     twoButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

@@ -49,6 +49,24 @@ test('rejects unsupported, binary, empty, oversized and over-page documents', ()
   for (const value of cases) assert.equal(validateTextAttachment(value).ok, false);
 });
 
+test('rejects invisible or bidi formatting in attachment file names', () => {
+  const zeroWidth = validateTextAttachment({
+    name: 'plan\u200B.txt',
+    mimeType: 'text/plain',
+    sizeBytes: 4,
+    text: 'text',
+  });
+  const bidi = validateTextAttachment({
+    name: 'plan\u202Etxt.csv',
+    mimeType: 'text/csv',
+    sizeBytes: 4,
+    text: 'a,b',
+  });
+  assert.equal(zeroWidth.ok, false);
+  assert.equal(bidi.ok, false);
+  assert.match(zeroWidth.ok ? '' : zeroWidth.reason, /invisible formatting/i);
+});
+
 test('formats attachment sizes for compact message metadata', () => {
   assert.equal(attachmentSizeLabel(512), '512 B');
   assert.equal(attachmentSizeLabel(1025), '2 KB');

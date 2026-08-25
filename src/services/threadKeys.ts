@@ -29,6 +29,7 @@ const secureOptions: SecureStore.SecureStoreOptions = {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 let registryQueue: Promise<void> = Promise.resolve();
+const threadKeyCreation = new Map<string, Promise<string>>();
 
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -37,6 +38,12 @@ function bytesToHex(bytes: Uint8Array) {
 function assertKey(key: string) {
   if (!KEY_PATTERN.test(key)) throw new Error('The secure key is invalid.');
   return key.toLowerCase();
+}
+
+function assertRelationshipId(relationshipId: string) {
+  const clean = relationshipId.trim();
+  if (!clean) throw new Error('The conversation identifier is missing.');
+  return clean;
 }
 
 function trackedSecretName(name: string) {
@@ -112,12 +119,12 @@ async function clearTrackedSecrets(predicate: (name: string) => boolean) {
   });
 }
 
-function envelopeAad(token: string) {
-  return encoder.encode(`talktwo-key-envelope-v1:${token.trim()}`);
+function envelopeAad(token: string, relationshipId: string) {
+  return encoder.encode(`talktwo-key-envelope-v2:${token.trim()}:${assertRelationshipId(relationshipId)}`);
 }
 
-function recoveryAad(token: string) {
-  return encoder.encode(`talktwo-key-recovery-v1:${token.trim()}`);
+function recoveryAad(token: string, relationshipId: string) {
+  return encoder.encode(`talktwo-key-recovery-v2:${token.trim()}:${assertRelationshipId(relationshipId)}`);
 }
 
 async function recoveryVerificationCode(secret: string) {
@@ -129,33 +136,63 @@ async function recoveryVerificationCode(secret: string) {
 }
 
 export async function getThreadKey(relationshipId: string) {
-  const key = await getTrackedSecret(`${THREAD_PREFIX}${relationshipId}`);
+  const cleanRelationshipId = assertRelationshipId(relationshipId);
+  const key = await getTrackedSecret(`${THREAD_PREFIX}${cleanRelationshipId}`);
   return key ? assertKey(key) : null;
 }
 
 export async function storeThreadKey(relationshipId: string, key: string) {
-  await setTrackedSecret(`${THREAD_PREFIX}${relationshipId}`, assertKey(key));
+  const cleanRelationshipId = assertRelationshipId(relationshipId);
+  await setTrackedSecret(`${THREAD_PREFIX}${cleanRelationshipId}`, assertKey(key));
 }
 
 export async function ensureThreadKey(relationshipId: string) {
-  const existing = await getThreadKey(relationshipId);
+  const cleanRelationshipId = assertRelationshipId(relationshipId);
+  const existing = await getThreadKey(cleanRelationshipId);
   if (existing) return existing;
-  const generated = bytesToHex(await getRandomBytesAsync(32));
-  await storeThreadKey(relationshipId, generated);
-  return generated;
+
+  const inFlight = threadKeyCreation.get(cleanRelationshipId);
+  if (inFlight) return inFlight;
+
+  const creation = (async () => {
+    // Re-check inside the per-conversation critical section. Another first-use
+    // operation may have stored a key while this caller was reading SecureStore.
+    const rechecked = await getThreadKey(cleanRelationshipId);
+    if (rechecked) return rechecked;
+    const generated = bytesToHex(await getRandomBytesAsync(32));
+    await storeThreadKey(cleanRelationshipId, generated);
+    return generated;
+  })();
+
+  threadKeyCreation.set(cleanRelationshipId, creation);
+  try {
+    return await creation;
+  } finally {
+    if (threadKeyCreation.get(cleanRelationshipId) === creation) {
+      threadKeyCreation.delete(cleanRelationshipId);
+    }
+  }
 }
 
-export async function createInvitationEnvelope(token: string, threadKey: string) {
+export async function createInvitationEnvelope(token: string, relationshipId: string, threadKey: string) {
   const secret = bytesToHex(await getRandomBytesAsync(32));
   const wrappingKey = await AESEncryptionKey.import(secret, 'hex');
-  const sealed = await aesEncryptAsync(encoder.encode(assertKey(threadKey)), wrappingKey, { additionalData: envelopeAad(token) });
+  const sealed = await aesEncryptAsync(
+    encoder.encode(assertKey(threadKey)),
+    wrappingKey,
+    { additionalData: envelopeAad(token, relationshipId) },
+  );
   return { secret, envelope: await sealed.combined('base64') };
 }
 
-export async function openInvitationEnvelope(token: string, secret: string, envelope: string) {
+export async function openInvitationEnvelope(token: string, relationshipId: string, secret: string, envelope: string) {
   const wrappingKey = await AESEncryptionKey.import(assertKey(secret), 'hex');
   const sealed = AESSealedData.fromCombined(envelope);
-  const decrypted = await aesDecryptAsync(sealed, wrappingKey, { additionalData: envelopeAad(token), output: 'bytes' });
+  const decrypted = await aesDecryptAsync(
+    sealed,
+    wrappingKey,
+    { additionalData: envelopeAad(token, relationshipId), output: 'bytes' },
+  );
   return assertKey(decoder.decode(decrypted as Uint8Array).trim());
 }
 
@@ -172,7 +209,7 @@ export async function consumeInitialInviteEnvelope(token: string, relationshipId
   const pendingName = `${PENDING_TOKEN_PREFIX}${token}`;
   const secret = await getTrackedSecret(pendingName);
   if (!secret) throw new Error('This invitation is missing its one-time encryption secret. Ask the sender for a new invitation.');
-  const threadKey = await openInvitationEnvelope(token, secret, envelope);
+  const threadKey = await openInvitationEnvelope(token, relationshipId, secret, envelope);
   await storeThreadKey(relationshipId, threadKey);
   await deleteTrackedSecret(pendingName);
   return threadKey;
@@ -200,7 +237,7 @@ export async function installActiveMemberEnvelope(invitationId: string, relation
     throw new Error('The pending invitation encryption data is damaged. Ask a current member to send a recovery invitation.');
   }
   if (!parsed.token || !parsed.secret) throw new Error('The pending invitation encryption data is incomplete.');
-  const threadKey = await openInvitationEnvelope(parsed.token, parsed.secret, envelope);
+  const threadKey = await openInvitationEnvelope(parsed.token, relationshipId, parsed.secret, envelope);
   await storeThreadKey(relationshipId, threadKey);
   await deleteTrackedSecret(pendingName);
   return true;
@@ -208,7 +245,7 @@ export async function installActiveMemberEnvelope(invitationId: string, relation
 
 export async function removeThreadKeys(relationshipIds: string[]) {
   for (const relationshipId of [...new Set(relationshipIds)].filter(Boolean)) {
-    await deleteTrackedSecret(`${THREAD_PREFIX}${relationshipId}`);
+    await deleteTrackedSecret(`${THREAD_PREFIX}${assertRelationshipId(relationshipId)}`);
   }
 }
 
@@ -246,7 +283,7 @@ export async function createKeyRecoveryEnvelope(token: string, relationshipId: s
   if (!secret) throw new Error('This recovery link is missing its one-time secret. Ask for a new recovery request.');
   if (!threadKey) throw new Error('This device does not have the conversation key and cannot approve recovery.');
   const wrappingKey = await AESEncryptionKey.import(assertKey(secret), 'hex');
-  const sealed = await aesEncryptAsync(encoder.encode(threadKey), wrappingKey, { additionalData: recoveryAad(token) });
+  const sealed = await aesEncryptAsync(encoder.encode(threadKey), wrappingKey, { additionalData: recoveryAad(token, relationshipId) });
   return await sealed.combined('base64') as string;
 }
 
@@ -269,7 +306,7 @@ export async function installKeyRecoveryEnvelope(requestId: string, token: strin
   }
   const wrappingKey = await AESEncryptionKey.import(assertKey(parsed.secret), 'hex');
   const sealed = AESSealedData.fromCombined(envelope);
-  const decrypted = await aesDecryptAsync(sealed, wrappingKey, { additionalData: recoveryAad(token), output: 'bytes' });
+  const decrypted = await aesDecryptAsync(sealed, wrappingKey, { additionalData: recoveryAad(token, relationshipId), output: 'bytes' });
   await storeThreadKey(relationshipId, assertKey(decoder.decode(decrypted as Uint8Array).trim()));
   await deleteTrackedSecret(requestName);
   return true;

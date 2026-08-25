@@ -5,7 +5,7 @@ export const APP_PALETTES = {
     surfaceSoft: '#F3F3F0',
     text: '#171717',
     muted: '#686863',
-    subtle: '#7B7B75',
+    subtle: '#6F6F69',
     border: '#DDDDD7',
     borderStrong: '#CFCFC9',
     brand: '#173F34',

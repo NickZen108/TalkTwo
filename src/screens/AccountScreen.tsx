@@ -9,6 +9,8 @@ import { getCoachCopy } from '../i18n/coachCopy';
 import { getPublicInfoCopy } from '../i18n/legalCopy';
 import { saveAccountLocalePreference, useI18n, type LocalePreference } from '../i18n/I18nContext';
 import { talkTwoPublicSiteLinks } from '../lib/publicSite';
+import FeedbackScreen from './FeedbackScreen';
+import FAQScreen from './FAQScreen';
 
 export default function AccountScreen({
   userId,
@@ -31,6 +33,8 @@ export default function AccountScreen({
   const [pushBusy, setPushBusy] = useState(false);
   const [coach, setCoach] = useState<CoachSettings | null>(null);
   const [coachBusy, setCoachBusy] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [showFaq, setShowFaq] = useState(false);
   const confirmed = accountDeleteConfirmed(confirmation);
   const coachEffective = Boolean(coach?.enabled && coach?.premium_active);
 
@@ -129,6 +133,13 @@ export default function AccountScreen({
     { label: publicInfoCopy.deleteAccount, url: talkTwoPublicSiteLinks.deleteAccount },
   ] : [];
 
+  if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
+  if (showFaq) return <FAQScreen onBack={() => setShowFaq(false)} />;
+
+  const helpCopy = locale === 'da'
+    ? { title: 'Hjælp og feedback', suggestions: 'Foreslå ændringer', faq: 'FAQ', body: 'Se hurtige svar eller fortæl, hvad du synes TalkTwo bør ændre.' }
+    : { title: 'Help & feedback', suggestions: 'Suggest changes', faq: 'FAQ', body: 'See quick answers or tell us what you think TalkTwo should change.' };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -139,6 +150,17 @@ export default function AccountScreen({
           <View style={styles.headerText}>
             <Text style={styles.title}>{t('account.title')}</Text>
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{helpCopy.title}</Text>
+          <Text style={styles.body}>{helpCopy.body}</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={() => setShowFeedback(true)} style={styles.helpButton}>
+            <Text style={styles.helpButtonText}>{helpCopy.suggestions}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={() => setShowFaq(true)} style={styles.helpButton}>
+            <Text style={styles.helpButtonText}>{helpCopy.faq}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
@@ -268,6 +290,8 @@ function makeStyles(colors: AppColors) {
     coachButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
     coachButtonEnabled: { backgroundColor: colors.accentStrong },
     coachButtonText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
+    helpButton: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSoft, borderWidth: 1, borderColor: colors.borderStrong },
+    helpButtonText: { color: colors.accent, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
     publicLinkButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surfaceSoft, borderWidth: 1, borderColor: colors.borderStrong },
     publicLinkText: { color: colors.accent, fontWeight: '800', flexShrink: 1 },
     statsWrap: { gap: 9, paddingTop: 2 },

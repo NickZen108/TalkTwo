@@ -1,80 +1,113 @@
 # TalkTwo App Store / Google Play setup checklist
 
-This is the external-account work required before native purchases can be tested end to end.
+This is the external-account work required before native purchases and signed release behavior can be tested end to end.
 
 ## Apple
+
 - Active Apple Developer Program membership.
-- App record in App Store Connect for bundle ID `com.talktwo.app`.
-- Paid Applications agreement accepted, with banking and tax information completed.
-- In-App Purchase products created with the IDs in `src/domain/storeProducts.ts`.
-- Subscription products placed into appropriate subscription groups.
-- App Store Server Notifications configured to call `apple-store-events` once deployed.
-- Apple root CA certificates stored as DER/base64 JSON in `APPLE_ROOT_CA_DER_BASE64_JSON`.
-- `APPLE_ENVIRONMENT`, `APPLE_BUNDLE_ID` and production `APPLE_APP_ID` configured as Supabase secrets.
-- StoreKit client sets `appAccountToken` to the authenticated TalkTwo user UUID.
-- Sandbox tester account available for test purchases.
+- App Store Connect record for bundle ID `com.talktwo.app`.
+- Paid Applications agreement, banking and tax setup complete.
+- All product IDs from `src/domain/storeProducts.ts` created exactly.
+- `com.talktwo.extra.observer.monthly` and `com.talktwo.extra.participant.monthly` are auto-renewable subscriptions in the **same subscription group**.
+- Participant is ranked at a **higher subscription level** than observer. Apple treats movement to a higher-ranked subscription as an immediate upgrade; configure this deliberately rather than relying on accidental ordering.
+- No annual extra-member product exists.
+- Premium subscription products are placed in deliberate subscription groups/levels matching their intended switching behavior.
+- App Store Server Notifications target `apple-store-events` after that function is deployed.
+- Apple verification roots and `APPLE_ENVIRONMENT`, `APPLE_BUNDLE_ID`, production `APPLE_APP_ID` are configured as Supabase secrets.
+- StoreKit client sends `appAccountToken` equal to the authenticated TalkTwo user UUID.
+- Sandbox tester is available.
+- Final Apple Team ID is used by `/.well-known/apple-app-site-association`; signed build claims only intended `/app/*` routes.
+
+### Apple observer → participant test
+
+1. Buy observer through the sandbox and confirm TalkTwo records the original transaction identity.
+2. Obtain fresh unanimous write-access approval inside the target chat.
+3. Start participant purchase from TalkTwo.
+4. Confirm App Store presents it as an upgrade in the same subscription group.
+5. Verify the new transaction keeps the expected original transaction identifier; TalkTwo must reject an unrelated subscription.
+6. Confirm writing access appears only after server verification.
+7. Verify a cancelled upgrade leaves observer access intact and can be retried.
+8. Verify a process-kill after successful store purchase reconciles on next app launch/connection.
+
+Apple determines the actual upgrade refund/charge. TalkTwo must not promise or calculate a specific prorated amount itself.
 
 ## Google
+
 - Active Google Play Console developer account.
-- App created with package `com.talktwo.app`.
-- Payments profile / merchant setup completed.
-- Products and subscriptions created with the IDs in `src/domain/storeProducts.ts`.
-- Monthly extra-member products must not offer annual prepayment.
-- Google Play Developer API service account configured in `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`.
-- Real-time developer notifications configured to call `google-store-events` once deployed.
-- Pub/Sub push authentication configured with `GOOGLE_PUBSUB_AUDIENCE` and `GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL`.
-- `GOOGLE_PACKAGE_NAME` configured as `com.talktwo.app`.
+- App package is `com.talktwo.app`.
+- Payments/merchant setup complete.
+- All product/subscription IDs from `src/domain/storeProducts.ts` created exactly.
+- `extra_observer_monthly` and `extra_participant_monthly` are monthly subscriptions; no annual extra-member plan.
+- Each extra-member product exposes exactly one eligible offer expected by the client; ambiguous offers fail closed.
+- Google Play Developer API service account is configured in `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`.
+- Real-time developer notifications target `google-store-events` after deployment.
+- Pub/Sub verification secrets `GOOGLE_PUBSUB_AUDIENCE`, `GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PACKAGE_NAME=com.talktwo.app` are configured.
 - Play Billing client sets `obfuscatedAccountId` to SHA-256(`talktwo:<TalkTwo user UUID>`).
-- Each extra-member subscription product exposes exactly one eligible monthly Google Play offer; ambiguous offers fail closed in the client.
-- Internal testing track and licensed tester account available.
+- Internal testing track and licensed tester are available.
+- Final Android release certificate SHA-256 fingerprint is served in `/.well-known/assetlinks.json`; signed app has `autoVerify` HTTPS App Link for `/app/`.
+
+### Google observer → participant test
+
+1. Buy observer and finish/acknowledge the verified purchase.
+2. Obtain fresh unanimous write-access approval in the target chat.
+3. Upgrade using the active observer purchase token as the old purchase token and replacement mode `2` (`CHARGE_PRORATED_PRICE`).
+4. Confirm Google creates a new active participant purchase.
+5. Through the Play Developer API, require the verified new subscription's `linkedPurchaseToken` to equal the old verified observer token.
+6. TalkTwo must reject a new participant subscription that is not linked to the observer purchase.
+7. Confirm writing access appears only after the replacement is verified.
+8. Confirm cancel/process-kill/retry does not create parallel TalkTwo checkout authorizations.
+
+Google Play determines and displays the actual prorated replacement charge; TalkTwo only binds the normal 99 DKK/month participant product and verifies the replacement relationship.
 
 ## Deployment gate
-- Freeze the exact release tree and require its QA mirror to be green before any production change.
-- Run `npm run release:preflight` with final release environment values; do not build for stores until it reports `TalkTwo release preflight OK.`
-- Apply the account-wide lifecycle migration before `20260820112904_store_notification_event_ingestion.sql`.
-- Apply `20260820125229_recurring_premium_subscription_lifecycle.sql` before enabling recurring Premium products. It implements initial activation plus renewal/recovery/grace-period, cancellation/on-hold, expiry and revocation/refund processing.
-- Apply `20260820150217_account_deletion.sql` before enabling public account deletion, then run `supabase/checks/account_deletion_schema.sql` and require `account_deletion_schema_ok`.
-- Run `supabase/checks/security_definer_schema.sql` after the complete migration stack and require `security_definer_schema_ok`.
-- Apply `20260824084500_ai_budget_reservations.sql` before deploying the current AI review functions; the functions reserve the monthly budget atomically before calling OpenAI.
-- Re-run Supabase Security and Performance Advisors after migrations and resolve launch-blocking findings.
-- Configure all provider secrets before deploying the functions; they fail closed when configuration is absent.
-- Deploy `verify-store-purchase` with Supabase JWT verification enabled.
-- Deploy Apple and Google webhook functions with their platform-specific verification code intact; these endpoints intentionally do not use TalkTwo JWT auth because providers authenticate their own callbacks.
-- Deploy `dispatch-push-notifications` only with a strong `PUSH_DISPATCH_SECRET` and Expo access token configured.
-- Do not expose the public website deletion link until the HTTPS site is live, its Supabase magic-link redirect is allowlisted and a disposable-account deletion test has passed.
-- Do not release push notifications until the EAS project ID and platform push credentials are configured and tested on physical devices.
-- Final app/adaptive icon and store artwork must be approved before signed submission builds.
 
-## TalkTwo product rules to preserve
+- Finish the systematic account-independent audit, freeze one exact release tree and move the QA mirror to it.
+- Require a normal full QA run green; `steps=null` runner failures are not green validation.
+- Run mobile `npm run release:preflight` with final environment values.
+- Final HTTPS domain, AASA, assetlinks and `/app/*` privacy-minimized fallback must be live before `EXPO_PUBLIC_TALKTWO_SITE_URL` is enabled.
+- Apply **all** migrations in lexical order through the eventual release head. For the current tree this includes `20260824114000` through `20260824115900`; do not stop at `20260824113000`.
+- Run `supabase/checks/account_deletion_schema.sql` and require `account_deletion_schema_ok`.
+- Run `supabase/checks/security_definer_schema.sql` and require `security_definer_schema_ok` after the complete migration stack.
+- Re-run Supabase Security and Performance Advisors.
+- Deploy `verify-store-purchase` with JWT verification enabled.
+- Deploy Apple/Google provider webhook functions with provider verification intact.
+- Deploy `dispatch-push-notifications` only with strong `PUSH_DISPATCH_SECRET` and Expo access token.
+- Configure EAS/APNs/FCM and test push on physical devices before release.
+- Final app/adaptive icon, splash and store artwork must be approved before submission builds.
+
+## Product rules to preserve
+
 - Extra-member payment is account-wide, not per chat.
-- Observer access is 29 DKK/month and covers read-only extra membership in all approved chats.
-- Participant access is 99 DKK/month and covers participant or observer billing entitlement in all approved chats.
-- Each chat still requires its own unanimous approval before access begins.
-- An existing qualifying subscription means a newly approved chat activates without a second purchase.
-- Observer-to-participant upgrade is prorated for the current period and renews at 99 DKK/month.
-- Premium gifts are durable recipient entitlements; a lost link never destroys the paid value.
-- Recurring Premium lifecycle state comes from verified Apple/Google transactions and notifications, not from client claims.
+- Observer is 29 DKK/month and read-only.
+- Participant is 99 DKK/month and can write only in chats where writing access has been approved.
+- Each chat independently requires unanimous approval.
+- Existing participant entitlement can cover a newly approved write upgrade without a second purchase.
+- A plain observer entitlement never grants writing access by itself.
+- Observer → participant is a **native subscription replacement**, not a separate TalkTwo one-time upgrade charge.
+- Store/platform must match the existing observer subscription; no Google→Apple or Apple→Google in-place upgrade.
+- Once native checkout begins, the unanimous approval snapshot for that checkout is fixed so a person joining the chat later cannot retroactively invalidate an already-authorized purchase.
+- Premium gifts are one month / 59 DKK one-time purchases and remain recoverable if a link is lost.
+- Recurring Premium and extra-member lifecycle state comes only from verified provider data, never client claims.
 
-## Test cases before release
-1. New observer purchase after unanimous approval.
-2. New participant purchase after unanimous approval.
-3. Payment is impossible before unanimous approval.
-4. Existing observer subscription joins a second chat read-only with no second charge.
-5. Existing participant subscription joins another approved chat with no second charge.
-6. Observer entitlement does not cover a participant invitation until upgraded.
-7. Mid-cycle observer-to-participant upgrade charges only the prorated difference.
-8. One chat withdraws approval: that chat ends at the current period boundary while unrelated chats remain intact.
-9. Store cancellation preserves access until the paid period ends.
-10. Refund/revocation removes entitlement according to store status.
-11. Duplicate store notifications do not duplicate access.
-12. A receipt bound to another TalkTwo account is rejected.
-13. Premium gift can be recovered after losing the original link.
-14. Restore purchases works after reinstall / new device.
-15. Dark mode purchase screens retain readable contrast.
-16. Restore refuses a valid store receipt that belongs to another TalkTwo account or has no existing verified TalkTwo ledger entry.
-17. Premium individual monthly: purchase, renewal, cancellation and expiry all update only the payer's entitlement.
-18. Premium for two monthly/annual: both payer and selected beneficiary receive the verified period, and later renewal extends both.
-19. Premium grace period remains available only through the provider-verified grace end; refund/revocation removes the affected store entitlement immediately.
-20. Account deletion after a purchase/sponsorship succeeds while retained payment history is pseudonymized and another person's already-paid entitlement survives.
-21. AI review cannot start when the atomic monthly budget reservation would exceed the configured hard limit; no send approval is created on failure.
-22. Public deletion works end-to-end for a disposable account and an unknown email neither creates an account nor reveals whether one exists.
+## Minimum sandbox/internal test matrix
+
+1. Observer purchase after unanimous approval.
+2. Participant purchase after unanimous approval.
+3. Payment impossible before unanimous approval.
+4. Observer joins another approved chat read-only without second charge.
+5. Participant joins another approved chat without second charge.
+6. Observer requests writing access; one approver rejects; no checkout possible.
+7. Existing participant entitlement receives fresh approval in another chat and gains writing access without another charge.
+8. Apple observer→participant upgrade succeeds only inside configured subscription group/levels.
+9. Google observer→participant upgrade verifies `linkedPurchaseToken`.
+10. Cross-store upgrade is blocked before purchase starts.
+11. Cancelled/interrupted upgrade is retryable without duplicate TalkTwo intents.
+12. Store cancellation preserves paid access to the proper boundary; hold/pause suspends according to verified lifecycle state.
+13. Refund/revocation removes affected entitlement.
+14. Duplicate provider notifications are idempotent.
+15. Receipt/account binding to another TalkTwo account is rejected.
+16. Premium gift survives lost link and activates only for intended recipient.
+17. Restore after reinstall/new device succeeds only for already-linked purchases.
+18. Account deletion succeeds after purchase/sponsorship and does not destroy another beneficiary's already-paid entitlement.
+19. Signed iOS/Android app links, PKCE auth, SQLCipher, dark mode and accessibility pass physical-device testing.
+20. Disposable message/document rows are ciphertext-only at rest and unread content exposes no body hash before open.

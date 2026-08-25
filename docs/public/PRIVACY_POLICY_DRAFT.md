@@ -21,8 +21,8 @@ Depending on the features you use, TalkTwo processes:
 
 - **Account information:** email address, account/user ID, display name, language preference and authentication records.
 - **Conversation membership and settings:** conversation IDs, participant/observer roles, invitations and approvals, message-window settings, blocking state, local-feature configuration and subscription entitlements.
-- **Messages and documents:** message text and supported plain-text document contents needed to provide messaging and, when requested, conflict review. Message rows also contain operational metadata such as sender/recipient IDs, timestamps, availability state, risk level, delivery state and rejection/withdrawal state.
-- **Encrypted message data:** TalkTwo encrypts message content for delivery and stores decrypted copies locally on the user's device after they become visible. Server-side plaintext is designed to be scrubbed after the relevant devices have securely cached content. TalkTwo must not be described as universally end-to-end encrypted because Premium AI review requires selected plaintext to be processed by TalkTwo's AI provider.
+- **Messages and documents:** message text and supported plain-text document contents are processed transiently at the trusted send/review boundary when needed to apply TalkTwo's communication rules, Premium AI review and recipient Personal Boundaries. The release design removes plaintext from a new `messages` row in the database trigger before the row is persisted; the durable message row keeps encrypted content plus necessary hashes and operational metadata such as sender/recipient IDs, timestamps, availability state and risk level.
+- **Encrypted message data:** TalkTwo encrypts message content for delivery and stores decrypted copies locally on a user's device after they become visible. This ciphertext-at-rest design must not be described as zero-knowledge or universal end-to-end encryption: TalkTwo's trusted backend processes plaintext during send-time policy enforcement, and Premium AI review sends selected plaintext to the configured AI provider when the user requests that feature.
 - **AI review data:** when a Premium user requests message or document review, the submitted text and limited recent conversation context may be sent to the configured AI provider so the requested review can be produced. Current production code is designed to send these requests with provider-side storage disabled (`store: false`).
 - **Coach data:** if Premium Coach is enabled, TalkTwo stores the user's own aggregate counts of reviewed attempts and green/yellow/red outcomes. These statistics do not contain message text and are not used to compare conversation partners.
 - **Purchase and entitlement information:** product IDs, store transaction/subscription identifiers and status needed to verify purchases, restore access, handle refunds and prevent fraud. TalkTwo does not receive payment-card details from Apple or Google.
@@ -66,13 +66,13 @@ A sponsoring organization that pays for a user's Premium access is not given acc
 
 ## 5. Local device data
 
-TalkTwo deliberately keeps some information local to the user's device, including decrypted visible messages, conversation keys and local appearance preferences such as aliases, bubble colours and backgrounds. Local message storage is designed to use encrypted device storage/SQLCipher where supported by the release configuration.
+TalkTwo deliberately keeps some information local to the user's device, including decrypted visible messages, conversation keys and local appearance preferences such as aliases, bubble colours and backgrounds. The native release configuration requires SQLCipher for the local database and uses device-protected SecureStore for database keys, authentication sessions and conversation secrets. The app fails closed rather than opening the local message cache if SQLCipher is unavailable. Android app-data backup is disabled for the release configuration.
 
 Deleting the app or losing a device may affect locally held information. Other conversation participants may retain messages they have already opened and securely stored on their own devices.
 
 ## 6. Retention and deletion
 
-TalkTwo is designed to minimize server-side readable message content and scrub plaintext after required device caching conditions are met. Different operational, security and purchase-integrity records may need different retention periods.
+For newly inserted message rows in the release design, TalkTwo applies required send-time policy checks before persistence and then stores ciphertext rather than message plaintext in the `messages` table. Legacy rows from earlier schema versions retain a separate plaintext-scrubbing lifecycle as a migration/compatibility safeguard. Different operational, security, hash/metadata and purchase-integrity records may need different retention periods.
 
 A signed-in user can permanently delete their TalkTwo account from **Account & privacy → Delete account**. Account deletion is designed to remove the authentication account, profile, memberships, settings and server-side message data involving that account, and to remove that account's decrypted local messages and conversation keys from the current device.
 
@@ -96,7 +96,7 @@ Users can, depending on the feature and applicable law:
 
 ## 8. Security
 
-TalkTwo uses HTTPS/TLS for data in transit and is designed around encryption, least-privilege backend access, authenticated database functions, local encrypted storage and data minimization. No online service can guarantee absolute security.
+TalkTwo uses HTTPS/TLS for data in transit and is designed around encryption, least-privilege backend access, authenticated database functions, fail-closed encrypted local storage and data minimization. No online service can guarantee absolute security.
 
 Users should protect access to their email account and device because TalkTwo uses passwordless email sign-in and local device storage.
 

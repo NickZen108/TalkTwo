@@ -72,7 +72,7 @@ function makeStyles(colors: AppColors) {
     brand: { fontSize: 34, fontWeight: '800', color: colors.brand },
     tagline: { marginTop: 4, color: colors.muted },
     languages: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
-    languageButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surface },
+    languageButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surface },
     languageSelected: { borderColor: colors.accent, borderWidth: 2 },
     languageText: { color: colors.text, fontWeight: '700' },
     onboarding: { backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 12 },
@@ -87,10 +87,10 @@ function makeStyles(colors: AppColors) {
     help: { color: colors.muted, lineHeight: 20 },
     email: { fontWeight: '800', fontSize: 16, color: colors.text },
     input: { minHeight: 50, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, backgroundColor: colors.input, color: colors.text },
-    button: { backgroundColor: colors.accentStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+    button: { minHeight: 44, backgroundColor: colors.accentStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
     buttonText: { color: colors.accentText, fontWeight: '800' },
     disabled: { opacity: 0.3 },
-    secondary: { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: colors.surface },
+    secondary: { minHeight: 44, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
     secondaryText: { fontWeight: '800', color: colors.text },
   });
 }

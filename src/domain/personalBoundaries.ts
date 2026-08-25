@@ -1,3 +1,5 @@
+import { normalizePolicyText } from './policyText';
+
 export const MAX_PERSONAL_BOUNDARIES = 10;
 export const MAX_PERSONAL_BOUNDARY_LENGTH = 40;
 
@@ -8,8 +10,7 @@ const ESSENTIAL_SINGLE_TERMS = new Set([
 ]);
 
 export function normalizePersonalBoundary(value: string) {
-  return value
-    .normalize('NFKC')
+  return normalizePolicyText(value)
     .toLocaleLowerCase('und')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()

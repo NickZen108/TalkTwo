@@ -67,15 +67,24 @@ Deno.serve(async (req: Request) => {
   const rows = jobs ?? [];
   if (rows.length === 0) return json({ claimed: 0, ticketed: 0, receipts_checked: receiptsChecked });
 
-  const messages = rows.map((row: any) => ({
-    to: row.expo_push_token,
-    title: "TalkTwo",
-    body: "You have a new message.",
-    sound: "default",
-    priority: "high",
-    channelId: "messages",
-    data: { kind: "message_available" },
-  }));
+  const messages = rows.map((row: any) => {
+    // Expo/FCM/APNs are at-least-once. A dispatcher crash can leave TalkTwo unsure
+    // whether Expo accepted a send and the stale-lock recovery may retry it. Use
+    // one stable opaque collapse key per device job so a retry coalesces/replaces
+    // the same visible notification without exposing chat/message identifiers.
+    const collapseKey = `tt-${row.job_id}`;
+    return {
+      to: row.expo_push_token,
+      title: "TalkTwo",
+      body: "You have a new message.",
+      sound: "default",
+      priority: "high",
+      channelId: "messages",
+      collapseId: collapseKey,
+      tag: collapseKey,
+      data: { kind: "message_available" },
+    };
+  });
 
   let sendData: any;
   try {

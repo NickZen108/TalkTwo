@@ -1,24 +1,19 @@
 import type { SupportedLocale } from './translations';
 
+// Sender-visible state is intentionally one-dimensional: sent vs delivered to
+// the recipient app. Open/read/reject/block/activity details are never shown.
 export function sentDeliveryStatusText(
   deliveredCount: number,
   recipientCount: number,
-  rejectedCount: number,
+  _rejectedCount: number,
   locale: SupportedLocale,
 ) {
   const total = Math.max(1, recipientCount);
   const delivered = Math.max(0, Math.min(deliveredCount, total));
-  const rejected = Math.max(0, Math.min(rejectedCount, total));
 
-  const delivery = delivered >= total
-    ? locale === 'da' ? 'Leveret' : 'Delivered'
-    : delivered > 0 && total > 1
-      ? locale === 'da' ? `Leveret ${delivered}/${total}` : `Delivered ${delivered}/${total}`
-      : locale === 'da' ? 'Sendt' : 'Sent';
-
-  if (rejected === 0) return delivery;
-  const rejection = locale === 'da'
-    ? `afvist ulæst ${rejected}${total > 1 ? `/${total}` : ''}`
-    : `rejected unread ${rejected}${total > 1 ? `/${total}` : ''}`;
-  return `${delivery} · ${rejection}`;
+  if (delivered >= total) return locale === 'da' ? 'Leveret' : 'Delivered';
+  if (delivered > 0 && total > 1) {
+    return locale === 'da' ? `Leveret ${delivered}/${total}` : `Delivered ${delivered}/${total}`;
+  }
+  return locale === 'da' ? 'Sendt' : 'Sent';
 }

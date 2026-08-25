@@ -37,6 +37,7 @@
     },
     "android": {
       "package": "com.talktwo.app",
+      "allowBackup": false,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.CAMERA",

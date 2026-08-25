@@ -1,5 +1,10 @@
+import { parseTalkTwoLink } from './appLinks';
+
 const MAX_DEEP_LINK_LENGTH = 4096;
-const MAX_IDENTIFIER_LENGTH = 512;
+const INVITATION_TOKEN_PATTERN = /^[0-9a-f]{48}$/i;
+const RECOVERY_TOKEN_PATTERN = /^[0-9a-f]{64}$/i;
+const PREMIUM_GIFT_TOKEN_PATTERN = /^[0-9a-f]{48}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INVITATION_SECRET_PATTERN = /^[0-9a-f]{64}$/i;
 
 export interface PendingInvite {
@@ -16,69 +21,99 @@ export interface PendingKeyRecoveryApproval {
   token: string;
 }
 
-function safeIdentifier(value: string) {
-  if (!value || value.length > MAX_IDENTIFIER_LENGTH) return null;
-  try {
-    const decoded = decodeURIComponent(value);
-    if (!decoded || decoded.length > MAX_IDENTIFIER_LENGTH || /[\u0000-\u001f\u007f]/.test(decoded)) return null;
-    return decoded;
-  } catch {
-    return null;
-  }
-}
-
-function singleParameter(value: string, name: string) {
-  const params = new URLSearchParams(value);
+function singleParameter(params: URLSearchParams, name: string) {
   const matches = params.getAll(name);
   return matches.length === 1 && matches[0] ? matches[0] : null;
 }
 
-export function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
+function hasExactlyParameters(params: URLSearchParams, names: string[]) {
+  const entries = Array.from(params.keys());
+  return entries.length === names.length
+    && names.every((name) => params.getAll(name).length === 1);
+}
+
+function hasNoParameters(params: URLSearchParams) {
+  return Array.from(params.keys()).length === 0;
+}
+
+function exactFragmentValue(params: URLSearchParams, name: string, pattern: RegExp) {
+  // URLSearchParams has already percent-decoded fragment values exactly once.
+  // Never decode bearer material a second time: canonical protocol tokens are
+  // fixed-format random hex and any encoded/non-canonical variant must fail.
+  const value = singleParameter(params, name);
+  return value && pattern.test(value) ? value.toLowerCase() : null;
+}
+
+function canonicalPathUuid(value: string) {
+  // Gift IDs are not bearer authority, but accepting percent-encoded path aliases
+  // creates multiple wire representations that web/native routers may normalize
+  // differently. Require the UUID exactly as it appears in the parsed path.
+  return UUID_PATTERN.test(value) ? value.toLowerCase() : null;
+}
+
+function parsed(url: string) {
   if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
-  const match = url.match(/^talktwo:\/\/(invite|member)\/([^?#]+)(?:\?[^#]*)?(?:#(.*))?$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const token = safeIdentifier(match[2]);
-  const secret = singleParameter(match[3] ?? '', 's');
-  if (!token || !secret || !INVITATION_SECRET_PATTERN.test(secret)) return null;
+  return parseTalkTwoLink(url);
+}
+
+export function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
+  const link = parsed(url);
+  // Invitation tokens are bearer authority. They must never appear in an HTTPS
+  // path/query, where web infrastructure may log them. Accept one fragment-only
+  // wire format and reject legacy/ambiguous parameter aliases.
+  if (!link || !['invite', 'member'].includes(link.family) || link.pathSegments.length !== 1) return null;
+  if (!hasNoParameters(link.query) || !hasExactlyParameters(link.fragment, ['token', 's'])) return null;
+  const token = exactFragmentValue(link.fragment, 'token', INVITATION_TOKEN_PATTERN);
+  const secret = exactFragmentValue(link.fragment, 's', INVITATION_SECRET_PATTERN);
+  if (!token || !secret) return null;
   return {
-    kind: match[1].toLowerCase() === 'member' ? 'member' : 'invite',
+    kind: link.family === 'member' ? 'member' : 'invite',
     token,
-    secret: secret.toLowerCase(),
+    secret,
   };
 }
 
 export function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
-  if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
-  const match = url.match(/^talktwo:\/\/premium-gift\/([^?#]+)\?([^#]+)$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const giftId = safeIdentifier(match[1]);
-  const token = singleParameter(match[2], 'token');
-  if (!giftId || !token || token.length > MAX_IDENTIFIER_LENGTH || /[\u0000-\u001f\u007f]/.test(token)) return null;
+  const link = parsed(url);
+  if (!link || link.family !== 'premium-gift' || link.pathSegments.length !== 2) return null;
+  if (!hasNoParameters(link.query) || !hasExactlyParameters(link.fragment, ['token'])) return null;
+  const giftId = canonicalPathUuid(link.pathSegments[1] ?? '');
+  // Keep the possession token in the fragment so an HTTPS browser fallback never
+  // sends it to the public web server, reverse proxy or request logs.
+  const token = exactFragmentValue(link.fragment, 'token', PREMIUM_GIFT_TOKEN_PATTERN);
+  if (!giftId || !token) return null;
   return { giftId, token };
 }
 
 export function keyRecoveryFromUrl(url: string): (PendingKeyRecoveryApproval & { secret: string }) | null {
-  if (!url || url.length > MAX_DEEP_LINK_LENGTH) return null;
-  const match = url.match(/^talktwo:\/\/recover-key\/([^?#]+)#(.*)$/i);
-  if (!match?.[1] || !match[2]) return null;
-  const token = safeIdentifier(match[1]);
-  const secret = singleParameter(match[2], 's');
-  if (!token || !secret || !INVITATION_SECRET_PATTERN.test(secret)) return null;
-  return { token, secret: secret.toLowerCase() };
+  const link = parsed(url);
+  // The recovery token authorizes a chat member to inspect/fulfill the request,
+  // so both it and the local envelope secret stay fragment-only and no unrelated
+  // query/fragment keys are accepted.
+  if (!link || link.family !== 'recover-key' || link.pathSegments.length !== 1) return null;
+  if (!hasNoParameters(link.query) || !hasExactlyParameters(link.fragment, ['token', 's'])) return null;
+  const token = exactFragmentValue(link.fragment, 'token', RECOVERY_TOKEN_PATTERN);
+  const secret = exactFragmentValue(link.fragment, 's', INVITATION_SECRET_PATTERN);
+  if (!token || !secret) return null;
+  return { token, secret };
 }
 
 export function isInvitationUrl(url: string) {
-  return /^talktwo:\/\/(invite|member)(?:\/|$)/i.test(url);
+  const link = parsed(url);
+  return Boolean(link && (link.family === 'invite' || link.family === 'member') && link.pathSegments.length === 1);
 }
 
 export function isPremiumGiftUrl(url: string) {
-  return /^talktwo:\/\/premium-gift(?:\/|$)/i.test(url);
+  const link = parsed(url);
+  return Boolean(link && link.family === 'premium-gift' && link.pathSegments.length === 2);
 }
 
 export function isKeyRecoveryUrl(url: string) {
-  return /^talktwo:\/\/recover-key(?:\/|$)/i.test(url);
+  const link = parsed(url);
+  return Boolean(link && link.family === 'recover-key' && link.pathSegments.length === 1);
 }
 
 export function isAuthCallbackUrl(url: string) {
-  return /^talktwo:\/\/auth(?:[/?#]|$)/i.test(url) && url.length <= MAX_DEEP_LINK_LENGTH;
+  const link = parsed(url);
+  return Boolean(link && link.family === 'auth' && link.pathSegments.length === 1);
 }

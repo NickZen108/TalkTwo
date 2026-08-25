@@ -23,6 +23,12 @@ function easProjectId() {
   return Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId ?? null;
 }
 
+function nativePlatform() {
+  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
+  if (!platform) throw new Error('Push notifications are available only on iOS and Android.');
+  return platform;
+}
+
 async function configureAndroidChannel() {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('messages', {
@@ -36,22 +42,53 @@ async function configureAndroidChannel() {
 }
 
 async function registerToken(token: string) {
-  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
-  if (!platform) throw new Error('Push notifications are available only on iOS and Android.');
   const { error } = await supabase.rpc('register_push_device', {
     expo_token: token,
-    device_platform: platform,
+    device_platform: nativePlatform(),
   });
   if (error) throw error;
   await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token, secureOptions);
 }
 
-export async function pushNotificationStatus() {
-  const localToken = await SecureStore.getItemAsync(PUSH_TOKEN_KEY, secureOptions);
-  if (!localToken) return { enabled: false, permission: (await Notifications.getPermissionsAsync()).status };
-  const { data, error } = await supabase.rpc('is_push_device_registered', { expo_token: localToken });
+async function rotateToken(previousToken: string, nextToken: string) {
+  const { error } = await supabase.rpc('rotate_push_device', {
+    previous_expo_token: previousToken,
+    next_expo_token: nextToken,
+    device_platform: nativePlatform(),
+  });
   if (error) throw error;
-  return { enabled: Boolean(data), permission: (await Notifications.getPermissionsAsync()).status };
+  // Persist the replacement only after the server atomically activated it and
+  // retired the previous token. A failed rotation therefore remains retryable.
+  await SecureStore.setItemAsync(PUSH_TOKEN_KEY, nextToken, secureOptions);
+}
+
+async function setGlobalNotificationMute(muted: boolean) {
+  const { error } = await supabase.rpc('set_my_notification_mute', {
+    rel_id: null,
+    target_sender: null,
+    muted,
+  });
+  if (error) throw error;
+}
+
+async function globalNotificationsMuted() {
+  const { data, error } = await supabase.rpc('list_my_notification_mutes', { rel_id: null });
+  if (error) throw error;
+  return (data ?? []).some((item: { relationship_id?: string | null; sender_id?: string | null }) => (
+    item.relationship_id == null && item.sender_id == null
+  ));
+}
+
+export async function pushNotificationStatus() {
+  const permission = (await Notifications.getPermissionsAsync()).status;
+  const localToken = await SecureStore.getItemAsync(PUSH_TOKEN_KEY, secureOptions);
+  if (!localToken) return { enabled: false, permission };
+  const [{ data, error }, globallyMuted] = await Promise.all([
+    supabase.rpc('is_push_device_registered', { expo_token: localToken }),
+    globalNotificationsMuted(),
+  ]);
+  if (error) throw error;
+  return { enabled: Boolean(data) && !globallyMuted, permission };
 }
 
 export async function enablePushNotifications() {
@@ -64,18 +101,28 @@ export async function enablePushNotifications() {
   if (permission.status !== 'granted') throw new Error('Notification permission was not granted. You can enable it later in device settings.');
   const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
   await registerToken(token);
+  await setGlobalNotificationMute(false);
   return token;
 }
 
 export async function disablePushNotifications() {
   const token = await SecureStore.getItemAsync(PUSH_TOKEN_KEY, secureOptions);
+  let globalMuteError: unknown = null;
   let remoteError: unknown = null;
+
+  try {
+    await setGlobalNotificationMute(true);
+  } catch (error) {
+    globalMuteError = error;
+  }
+
   if (token) {
     const { error } = await supabase.rpc('disable_push_device', { expo_token: token });
     remoteError = error;
   }
   await SecureStore.deleteItemAsync(PUSH_TOKEN_KEY, secureOptions);
   await Notifications.unregisterForNotificationsAsync().catch(() => undefined);
+  if (globalMuteError) throw globalMuteError;
   if (remoteError) throw remoteError;
 }
 
@@ -88,14 +135,8 @@ export async function refreshPushRegistrationIfEnabled() {
   if (permission.status !== 'granted') return;
   await configureAndroidChannel();
   const next = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  await registerToken(next);
-  if (next !== existing) {
-    try {
-      await supabase.rpc('disable_push_device', { expo_token: existing });
-    } catch {
-      // The refreshed token remains active even if stale-token cleanup must retry later.
-    }
-  }
+  if (next === existing) await registerToken(next);
+  else await rotateToken(existing, next);
 }
 
 export function addPushTokenRefreshListener() {

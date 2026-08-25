@@ -16,16 +16,27 @@ function bytesToHex(bytes: Uint8Array) {
 
 async function databaseKey() {
   const stored = await SecureStore.getItemAsync(DB_KEY_NAME, secureOptions);
-  if (stored && /^[0-9a-f]{64}$/i.test(stored)) return stored;
+  if (stored && /^[0-9a-f]{64}$/i.test(stored)) return { key: stored, created: false };
   const created = bytesToHex(await Crypto.getRandomBytesAsync(32));
   await SecureStore.setItemAsync(DB_KEY_NAME, created, secureOptions);
-  return created;
+  return { key: created, created: true };
 }
 
-async function openDatabase() {
-  const db = await SQLite.openDatabaseAsync(DB_NAME);
-  const key = await databaseKey();
+async function assertSqlCipher(db: SQLite.SQLiteDatabase) {
+  const row = await db.getFirstAsync<{ cipher_version?: string }>('PRAGMA cipher_version;');
+  if (!row?.cipher_version?.trim()) {
+    throw new Error('Encrypted local storage is unavailable on this build.');
+  }
+}
+
+async function initializeEncryptedDatabase(db: SQLite.SQLiteDatabase, key: string) {
   await db.execAsync(`PRAGMA key = '${key}';`);
+  await assertSqlCipher(db);
+
+  // Force SQLCipher to read the database header before any schema write. A cache
+  // copied by device-to-device migration without its device-bound SecureStore key
+  // fails here rather than being mistaken for a usable local history.
+  await db.getFirstAsync<{ count: number }>('SELECT count(*) AS count FROM sqlite_master;');
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS local_messages (
@@ -65,7 +76,41 @@ async function openDatabase() {
       PRIMARY KEY (owner_user_id, relationship_id, member_user_id)
     );
   `);
-  return db;
+}
+
+async function closeQuietly(db: SQLite.SQLiteDatabase) {
+  await db.closeAsync().catch(() => undefined);
+}
+
+async function openDatabase() {
+  const keyState = await databaseKey();
+  let db = await SQLite.openDatabaseAsync(DB_NAME);
+
+  try {
+    await initializeEncryptedDatabase(db, keyState.key);
+    return db;
+  } catch (error) {
+    await closeQuietly(db);
+
+    if (!keyState.created || (error instanceof Error && error.message === 'Encrypted local storage is unavailable on this build.')) {
+      throw error;
+    }
+
+    // If SecureStore had no usable key, an existing database cannot be decrypted
+    // by this device. This can happen after an OEM D2D migration even when backup
+    // was disabled. The file contains ciphertext only, and retaining it would make
+    // the app permanently fail to open. Delete only this unrecoverable local cache,
+    // keep the newly created device key, and rebuild from authorized server sync.
+    await SQLite.deleteDatabaseAsync(DB_NAME);
+    db = await SQLite.openDatabaseAsync(DB_NAME);
+    try {
+      await initializeEncryptedDatabase(db, keyState.key);
+      return db;
+    } catch (retryError) {
+      await closeQuietly(db);
+      throw retryError;
+    }
+  }
 }
 
 export function getLocalDatabase() {
@@ -151,7 +196,8 @@ export async function getConversationTheme(ownerUserId: string, relationshipId: 
   const db = await getLocalDatabase();
   const row = await db.getFirstAsync<{ background_theme: string }>(
     'SELECT background_theme FROM conversation_preferences WHERE owner_user_id=? AND relationship_id=?',
-    ownerUserId, relationshipId,
+    ownerUserId,
+    relationshipId,
   );
   return row?.background_theme ?? 'paper';
 }
@@ -175,7 +221,8 @@ export async function listMemberPreferences(ownerUserId: string, relationshipId:
   const db = await getLocalDatabase();
   return db.getAllAsync<MemberPreference>(
     'SELECT member_user_id,local_alias,bubble_theme FROM member_preferences WHERE owner_user_id=? AND relationship_id=?',
-    ownerUserId, relationshipId,
+    ownerUserId,
+    relationshipId,
   );
 }
 
@@ -188,17 +235,26 @@ export async function setMemberPreference(ownerUserId: string, relationshipId: s
   );
 }
 
+export async function clearLocalOwnerData(userId: string) {
+  const db = await getLocalDatabase();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync('DELETE FROM local_messages WHERE owner_user_id=?', userId);
+    await txn.runAsync('DELETE FROM member_preferences WHERE owner_user_id=?', userId);
+    await txn.runAsync('DELETE FROM conversation_preferences WHERE owner_user_id=?', userId);
+  });
+}
+
 export async function clearLocalAccountData(userId: string) {
   const db = await getLocalDatabase();
-  await db.withTransactionAsync(async () => {
-    await db.runAsync(
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(
       'DELETE FROM local_messages WHERE owner_user_id=? OR sender_id=? OR recipient_id=?',
       userId, userId, userId,
     );
-    await db.runAsync(
+    await txn.runAsync(
       'DELETE FROM member_preferences WHERE owner_user_id=? OR member_user_id=?',
       userId, userId,
     );
-    await db.runAsync('DELETE FROM conversation_preferences WHERE owner_user_id=?', userId);
+    await txn.runAsync('DELETE FROM conversation_preferences WHERE owner_user_id=?', userId);
   });
 }

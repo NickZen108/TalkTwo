@@ -1,11 +1,11 @@
 import type { SupportedLocale } from './translations';
 
 const english = {
-  semanticLimit: 'Free semantic tone checks are quality-tested for English and Danish. Other message languages still receive universal checks such as length, exclamation marks, emoji and excessive capitals.',
+  semanticLimit: 'The Free filter uses simple mechanical checks only. It does not try to understand the meaning of your message. It checks length, exclamation marks, emoji/emoticons, obvious English/Danish profanity or direct insults, excessive capitals and simple repetition.',
 };
 
 const danish = {
-  semanticLimit: 'Free-versionens semantiske tonekontrol er kvalitetstestet på dansk og engelsk. Andre beskedsprog får stadig universelle kontroller som længde, udråbstegn, emoji og overdreven brug af store bogstaver.',
+  semanticLimit: 'Gratisfilteret bruger kun enkle mekaniske regler. Det prøver ikke at forstå meningen i din besked. Det kontrollerer længde, udråbstegn, emoji/emoticons, tydelige danske/engelske bandeord eller direkte skældsord, overdreven brug af store bogstaver og simple gentagelser.',
 };
 
 export function getFreeFilterCopy(locale: SupportedLocale) {

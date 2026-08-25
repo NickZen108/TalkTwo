@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorCode, getAvailablePurchases, useIAP, type Purchase, type ProductSubscription } from 'expo-iap';
 import { Platform } from 'react-native';
-import { createExtraMemberCheckoutIntent, createPremiumCheckoutIntent, createPremiumGiftCheckoutIntent, type BillingIntentOffer } from '../services/billing';
+import {
+  cancelMyBillingCheckoutIntent,
+  createExtraMemberCheckoutIntent,
+  createMemberUpgradeCheckoutIntent,
+  createPremiumCheckoutIntent,
+  createPremiumGiftCheckoutIntent,
+  getMyMemberUpgradeStoreProvider,
+  type BillingIntentOffer,
+} from '../services/billing';
 import {
   clearPendingStorePurchase,
   loadPendingStorePurchase,
@@ -41,13 +49,20 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
 
   useEffect(() => { callbacksRef.current = callbacks; }, [callbacks]);
 
+  async function abandonPendingCheckout() {
+    const pending = await loadPendingStorePurchase().catch(() => null);
+    if (pending?.checkoutIntentId) {
+      await cancelMyBillingCheckoutIntent(pending.checkoutIntentId).catch(() => false);
+    }
+    await clearPendingStorePurchase().catch(() => undefined);
+  }
+
   const iap = useIAP({
     onPurchaseSuccess: (purchase) => { void purchaseHandlerRef.current?.(purchase); },
     onPurchaseError: (error) => {
       setProcessing(false);
-      if (error.code === ErrorCode.UserCancelled) {
-        void clearPendingStorePurchase().catch(() => undefined);
-      } else {
+      void abandonPendingCheckout();
+      if (error.code !== ErrorCode.UserCancelled) {
         callbacksRef.current.onError(error.message || 'The store purchase could not be completed.');
       }
     },
@@ -92,6 +107,41 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
     }
   }; }, [completePurchase]);
 
+  // A purchase can succeed in the native store just before the app is killed.
+  // Reconcile a still-authorized pending intent on the next connection so paid
+  // access does not depend on the original callback surviving process death.
+  useEffect(() => {
+    if (!iap.connected || Platform.OS === 'web') return;
+    let active = true;
+    void (async () => {
+      const pending = await loadPendingStorePurchase().catch(() => null);
+      if (!pending || pending.userId !== userId) return;
+      if (new Date(pending.expiresAt).valueOf() <= Date.now()) {
+        await abandonPendingCheckout();
+        return;
+      }
+      const platform = nativeStorePlatform();
+      const purchases = await getAvailablePurchases({
+        onlyIncludeActiveItemsIOS: true,
+        includeSuspendedAndroid: false,
+      });
+      const matching = purchases.find((purchase) => pendingPurchaseMatches(pending, platform, purchase));
+      if (!matching || !active) return;
+      setProcessing(true);
+      try {
+        const completed = await completePurchase(matching);
+        if (completed && active) await callbacksRef.current.onPurchaseVerified();
+      } catch (error) {
+        if (active) callbacksRef.current.onError(messageFor(error));
+      } finally {
+        if (active) setProcessing(false);
+      }
+    })().catch((error) => {
+      if (active) callbacksRef.current.onError(messageFor(error));
+    });
+    return () => { active = false; };
+  }, [iap.connected, completePurchase, userId]);
+
   useEffect(() => {
     if (!iap.connected || Platform.OS === 'web') return;
     const platform = nativeStorePlatform();
@@ -104,6 +154,7 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
   const requestSubscriptionPurchase = useCallback(async (
     productKey: StoreProductKey,
     offer: BillingIntentOffer,
+    googleReplacementPurchaseToken?: string | null,
   ) => {
     const platform = nativeStorePlatform();
     const productId = productIdFor(platform, productKey);
@@ -132,6 +183,9 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
             skus: [productId],
             obfuscatedAccountId: binding,
             subscriptionOffers: [selected],
+            ...(googleReplacementPurchaseToken
+              ? { purchaseToken: googleReplacementPurchaseToken, replacementMode: 2 }
+              : {}),
           },
         },
       });
@@ -173,9 +227,49 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
       await requestSubscriptionPurchase(productKey, offer);
     } catch (error) {
       setProcessing(false);
-      if (error && typeof error === 'object' && 'code' in error && error.code === ErrorCode.UserCancelled) {
-        await clearPendingStorePurchase().catch(() => undefined);
+      await abandonPendingCheckout();
+      throw error;
+    }
+  }, [iap.connected, requestSubscriptionPurchase]);
+
+  const purchaseMemberUpgrade = useCallback(async (relationshipId: string) => {
+    if (!iap.connected) throw new Error('The App Store connection is not ready yet.');
+    const platform = nativeStorePlatform();
+    setProcessing(true);
+    try {
+      const originalProvider = await getMyMemberUpgradeStoreProvider();
+      if (originalProvider !== platform) {
+        throw new Error(`This membership was purchased through ${originalProvider === 'apple' ? 'Apple App Store' : 'Google Play'}. Upgrade it on a device using the same store.`);
       }
+
+      let googleReplacementToken: string | null = null;
+      if (platform === 'google') {
+        const purchases = await getAvailablePurchases({
+          onlyIncludeActiveItemsIOS: true,
+          includeSuspendedAndroid: false,
+        });
+        const observerProductId = productIdFor('google', 'extra_observer_monthly');
+        const observerPurchase = purchases.find((purchase) =>
+          purchase.store === 'google'
+          && purchase.productId === observerProductId
+          && purchase.purchaseState === 'purchased'
+          && Boolean(purchase.purchaseToken),
+        );
+        googleReplacementToken = observerPurchase?.purchaseToken?.trim() ?? null;
+        if (!googleReplacementToken) {
+          throw new Error('Google Play could not find the active read-only subscription to replace.');
+        }
+      }
+
+      const offer = await createMemberUpgradeCheckoutIntent(relationshipId);
+      if (!offer.recurring || offer.currency !== 'dkk' || offer.amount_minor !== 9900) {
+        await cancelMyBillingCheckoutIntent(offer.intent_id).catch(() => false);
+        throw new Error('The server returned an unexpected writing-access subscription offer.');
+      }
+      await requestSubscriptionPurchase('extra_participant_monthly', offer, googleReplacementToken);
+    } catch (error) {
+      setProcessing(false);
+      await abandonPendingCheckout();
       throw error;
     }
   }, [iap.connected, requestSubscriptionPurchase]);
@@ -193,9 +287,7 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
       await requestOneTimePurchase(productKey, offer);
     } catch (error) {
       setProcessing(false);
-      if (error && typeof error === 'object' && 'code' in error && error.code === ErrorCode.UserCancelled) {
-        await clearPendingStorePurchase().catch(() => undefined);
-      }
+      await abandonPendingCheckout();
       throw error;
     }
   }, [iap.connected, requestOneTimePurchase]);
@@ -219,9 +311,7 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
       await requestSubscriptionPurchase(productKey, offer);
     } catch (error) {
       setProcessing(false);
-      if (error && typeof error === 'object' && 'code' in error && error.code === ErrorCode.UserCancelled) {
-        await clearPendingStorePurchase().catch(() => undefined);
-      }
+      await abandonPendingCheckout();
       throw error;
     }
   }, [iap.connected, requestSubscriptionPurchase]);
@@ -254,6 +344,7 @@ export function useNativeStoreBilling(userId: string, callbacks: NativeStoreBill
     connected: iap.connected,
     processing,
     purchaseExtraMember,
+    purchaseMemberUpgrade,
     purchasePremium,
     purchasePremiumGift,
     restore,

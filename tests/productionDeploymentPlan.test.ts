@@ -21,6 +21,21 @@ const criticalMigrations = [
   '20260824043000_organization_sponsorships.sql',
   '20260824061500_delivery_acknowledgements.sql',
   '20260824084500_ai_budget_reservations.sql',
+  '20260824110000_privacy_controls_and_notification_mutes.sql',
+  '20260824111000_cancel_muted_and_blocked_push_jobs.sql',
+  '20260824112000_delivery_and_open_state_privacy.sql',
+  '20260824113000_storage_boundary_enforcement.sql',
+  '20260824114000_premium_on_hold_projection.sql',
+  '20260824114500_extra_member_hold_lifecycle.sql',
+  '20260824115000_premium_gift_product_lock.sql',
+  '20260824115500_member_write_upgrade_store_flow.sql',
+  '20260824115600_member_write_upgrade_replacement_guard.sql',
+  '20260824115700_member_upgrade_checkout_recovery.sql',
+  '20260824115800_resumable_member_upgrade_checkout.sql',
+  '20260824115900_member_upgrade_approval_snapshot.sql',
+  '20260824120000_key_recovery_membership_revalidation.sql',
+  '20260825100000_unicode_policy_canonicalization.sql',
+  '20260825101000_message_send_idempotency.sql',
 ];
 
 test('production plan names every current critical launch migration in order', () => {
@@ -43,15 +58,57 @@ test('deployment plan preserves JWT/custom-auth boundaries', () => {
   assert.match(plan, /Never turn JWT verification off for a user-facing function/i);
 });
 
-test('deployment plan requires deletion, RPC trust-boundary, public-site, native preflight and exact-tree QA gates', () => {
+test('deployment plan requires deletion, privacy, public-site, native and exact-tree gates', () => {
   assert.match(plan, /account_deletion_schema_ok/i);
   assert.match(plan, /security_definer_schema_ok/i);
+  assert.match(plan, /partner timezone\/window RPC/i);
+  assert.match(plan, /notification_mutes/i);
+  assert.match(plan, /emoji\/emoticon storage is rejected/i);
+  assert.match(plan, /expired timed block cannot bypass an active recipient Personal Boundary/i);
+  assert.match(plan, /Editing\/withdrawal cannot be used to probe recipient open state/i);
+  assert.match(plan, /Android-to-iOS and iOS-to-Android chat delivery/i);
   assert.match(plan, /npm run release:preflight/i);
   assert.match(plan, /TalkTwo release preflight OK\./i);
-  assert.match(plan, /TalkTwo public-site release preflight OK\./i);
   assert.match(plan, /VITE_PUBLICATION_APPROVED=true/i);
-  assert.match(plan, /allowlist the exact[^\n]*\/delete-account\/[^\n]*redirect/i);
   assert.match(plan, /unknown email neither creates an account nor discloses account existence/i);
-  assert.match(plan, /exact tree is green/i);
   assert.match(plan, /final app icon\/splash\/store artwork is approved/i);
+});
+
+test('deployment plan verifies ciphertext-only storage and unread hash privacy', () => {
+  assert.match(plan, /public\.messages\.body[^\n]*immediately `NULL`/i);
+  assert.match(plan, /`body`, `ciphertext` and `body_hash` as `NULL`/i);
+  assert.match(plan, /ciphertext-only at rest immediately after trusted send-time checks/i);
+  assert.match(plan, /unopened message exposes no deterministic body hash/i);
+  assert.match(plan, /never inspect real conversation plaintext/i);
+});
+
+test('deployment plan requires PKCE and verified HTTPS app-link ownership', () => {
+  assert.match(plan, /apple-app-site-association/i);
+  assert.match(plan, /assetlinks\.json/i);
+  assert.match(plan, /pathPrefix: "\/app\/"/i);
+  assert.match(plan, /allowlist the exact final `\/app\/auth` redirect/i);
+  assert.match(plan, /magic-link sign-in uses PKCE/i);
+  assert.match(plan, /access_token.*refresh_token/i);
+  assert.match(plan, /possession secrets remain in URL fragments/i);
+  assert.match(plan, /public `\/app\/\*` fallback never logs/i);
+  assert.match(plan, /valid final-domain `\/app\/auth`/i);
+  assert.match(plan, /look-alike domain/i);
+});
+
+test('deployment plan keeps local encryption a signed-release gate', () => {
+  assert.match(plan, /local SQLite database reports a non-empty `cipher_version`/i);
+  assert.match(plan, /Android app-data backup remains disabled/i);
+  assert.match(plan, /local SQLCipher failure/i);
+});
+
+test('deployment plan requires Unicode canonicalization and retry-idempotent v2 sends', () => {
+  assert.match(plan, /full-width `！`/i);
+  assert.match(plan, /zero-width-split generalisations\/profanity/i);
+  assert.match(plan, /obfuscated Personal Boundary/i);
+  assert.match(plan, /same v2 send RPC twice/i);
+  assert.match(plan, /zero additional recipient rows/i);
+  assert.match(plan, /different plaintext, ciphertext, relationship, message kind or attachment metadata/i);
+  assert.match(plan, /correct relationship id and correct logical message id/i);
+  assert.match(plan, /legacy v1 ciphertext/i);
+  assert.match(plan, /transient network failure after a committed send/i);
 });

@@ -10,6 +10,7 @@ export default defineConfig({
         terms: resolve(import.meta.dirname, 'terms/index.html'),
         support: resolve(import.meta.dirname, 'support/index.html'),
         deleteAccount: resolve(import.meta.dirname, 'delete-account/index.html'),
+        appLinkFallback: resolve(import.meta.dirname, 'app/index.html'),
       },
     },
   },

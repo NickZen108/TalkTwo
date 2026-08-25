@@ -11,7 +11,7 @@ const settingsScreen = fs.readFileSync('src/screens/ChatSettingsScreen.tsx', 'ut
 const accountScreen = fs.readFileSync('src/screens/AccountScreen.tsx', 'utf8');
 
 test('message window copy and accessibility labels use the locale catalogue', () => {
-  assert.match(windowsScreen, /const \{ t \} = useI18n\(\)/);
+  assert.match(windowsScreen, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(windowsScreen, /t\('windows\.timezoneHelp', \{ timezone: deviceTimezone \}\)/);
   assert.match(windowsScreen, /accessibilityLabel=\{t\('windows\.windowLabel', \{ day: name \}\)\}/);
   assert.match(windowsScreen, /accessibilityLabel=\{t\('windows\.saveLabel', \{ day: name \}\)\}/);
@@ -38,8 +38,9 @@ test('chat actions, message states and dates use the locale catalogue', () => {
   assert.doesNotMatch(chatScreen, /accessibilityLabel="Send message"/);
 });
 
-test('home navigation, recovery and purchase gates use the locale catalogue', () => {
-  assert.match(homeScreen, /const \{ t \} = useI18n\(\)/);
+test('home navigation, recovery and purchase gates use localized copy', () => {
+  assert.match(homeScreen, /const \{ t, locale \} = useI18n\(\)/);
+  assert.match(homeScreen, /const upgradeCopy = locale === 'da'/);
   assert.match(homeScreen, /t\('home\.shareKeyBody', \{ name: request\.requester_name, code: request\.verification_code \}\)/);
   assert.match(homeScreen, /t\('home\.extraPaymentBody', \{ access:/);
   assert.match(homeScreen, /accessibilityLabel=\{t\('home\.giftEmailLabel'\)\}/);

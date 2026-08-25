@@ -4,6 +4,7 @@ import { detectedDeviceTimezone, normalizeIanaTimezone, normalizeMessageWindow }
 import { getMyTimezone, listMyWindows, saveMyWindow, setMyTimezone, type MessageWindow } from '../services/windows';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import { useI18n } from '../i18n/I18nContext';
+import { windowPrivacyCopy } from '../i18n/windowPrivacyCopy';
 
 const DAY_KEYS = ['windows.sunday', 'windows.monday', 'windows.tuesday', 'windows.wednesday', 'windows.thursday', 'windows.friday', 'windows.saturday'] as const;
 
@@ -20,8 +21,9 @@ function initialDrafts(): Record<number, Draft> {
 
 export default function MessageWindowsScreen({ onBack }: { onBack: () => void }) {
   const { colors } = useAppTheme();
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const privacyCopy = useMemo(() => windowPrivacyCopy(locale), [locale]);
   const [timezone, setTimezone] = useState('UTC');
   const [deviceTimezone] = useState(detectedDeviceTimezone);
   const [drafts, setDrafts] = useState<Record<number, Draft>>(initialDrafts);
@@ -92,6 +94,7 @@ export default function MessageWindowsScreen({ onBack }: { onBack: () => void })
         <View style={styles.card}>
           <Text style={styles.heading}>{t('windows.timezoneTitle')}</Text>
           <Text style={styles.help}>{t('windows.timezoneHelp', { timezone: deviceTimezone })}</Text>
+          <Text style={styles.privacyNote}>{privacyCopy}</Text>
           <TextInput accessibilityLabel={t('windows.timezoneLabel')} value={timezone} onChangeText={setTimezone} autoCapitalize="none" autoCorrect={false} style={styles.input} placeholder="Europe/Copenhagen" placeholderTextColor={colors.subtle} />
           {timezone !== deviceTimezone ? (
             <TouchableOpacity accessibilityRole="button" onPress={() => void saveTimezone(deviceTimezone)} disabled={timezoneBusy} style={[styles.secondaryButton, timezoneBusy && styles.disabled]}>
@@ -146,8 +149,9 @@ function makeStyles(colors: AppColors) {
     card: { backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 12 },
     heading: { fontSize: 20, fontWeight: '800', color: colors.text },
     help: { color: colors.muted, lineHeight: 20 },
+    privacyNote: { color: colors.noticeText, backgroundColor: colors.notice, borderRadius: 10, padding: 10, lineHeight: 19 },
     input: { minHeight: 50, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, color: colors.text, backgroundColor: colors.input },
-    button: { backgroundColor: colors.accentStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+    button: { minHeight: 44, backgroundColor: colors.accentStrong, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
     buttonText: { color: colors.accentText, fontWeight: '800' },
     secondaryButton: { minHeight: 46, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
     secondaryButtonText: { color: colors.text, fontWeight: '800' },
@@ -156,7 +160,7 @@ function makeStyles(colors: AppColors) {
     dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     dayName: { fontSize: 16, fontWeight: '800', color: colors.text },
     timeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-    timeInput: { width: 90, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 10, paddingVertical: 10, textAlign: 'center', fontSize: 16, color: colors.text, backgroundColor: colors.input },
+    timeInput: { width: 90, minHeight: 44, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 10, paddingVertical: 10, textAlign: 'center', fontSize: 16, color: colors.text, backgroundColor: colors.input },
     to: { color: colors.muted },
     closed: { color: colors.subtle },
     saveDay: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 2 },

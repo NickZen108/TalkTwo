@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 const required = {
   VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
   VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
@@ -49,6 +51,25 @@ for (const name of ['VITE_SUPPORT_EMAIL', 'VITE_PRIVACY_EMAIL']) {
 }
 if ((process.env.VITE_PUBLICATION_APPROVED ?? '').trim().toLowerCase() !== 'true') {
   errors.push('VITE_PUBLICATION_APPROVED must be true only after final legal/privacy review.');
+}
+
+const deletionSource = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+if (!/flowType:\s*['"]pkce['"]/.test(deletionSource)) {
+  errors.push('Public account deletion must use Supabase PKCE authentication.');
+}
+if (!/shouldCreateUser:\s*false/.test(deletionSource)) {
+  errors.push('Public account deletion must never create an account for an unknown email.');
+}
+if (!/supabase\.auth\.getUser\(\)/.test(deletionSource)) {
+  errors.push('Public account deletion must re-verify the authenticated user before destructive action.');
+}
+
+const appFallback = fs.readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
+if (/<script\b/i.test(appFallback)) {
+  errors.push('/app/* fallback must remain script-free so possession-secret URL fragments are never read by site code.');
+}
+if (!/<meta\s+name=["']referrer["']\s+content=["']no-referrer["']/i.test(appFallback)) {
+  errors.push('/app/* fallback must keep a no-referrer policy.');
 }
 
 if (errors.length) {

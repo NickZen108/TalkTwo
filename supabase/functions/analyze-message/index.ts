@@ -46,7 +46,7 @@ function estimateCost(model: string, inputTokens: number, outputTokens: number) 
 }
 
 function hardBlockedFragment(text: string): string | null {
-  const pattern = /(?:^|[^\p{L}])(?:fuck(?:ing|ed|er)?|motherfucker|shit|bullshit|bitch|asshole|cunt|dickhead|idiot|moron|fuck\s+dig|lort|røvhul|kælling|fandme|hold\s+kæft)(?=$|[^\p{L}])/iu;
+  const pattern = /(?:^|[^\p{L}])(?:fuck(?:ing|ed|er)?|motherfucker|shit|bullshit|bitch|asshole|cunt|dickhead|idiot|moron|dumb|stupid|crazy|insane|retard(?:ed)?|pathetic|useless|incompetent|ridiculous|fuck\s+dig|lort|røvhul|kælling|fandme|dum(?:me)?|sindssyg(?:e|t)?|retarderet(?:e)?|patetisk(?:e)?|ubrugelig(?:e)?|inkompetent(?:e)?|latterlig(?:e|t)?|hold\s+kæft)(?=$|[^\p{L}])/iu;
   const match = text.match(pattern);
   return match?.[0]?.trim() || null;
 }
@@ -147,7 +147,7 @@ Deno.serve(async (req: Request) => {
       return json({
         level: "red",
         can_send: false,
-        reason: danish ? "Bandeord og direkte fornærmelser er ikke tilladt i TalkTwo-beskeder." : "Profanity and direct insults are not allowed in TalkTwo messages.",
+        reason: danish ? "Bandeord, direkte fornærmelser og nedladende ord er ikke tilladt i TalkTwo-beskeder." : "Profanity, direct insults and degrading language are not allowed in TalkTwo messages.",
         problematic_text: [hardBlock],
         rewrite: null,
         usage: null,

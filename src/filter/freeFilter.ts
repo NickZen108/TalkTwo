@@ -2,62 +2,28 @@ import { normalizePolicyText } from '../domain/policyText';
 import { FilterReason, FilterResult } from './types';
 
 const MAX_FREE_LENGTH = 160;
-export const FREE_SEMANTIC_LANGUAGES = ['en', 'da'] as const;
+export const FREE_PROFANITY_LANGUAGES = ['en', 'da'] as const;
 
-const PROFANITY_PATTERNS: Array<{ label: string; regex: RegExp }> = [
-  { label: 'fuck', regex: /(?:^|[^\p{L}])(?:fuck(?:ing|ed|er)?|motherfucker)(?=$|[^\p{L}])/iu },
-  { label: 'shit', regex: /(?:^|[^\p{L}])(?:shit|bullshit)(?=$|[^\p{L}])/iu },
-  { label: 'bitch', regex: /(?:^|[^\p{L}])bitch(?=$|[^\p{L}])/iu },
-  { label: 'asshole', regex: /(?:^|[^\p{L}])asshole(?=$|[^\p{L}])/iu },
-  { label: 'cunt', regex: /(?:^|[^\p{L}])cunt(?=$|[^\p{L}])/iu },
-  { label: 'dickhead', regex: /(?:^|[^\p{L}])dickhead(?=$|[^\p{L}])/iu },
-  { label: 'idiot', regex: /(?:^|[^\p{L}])(?:idiot|moron)(?=$|[^\p{L}])/iu },
-  { label: 'fuck dig', regex: /(?:^|[^\p{L}])fuck\s+dig(?=$|[^\p{L}])/iu },
-  { label: 'røvhul', regex: /(?:^|[^\p{L}])røvhul(?=$|[^\p{L}])/iu },
-  { label: 'kælling', regex: /(?:^|[^\p{L}])kælling(?=$|[^\p{L}])/iu },
-  { label: 'fandme', regex: /(?:^|[^\p{L}])fandme(?=$|[^\p{L}])/iu },
-  { label: 'hold kæft', regex: /(?:^|[^\p{L}])hold\s+kæft(?=$|[^\p{L}])/iu },
-  { label: 'lort', regex: /(?:^|[^\p{L}])lort(?=$|[^\p{L}])/iu },
-];
+// Keep the Free tier deliberately mechanical. These are exact normalized words,
+// not an attempt to infer intent or relationship dynamics. Avoid ambiguous words
+// that are commonly harmless in practical messages.
+const BANNED_WORDS = new Set([
+  // English profanity / direct insults
+  'fuck', 'fucked', 'fucker', 'fuckers', 'fucking', 'motherfucker', 'motherfuckers',
+  'shit', 'bullshit', 'bitch', 'bitches', 'asshole', 'assholes', 'cunt', 'cunts',
+  'dickhead', 'dickheads', 'bastard', 'bastards', 'prick', 'pricks', 'wanker',
+  'wankers', 'twat', 'twats', 'idiot', 'idiots', 'moron', 'morons',
+  // Danish profanity / direct insults
+  'fandme', 'fanden', 'satme', 'kraftedeme', 'krafteme', 'lort', 'lorte', 'pis',
+  'pisse', 'røvhul', 'røvhuller', 'kælling', 'kællinger', 'idiot', 'idioter',
+  'nar', 'narrer', 'svin', 'klaphat', 'klaphatte',
+]);
 
-const GENERALISATIONS: Array<{ label: string; regex: RegExp }> = [
-  { label: 'always', regex: /(?:^|[^\p{L}])always(?=$|[^\p{L}])/iu },
-  { label: 'never', regex: /(?:^|[^\p{L}])never(?=$|[^\p{L}])/iu },
-  { label: 'every time', regex: /(?:^|[^\p{L}])every\s+time(?=$|[^\p{L}])/iu },
-  { label: 'constantly', regex: /(?:^|[^\p{L}])constantly(?=$|[^\p{L}])/iu },
-  { label: 'altid', regex: /(?:^|[^\p{L}])altid(?=$|[^\p{L}])/iu },
-  { label: 'aldrig', regex: /(?:^|[^\p{L}])aldrig(?=$|[^\p{L}])/iu },
-  { label: 'hver gang', regex: /(?:^|[^\p{L}])hver\s+gang(?=$|[^\p{L}])/iu },
-  { label: 'konstant', regex: /(?:^|[^\p{L}])konstant(?=$|[^\p{L}])/iu },
-];
-
-const FAULT_REMINDER_PATTERNS = [
-  /\b(?:late|forgot|failed|missed|wrong)\b.{0,20}\bagain\b/i,
-  /\bagain\b.{0,20}\b(?:late|forgot|failed|missed|wrong)\b/i,
-  /\b(?:for sent|forsinket|glemte|glemt|svigtede|forkert)\b.{0,20}\bigen\b/i,
-  /\bigen\b.{0,20}\b(?:for sent|forsinket|glemte|glemt|svigtede|forkert)\b/i,
-];
-
-const CRITICISM_PATTERNS = [
-  /\bwhy can(?:'|’)t you\b/i,
-  /\bwhy do you always\b/i,
-  /\bdet er ikke okay at du\b/i,
-  /\bjeg synes ikke det er okay at du\b/i,
-  /\bhvorfor kan du ikke\b/i,
-  /\bhvorfor gør du altid\b/i,
-  /\byou (?:are|were).{0,40}\b(?:late|wrong|selfish|irresponsible|rude|unreasonable|lazy|careless)\b/i,
-  /\bdu (?:er|var|kom).{0,40}\b(?:forsinket|for sent|forkert|egoistisk|uansvarlig|uhøflig|urimelig|doven|ligeglad)\b/i,
-];
-
-const EMOTION_PATTERNS = [
-  /\bi feel\b/i,
-  /\byou make me feel\b/i,
-  /\bi am hurt\b/i,
-  /\bi'm hurt\b/i,
-  /\bjeg føler\b/i,
-  /\bjeg bliver ked af\b/i,
-  /\bdu gør mig\b/i,
-  /\bjeg er såret\b/i,
+const BANNED_PHRASES = [
+  'fuck you',
+  'fuck dig',
+  'hold kæft',
+  'shut up',
 ];
 
 // Extended pictographs covers most emoji. Regional indicators catch flags, while
@@ -65,11 +31,32 @@ const EMOTION_PATTERNS = [
 // against the original text before policy canonicalization removes format marks.
 const emojiRegex = /[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u20E3]/u;
 const emoticonRegex = /(?:[:;=8xX][\-^']?[()DPp]|<3)/;
+const repeatedPunctuationRegex = /([?.;,])\1+/u;
+const repeatedLetterRegex = /(\p{L})\1{3,}/iu;
+const repeatedWordRegex = /(?:^|[^\p{L}])(\p{L}{2,})(?:[\s,.;:-]+\1){2,}(?=$|[^\p{L}])/iu;
+const longUppercaseRunRegex = /\p{Lu}{5,}/u;
 
 function addReason(reasons: FilterReason[], reason: FilterReason) {
   if (!reasons.some((item) => item.code === reason.code && item.matchedText === reason.matchedText)) {
     reasons.push(reason);
   }
+}
+
+function words(value: string) {
+  return value.toLocaleLowerCase().match(/\p{L}+/gu) ?? [];
+}
+
+function hasProfanity(value: string) {
+  const lower = value.toLocaleLowerCase();
+  if (BANNED_PHRASES.some((phrase) => lower.includes(phrase))) return true;
+  return words(lower).some((word) => BANNED_WORDS.has(word));
+}
+
+function uppercaseRatio(value: string) {
+  const letters = value.match(/\p{L}/gu) ?? [];
+  if (letters.length < 10) return 0;
+  const uppercase = letters.filter((letter) => letter === letter.toLocaleUpperCase() && letter !== letter.toLocaleLowerCase()).length;
+  return uppercase / letters.length;
 }
 
 export function countMessageCharacters(message: string) {
@@ -85,8 +72,8 @@ export function evaluateFreeMessage(message: string): FilterResult {
     addReason(reasons, {
       code: 'too_long',
       title: 'Message too long',
-      explanation: `Free messages can contain up to ${MAX_FREE_LENGTH} characters. Short messages are easier to keep practical and neutral.`,
-      suggestion: 'Remove background, explanations and emotional commentary. Keep only the necessary information or request.',
+      explanation: `Free messages can contain up to ${MAX_FREE_LENGTH} characters.`,
+      suggestion: 'Keep only the practical information or request.',
     });
   }
 
@@ -94,7 +81,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
     addReason(reasons, {
       code: 'exclamation_mark',
       title: 'Remove the exclamation mark',
-      explanation: 'Exclamation marks can make a message feel more forceful or confrontational.',
+      explanation: 'Free messages do not use exclamation marks.',
       suggestion: 'Use a full stop or a neutral question instead.',
       matchedText: '!',
     });
@@ -104,89 +91,40 @@ export function evaluateFreeMessage(message: string): FilterResult {
     addReason(reasons, {
       code: 'emoji',
       title: 'Remove emoji or emoticon',
-      explanation: 'Free messages use plain text so tone is less likely to be misunderstood.',
-      suggestion: 'State the practical information directly in words.',
+      explanation: 'Free messages use plain text only.',
+      suggestion: 'Write the practical information directly in words.',
     });
   }
 
-  for (const { label, regex } of PROFANITY_PATTERNS) {
-    if (regex.test(policyText)) {
-      addReason(reasons, {
-        code: 'profanity',
-        title: 'Remove profanity',
-        explanation: 'Profanity can be misunderstood or experienced as hostile, even when intended humorously.',
-        suggestion: 'Replace it with neutral language.',
-        matchedText: label,
-      });
-      break;
-    }
+  if (hasProfanity(policyText)) {
+    addReason(reasons, {
+      code: 'profanity',
+      title: 'Remove profanity or direct insults',
+      explanation: 'Free messages do not allow obvious profanity or direct insults.',
+      suggestion: 'Replace the word with neutral language.',
+    });
   }
 
-  for (const { label, regex } of GENERALISATIONS) {
-    if (regex.test(policyText)) {
-      addReason(reasons, {
-        code: 'generalisation',
-        title: 'Remove the generalisation',
-        explanation: `“${label}” turns one situation into a broad judgment and can increase conflict.`,
-        suggestion: 'Describe only the specific practical situation that matters now.',
-        matchedText: label,
-      });
-    }
+  const repetition = policyText.match(repeatedPunctuationRegex)
+    ?? policyText.match(repeatedLetterRegex)
+    ?? policyText.match(repeatedWordRegex);
+  if (repetition) {
+    addReason(reasons, {
+      code: 'repetition',
+      title: 'Avoid repetition / Undgå gentagelser',
+      explanation: 'Repeated punctuation, stretched words or the same word three times in a row are blocked. / Gentagen tegnsætning, forlængede ord eller samme ord tre gange i træk blokeres.',
+      suggestion: 'Write it once in ordinary text. / Skriv det én gang med almindelig tekst.',
+      matchedText: repetition[0],
+    });
   }
 
-  for (const pattern of FAULT_REMINDER_PATTERNS) {
-    const match = policyText.match(pattern);
-    if (match) {
-      addReason(reasons, {
-        code: 'fault_reminder',
-        title: 'Remove the reminder of past faults',
-        explanation: 'Words such as “again” or “igen” are blocked when they are used to point out a repeated failure.',
-        suggestion: 'State only the practical situation that matters now.',
-        matchedText: match[0],
-      });
-      break;
-    }
-  }
-
-  for (const pattern of CRITICISM_PATTERNS) {
-    const match = policyText.match(pattern);
-    if (match) {
-      addReason(reasons, {
-        code: 'criticism',
-        title: 'Remove criticism of the recipient',
-        explanation: 'The message comments on the other person rather than only communicating necessary information.',
-        suggestion: 'State the fact, request, agreement or practical next step without judging the recipient.',
-        matchedText: match[0],
-      });
-      break;
-    }
-  }
-
-  for (const pattern of EMOTION_PATTERNS) {
-    const match = policyText.match(pattern);
-    if (match) {
-      addReason(reasons, {
-        code: 'emotion_dumping',
-        title: 'Remove the emotional reaction',
-        explanation: 'TalkTwo keeps difficult communication focused on necessary information rather than emotional reactions to the recipient.',
-        suggestion: 'Keep only what happened, what is needed, or what practical action comes next.',
-        matchedText: match[0],
-      });
-      break;
-    }
-  }
-
-  const letters = policyText.replace(/[^A-Za-zÆØÅÄÖÜæøåäöü]/g, '');
-  if (letters.length >= 8) {
-    const upper = letters.replace(/[^A-ZÆØÅÄÖÜ]/g, '').length;
-    if (upper / letters.length > 0.7) {
-      addReason(reasons, {
-        code: 'caps_lock',
-        title: 'Avoid capital letters',
-        explanation: 'Mostly capitalized text can read as shouting.',
-        suggestion: 'Rewrite the message using normal capitalization.',
-      });
-    }
+  if (longUppercaseRunRegex.test(policyText) || uppercaseRatio(policyText) > 0.65) {
+    addReason(reasons, {
+      code: 'caps_lock',
+      title: 'Avoid capital letters',
+      explanation: 'Long runs of capital letters can read as shouting.',
+      suggestion: 'Use ordinary capitalization. Short acronyms such as SMS or CPR are fine.',
+    });
   }
 
   return {

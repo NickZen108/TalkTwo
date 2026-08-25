@@ -50,6 +50,7 @@ Current release sequence:
 25. `20260824115700_member_upgrade_checkout_recovery.sql`
 26. `20260824115800_resumable_member_upgrade_checkout.sql`
 27. `20260824115900_member_upgrade_approval_snapshot.sql`
+28. `20260824120000_key_recovery_membership_revalidation.sql`
 
 If later migrations exist on the eventual frozen release commit, append them in lexical order and update this plan before deployment.
 
@@ -69,6 +70,7 @@ If later migrations exist on the eventual frozen release commit, append them in 
 - send disposable approved text/document messages through real RPCs and verify the persisted `public.messages.body` is immediately `NULL`, `plaintext_scrubbed_at` is populated, and ciphertext + verification hash remain available for the authorized open flow;
 - before explicitly opening an incoming disposable message, verify `list_relationship_messages` returns `body`, `ciphertext` and `body_hash` as `NULL`; after `open_message`, verify ciphertext + hash are returned and decrypt to the approved text on the recipient device;
 - verify Personal Boundary rejection never echoes the recipient's matching private word/phrase to the sender;
+- verify a key-recovery request becomes unusable if the requester is no longer a current member of the active relationship, even when its bearer token has not expired;
 - use disposable content only; never inspect real conversation plaintext as a release shortcut.
 
 ### Mandatory observer → participant database gates
@@ -119,7 +121,7 @@ Use disposable test identities and sandbox/store-test transactions only.
 - Editing/withdrawal cannot probe recipient open state.
 - New message rows are ciphertext-only at rest immediately after trusted checks.
 - Unopened messages expose no deterministic body hash.
-- Key recovery on a second device, including relationship-bound recovery AAD.
+- Key recovery on a second device, including relationship-bound recovery AAD and stale-membership invalidation.
 - Organization sponsorship claim with a disposable verified email.
 - Store purchase verification/restore with sandbox/licensed testers.
 - Observer → participant upgrade on Apple and Google as described below.
@@ -167,4 +169,4 @@ Use disposable test identities and sandbox/store-test transactions only.
 
 ## Stop conditions
 
-Stop release for any red exact-tree QA job, failed schema gate, migration drift, failed preflight, missing secret, mismatched store product, broken verified app link, PKCE regression, SQLCipher failure, server plaintext retention, unread-hash leak, Personal Boundary privacy leak, unverified/incorrect subscription replacement, billing double-charge risk, account-deletion failure, unexpected native permission or failed provider verification.
+Stop release for any red exact-tree QA job, failed schema gate, migration drift, failed preflight, missing secret, mismatched store product, broken verified app link, PKCE regression, SQLCipher failure, server plaintext retention, unread-hash leak, Personal Boundary privacy leak, stale-member key-recovery authorization, unverified/incorrect subscription replacement, billing double-charge risk, account-deletion failure, unexpected native permission or failed provider verification.

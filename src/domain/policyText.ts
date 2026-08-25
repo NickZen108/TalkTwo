@@ -11,3 +11,8 @@ const POLICY_IGNORABLES = /[\p{Cf}\u034F\u180B-\u180D\uFE00-\uFE0F\u{E0100}-\u{E
 export function normalizePolicyText(value: string) {
   return value.normalize('NFKC').replace(POLICY_IGNORABLES, '');
 }
+
+export function hasPolicyIgnorables(value: string) {
+  const normalized = value.normalize('NFKC');
+  return normalized !== normalized.replace(POLICY_IGNORABLES, '');
+}

@@ -1,9 +1,9 @@
 import { supabase } from '../lib/supabase';
 import { ACCOUNT_DELETE_CONFIRMATION } from '../domain/accountDeletion';
 import { buildTalkTwoLink, parseTalkTwoLink } from '../domain/appLinks';
-import { clearLocalAccountData } from './localDb';
+import { clearLocalAccountData, clearLocalOwnerData } from './localDb';
 import { clearPendingStorePurchase } from './storeBilling';
-import { clearAllTalkTwoThreadSecrets, clearPendingThreadSecrets, removeThreadKeys } from './threadKeys';
+import { clearAllTalkTwoThreadSecrets, removeThreadKeys } from './threadKeys';
 import { disablePushNotifications } from './pushNotifications';
 
 export const AUTH_REDIRECT_URL = buildTalkTwoLink('auth');
@@ -51,12 +51,28 @@ export async function createSessionFromMagicLink(url: string) {
 }
 
 export async function signOut() {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user.id ?? null;
+
   await disablePushNotifications().catch(() => undefined);
-  // Invite and recovery secrets are single-purpose state for the active account.
-  // Do not let them silently cross an account switch on a shared device.
-  await clearPendingThreadSecrets().catch(() => undefined);
+
+  let cleanupError: unknown = null;
+  try {
+    await clearPendingStorePurchase();
+    if (userId) await clearLocalOwnerData(userId);
+    // Thread/invite/recovery keys are not account-namespaced in SecureStore. An
+    // explicit account switch therefore clears the whole TalkTwo secret index so
+    // no previous-account conversation key survives into the next login.
+    await clearAllTalkTwoThreadSecrets();
+  } catch (error) {
+    cleanupError = error;
+  }
+
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+  if (cleanupError) {
+    throw new Error('You were signed out, but some private data could not be removed from this device. Remove TalkTwo before another person uses this device.');
+  }
 }
 
 export async function deleteAccount(userId: string, relationshipIds: string[]) {

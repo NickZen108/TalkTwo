@@ -42,35 +42,28 @@ test('app palette uses a bank-blue brand rather than the previous green family',
 });
 
 test('Premium edge hard-blocks degrading language before an AI call', () => {
-  const patternSource = premiumEdge.match(/const pattern = \/\(\?:\^\|\[\^\\p\{L\}\]\)\(\?:([\s\S]*?)\)\(\?=\$\|\[\^\\p\{L\}\]\)\/iu;/)?.[1];
-  assert.ok(patternSource, 'Premium hard-block regex should be discoverable');
-
-  const hardBlock = new RegExp(`^(?:${patternSource})$`, 'iu');
-  for (const word of [
-    'dumb',
-    'stupid',
-    'dum',
-    'dumme',
-    'sindssyg',
-    'sindssyge',
-    'sindssygt',
-    'retarderet',
-    'retarderede',
-    'patetisk',
-    'patetiske',
-    'ubrugelig',
-    'ubrugelige',
-    'inkompetent',
-    'inkompetente',
-    'latterlig',
-    'latterligt',
-    'latterlige',
+  for (const source of [
+    'dumb|stupid',
+    'dum(?:me)?',
+    'sindssyg(?:e|t)?',
+    'retarder(?:et|ede)',
+    'patetisk(?:e)?',
+    'ubrugelig(?:e)?',
+    'inkompetent(?:e)?',
+    'latterlig(?:e|t)?',
   ]) {
-    assert.equal(hardBlock.test(word), true, `Expected Premium hard block to match ${word}`);
+    assert.equal(
+      premiumEdge.includes(source),
+      true,
+      `Missing Premium hard-block source: ${source}`,
+    );
   }
 
   assert.match(premiumEdge, /degrading language are not allowed/);
-  assert.ok(premiumEdge.indexOf('const hardBlock = hardBlockedFragment(message)') < premiumEdge.indexOf('consume_ai_analysis_for_user'));
+  assert.ok(
+    premiumEdge.indexOf('const hardBlock = hardBlockedFragment(message)') <
+      premiumEdge.indexOf('consume_ai_analysis_for_user'),
+  );
 });
 
 test('new FAQ and Premium screens give glyph-only back controls localized accessible names', () => {

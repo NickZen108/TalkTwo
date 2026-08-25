@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { countMessageCharacters, evaluateFreeMessage, FREE_SEMANTIC_LANGUAGES } from '../src/filter/freeFilter';
+import { normalizePolicyText } from '../src/domain/policyText';
 
 const cases: Array<{ message: string; canSend: boolean }> = [
   { message: 'Pickup at 17.', canSend: true },
@@ -47,6 +48,19 @@ test('universal checks still apply to otherwise unsupported message languages', 
   assert.equal(evaluateFreeMessage('Recogida a las 17!').canSend, false);
   assert.equal(evaluateFreeMessage('Recogida 🙂').canSend, false);
   assert.equal(evaluateFreeMessage('RECOGIDA A LAS DIECISIETE').canSend, false);
+});
+
+test('policy canonicalization removes invisible formatting controls without changing stored text', () => {
+  assert.equal(normalizePolicyText('a\u200Blways'), 'always');
+  assert.equal(normalizePolicyText('ne\u202Ever'), 'never');
+  assert.equal(normalizePolicyText('Pickup！'), 'Pickup!');
+});
+
+test('invisible and compatibility characters cannot bypass Free rules', () => {
+  assert.equal(evaluateFreeMessage('You are a\u200Blways late.').canSend, false);
+  assert.equal(evaluateFreeMessage('This is f\u200Buck.').canSend, false);
+  assert.equal(evaluateFreeMessage('Pickup at 17！').canSend, false);
+  assert.equal(evaluateFreeMessage('You are ne\u202Ever late.').canSend, false);
 });
 
 test('the onboarding copy discloses the semantic language limitation', () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'expo-crypto';
 import { supabase } from '../lib/supabase';
 import { cacheMessage, listCachedMessages } from './localDb';
 import { decryptMessageBody, encryptMessageBody, hashMessageBody } from './messageCrypto';
@@ -46,6 +47,14 @@ interface SentDeliveryStatusRow {
   delivered_count: number;
 }
 
+function isTransientRpcError(error: unknown) {
+  const candidate = error as { code?: string; message?: string } | null;
+  const code = String(candidate?.code ?? '');
+  const message = String(candidate?.message ?? '').toLowerCase();
+  return ['PGRST000', 'PGRST001', 'PGRST002', 'PGRST003'].includes(code)
+    || /failed to fetch|network|timeout|timed out|connection|socket|load failed/.test(message);
+}
+
 async function currentUserId() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) throw new Error('Please sign in again.');
@@ -55,7 +64,12 @@ async function currentUserId() {
 async function verifiedBody(message: ChatMessage) {
   if (!message.ciphertext) return message.body;
   if (!message.body_hash) throw new Error('The server-approved message verifier is unavailable.');
-  const decrypted = await decryptMessageBody(message.relationship_id, message.ciphertext, message.body_hash);
+  const decrypted = await decryptMessageBody(
+    message.relationship_id,
+    message.ciphertext,
+    message.body_hash,
+    message.logical_id,
+  );
   if (message.body !== null && message.body.trim() !== decrypted) {
     throw new Error('The encrypted message does not match the approved server copy.');
   }
@@ -164,23 +178,32 @@ export async function listMessages(relationshipId: string) {
 export async function sendMessage(relationshipId: string, body: string) {
   const ownerUserId = await currentUserId();
   const clean = body.trim();
-  const encryptedBody = await encryptMessageBody(relationshipId, clean);
-  const { data, error } = await supabase.rpc('send_message', {
+  const logicalId = randomUUID();
+  const encryptedBody = await encryptMessageBody(relationshipId, clean, logicalId);
+  const args = {
     rel_id: relationshipId,
     message_body: clean,
     encrypted_body: encryptedBody,
-  });
+    client_message_id: logicalId,
+  };
+  let result = await supabase.rpc('send_message', args);
+  if (result.error && isTransientRpcError(result.error)) result = await supabase.rpc('send_message', args);
+  const { data, error } = result;
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as ChatMessage | null;
   if (!row) throw new Error('Message was not created.');
+  if (row.logical_id !== logicalId) throw new Error('Server message identifier verification failed.');
   const expectedHash = await hashMessageBody(clean);
   if (!row.body_hash || row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) {
     throw new Error('Server message verification failed.');
   }
+  if (!row.ciphertext || row.ciphertext !== encryptedBody) {
+    throw new Error('Server encrypted-message verification failed.');
+  }
   const complete: ChatMessage = {
     ...row,
     body: clean,
-    ciphertext: encryptedBody,
+    ciphertext: row.ciphertext,
     delivered_count: 0,
     message_kind: 'text',
     attachment_name: null,
@@ -196,8 +219,9 @@ export async function sendMessage(relationshipId: string, body: string) {
 
 export async function sendTextAttachment(relationshipId: string, attachment: PreparedTextAttachment) {
   const ownerUserId = await currentUserId();
-  const encryptedBody = await encryptMessageBody(relationshipId, attachment.text);
-  const { data, error } = await supabase.rpc('send_text_attachment', {
+  const logicalId = randomUUID();
+  const encryptedBody = await encryptMessageBody(relationshipId, attachment.text, logicalId);
+  const args = {
     rel_id: relationshipId,
     attachment_text: attachment.text,
     encrypted_body: encryptedBody,
@@ -205,18 +229,26 @@ export async function sendTextAttachment(relationshipId: string, attachment: Pre
     mime_type: attachment.mimeType,
     size_bytes: attachment.sizeBytes,
     page_count: attachment.pageCount,
-  });
+    client_message_id: logicalId,
+  };
+  let result = await supabase.rpc('send_text_attachment', args);
+  if (result.error && isTransientRpcError(result.error)) result = await supabase.rpc('send_text_attachment', args);
+  const { data, error } = result;
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as ChatMessage | null;
   if (!row) throw new Error('The document was not sent.');
+  if (row.logical_id !== logicalId) throw new Error('Server document identifier verification failed.');
   const expectedHash = await hashMessageBody(attachment.text);
   if (!row.body_hash || row.body_hash.toLowerCase() !== expectedHash.toLowerCase()) {
     throw new Error('Server document verification failed.');
   }
+  if (!row.ciphertext || row.ciphertext !== encryptedBody) {
+    throw new Error('Server encrypted-document verification failed.');
+  }
   const complete: ChatMessage = {
     ...row,
     body: attachment.text,
-    ciphertext: encryptedBody,
+    ciphertext: row.ciphertext,
     delivered_count: 0,
     message_kind: 'text_attachment',
     attachment_name: attachment.name,

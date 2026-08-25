@@ -5,6 +5,7 @@ export type FilterReasonCode =
   | 'exclamation_mark'
   | 'emoji'
   | 'profanity'
+  | 'repetition'
   | 'generalisation'
   | 'fault_reminder'
   | 'personal_attack'

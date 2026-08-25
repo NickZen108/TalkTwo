@@ -14,6 +14,7 @@ export interface ParsedTalkTwoLink {
 
 const APP_PATH_PREFIX = 'app';
 const CUSTOM_SCHEME = 'talktwo:';
+const RAW_URL_CONTROLS = /[\u0000-\u001f\u007f]/;
 
 function configuredSiteUrl() {
   return process.env.EXPO_PUBLIC_TALKTWO_SITE_URL?.trim() ?? '';
@@ -71,12 +72,22 @@ export function parseTalkTwoLink(url: string, siteUrl = configuredSiteUrl()): Pa
   const expectedOrigin = talkTwoHttpsOrigin(configured);
   if (configured && !expectedOrigin) return null;
 
+  // WHATWG URL parsing intentionally trims/normalizes some raw ASCII whitespace
+  // and control characters. Security-sensitive app links accept one canonical raw
+  // representation instead of letting that normalization silently change input.
+  if (!url || url !== url.trim() || RAW_URL_CONTROLS.test(url)) return null;
+
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return null;
   }
+
+  // Userinfo is never part of a TalkTwo link. URL.origin omits it, so it must be
+  // rejected explicitly before same-origin comparison (for example
+  // https://name@real-host/app/...). Custom-scheme userinfo is rejected too.
+  if (parsed.username || parsed.password) return null;
 
   let pathSegments: string[];
   if (expectedOrigin) {
@@ -85,7 +96,7 @@ export function parseTalkTwoLink(url: string, siteUrl = configuredSiteUrl()): Pa
     if (pathSegments[0]?.toLowerCase() !== APP_PATH_PREFIX) return null;
     pathSegments = pathSegments.slice(1);
   } else {
-    if (parsed.protocol.toLowerCase() !== CUSTOM_SCHEME) return null;
+    if (parsed.protocol.toLowerCase() !== CUSTOM_SCHEME || parsed.port) return null;
     pathSegments = [parsed.hostname, ...parsed.pathname.split('/').filter(Boolean)].filter(Boolean);
   }
 

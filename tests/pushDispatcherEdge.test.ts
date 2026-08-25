@@ -29,3 +29,10 @@ test('dispatcher respects Expo batch limits and processes tickets and receipts',
   assert.match(source, /record_push_receipt/i);
   assert.match(source, /DeviceNotRegistered|expoError/i);
 });
+
+test('provider-at-least-once retries collapse to one visible device job', () => {
+  assert.match(source, /const collapseKey = `tt-\$\{row\.job_id\}`/i);
+  assert.match(source, /collapseId: collapseKey/i);
+  assert.match(source, /tag: collapseKey/i);
+  assert.doesNotMatch(source, /collapseId:[^\n]*(relationship|message)/i);
+});

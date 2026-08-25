@@ -1,3 +1,5 @@
+import { hasPolicyIgnorables } from './policyText';
+
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 export const MAX_ATTACHMENT_CHARACTERS = 60_000;
 export const MAX_ATTACHMENT_PAGES = 20;
@@ -70,6 +72,9 @@ export function validateTextAttachment(input: {
   sizeBytes: number;
   text: string;
 }): TextAttachmentValidation {
+  if (hasPolicyIgnorables(input.name)) {
+    return { ok: false, reason: 'The document file name contains unsupported invisible formatting characters.' };
+  }
   const name = safeAttachmentName(input.name);
   const ext = extension(name);
   const reportedMime = String(input.mimeType ?? '').toLowerCase().split(';')[0]?.trim() ?? '';

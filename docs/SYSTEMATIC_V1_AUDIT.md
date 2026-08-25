@@ -37,8 +37,8 @@ A final v1 freeze is appropriate only when every account-independent row is REVI
 | Native permissions / privacy surface | **REVIEWED** | Android explicitly blocks unrelated sensitive permissions and requires allowBackup=false; iOS gate rejects unrelated usage descriptions/capabilities, arbitrary network loads and verifies SQLCipher/privacy manifest aggregation. |
 | Verified iOS/Android app links | **EXTERNAL** | Repository preflight requires exact final host, AASA, assetlinks, Apple Team ID and Android signing fingerprint. Signed-device verification requires final domain/accounts/signing identity. |
 | Dark mode / palette contrast | **FIXED** | System/light/dark modes exist. Palette contrast tests cover normal text; light subtle text was darkened to meet WCAG AA on normal light surfaces. |
-| Core mobile touch targets | **OPEN** | Chat, privacy controls, login, feedback and communication-window targets were hardened to >=44 pt. Remaining known small targets: Home appearance chips are 42 pt and Chat Settings bubble-colour selectors are 36x36 pt. Fix before marking complete. |
-| Responsive layout / large text | **REVIEWED** | Core screens use shrink/wrap/minWidth guards and scrollable settings flows. Re-run native QA after the remaining touch-target fixes. |
+| Core mobile touch targets | **FIXED** | Core Chat, privacy, Home, Login, Feedback, communication-window and Chat Settings actions/selectors are >=44 pt. Layout-safety regression gate locks the key targets, including appearance chips and bubble-colour selectors. |
+| Responsive layout / large text | **REVIEWED** | Core screens use shrink/wrap/minWidth guards and scrollable settings flows. Re-run native QA on the final audit head. |
 | Languages / semantic filter scope | **REVIEWED** | v1 UI is DA/EN. Free semantic-filter quality is intentionally DA/EN; additional languages are post-v1 scope unless explicitly re-opened. |
 | Store catalogue / IDs | **REVIEWED** | Canonical Apple/Google product IDs and prices are documented. Final store creation, grouping and sandbox/internal purchase tests are external. |
 | Apple/Google subscription replacement | **EXTERNAL** | Code contract is implemented; final Apple subscription-group hierarchy and Google replacement behavior require configured store products and sandbox/internal testing. |
@@ -51,15 +51,12 @@ A final v1 freeze is appropriate only when every account-independent row is REVI
 
 ## Remaining account-independent audit queue
 
-1. Enlarge Home appearance selectors to at least 44 pt.
-2. Enlarge Chat Settings bubble-colour selectors to at least 44x44 pt without changing the selected visual semantics.
-3. Update layout-safety regression gate so these targets cannot regress.
-4. Update production deployment migration list with the latest recovery membership-revalidation migration and current audit migrations.
-5. Re-read this matrix and the release/handover runbook for contradictions or stale assumptions.
-6. Move the QA mirror to the exact resulting audit head and compare trees identical.
-7. Attempt exact-tree QA. A pre-checkout hosted-runner failure remains EXTERNAL; any real test/build failure returns to the appropriate row above.
-8. Select the final product name. After selection, perform a separate deliberate rename plan covering display copy/domain/legal/store metadata and decide whether internal technical identifiers should remain stable.
+1. Update production deployment migration list with the latest recovery membership-revalidation migration and current audit migrations.
+2. Re-read this matrix and the release/handover runbook for contradictions or stale assumptions.
+3. Move the QA mirror to the exact resulting audit head and compare trees identical.
+4. Attempt exact-tree QA. A pre-checkout hosted-runner failure remains EXTERNAL; any real test/build failure returns to the appropriate row above.
+5. Select the final product name. After selection, perform a separate deliberate rename plan covering display copy/domain/legal/store metadata and decide whether internal technical identifiers should remain stable.
 
 ## Stop rule
 
-When steps 1–5 are complete and no new concrete defect is found while executing them, stop broad repository hardening. Do not invent more speculative v1 work. Remaining work is brand selection, external release configuration, exact-tree QA and explicit launch execution.
+When steps 1–2 are complete and no new concrete defect is found while executing them, stop broad repository hardening. Do not invent more speculative v1 work. Remaining work is brand selection, external release configuration, exact-tree QA and explicit launch execution.

@@ -235,17 +235,26 @@ export async function setMemberPreference(ownerUserId: string, relationshipId: s
   );
 }
 
+export async function clearLocalOwnerData(userId: string) {
+  const db = await getLocalDatabase();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync('DELETE FROM local_messages WHERE owner_user_id=?', userId);
+    await txn.runAsync('DELETE FROM member_preferences WHERE owner_user_id=?', userId);
+    await txn.runAsync('DELETE FROM conversation_preferences WHERE owner_user_id=?', userId);
+  });
+}
+
 export async function clearLocalAccountData(userId: string) {
   const db = await getLocalDatabase();
-  await db.withTransactionAsync(async () => {
-    await db.runAsync(
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(
       'DELETE FROM local_messages WHERE owner_user_id=? OR sender_id=? OR recipient_id=?',
       userId, userId, userId,
     );
-    await db.runAsync(
+    await txn.runAsync(
       'DELETE FROM member_preferences WHERE owner_user_id=? OR member_user_id=?',
       userId, userId,
     );
-    await db.runAsync('DELETE FROM conversation_preferences WHERE owner_user_id=?', userId);
+    await txn.runAsync('DELETE FROM conversation_preferences WHERE owner_user_id=?', userId);
   });
 }

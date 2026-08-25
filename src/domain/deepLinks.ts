@@ -26,6 +26,16 @@ function singleParameter(params: URLSearchParams, name: string) {
   return matches.length === 1 && matches[0] ? matches[0] : null;
 }
 
+function hasExactlyParameters(params: URLSearchParams, names: string[]) {
+  const entries = Array.from(params.keys());
+  return entries.length === names.length
+    && names.every((name) => params.getAll(name).length === 1);
+}
+
+function hasNoParameters(params: URLSearchParams) {
+  return Array.from(params.keys()).length === 0;
+}
+
 function exactFragmentValue(params: URLSearchParams, name: string, pattern: RegExp) {
   // URLSearchParams has already percent-decoded fragment values exactly once.
   // Never decode bearer material a second time: canonical protocol tokens are
@@ -34,13 +44,11 @@ function exactFragmentValue(params: URLSearchParams, name: string, pattern: RegE
   return value && pattern.test(value) ? value.toLowerCase() : null;
 }
 
-function safePathUuid(value: string) {
-  try {
-    const decoded = decodeURIComponent(value);
-    return UUID_PATTERN.test(decoded) ? decoded.toLowerCase() : null;
-  } catch {
-    return null;
-  }
+function canonicalPathUuid(value: string) {
+  // Gift IDs are not bearer authority, but accepting percent-encoded path aliases
+  // creates multiple wire representations that web/native routers may normalize
+  // differently. Require the UUID exactly as it appears in the parsed path.
+  return UUID_PATTERN.test(value) ? value.toLowerCase() : null;
 }
 
 function parsed(url: string) {
@@ -51,9 +59,10 @@ function parsed(url: string) {
 export function invitationFromUrl(url: string): (PendingInvite & { secret: string }) | null {
   const link = parsed(url);
   // Invitation tokens are bearer authority. They must never appear in an HTTPS
-  // path/query, where web infrastructure may log them. Accept the canonical
-  // fragment-only format and reject legacy path-token links.
+  // path/query, where web infrastructure may log them. Accept one fragment-only
+  // wire format and reject legacy/ambiguous parameter aliases.
   if (!link || !['invite', 'member'].includes(link.family) || link.pathSegments.length !== 1) return null;
+  if (!hasNoParameters(link.query) || !hasExactlyParameters(link.fragment, ['token', 's'])) return null;
   const token = exactFragmentValue(link.fragment, 'token', INVITATION_TOKEN_PATTERN);
   const secret = exactFragmentValue(link.fragment, 's', INVITATION_SECRET_PATTERN);
   if (!token || !secret) return null;
@@ -67,7 +76,8 @@ export function invitationFromUrl(url: string): (PendingInvite & { secret: strin
 export function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
   const link = parsed(url);
   if (!link || link.family !== 'premium-gift' || link.pathSegments.length !== 2) return null;
-  const giftId = safePathUuid(link.pathSegments[1] ?? '');
+  if (!hasNoParameters(link.query) || !hasExactlyParameters(link.fragment, ['token'])) return null;
+  const giftId = canonicalPathUuid(link.pathSegments[1] ?? '');
   // Keep the possession token in the fragment so an HTTPS browser fallback never
   // sends it to the public web server, reverse proxy or request logs.
   const token = exactFragmentValue(link.fragment, 'token', PREMIUM_GIFT_TOKEN_PATTERN);
@@ -78,8 +88,10 @@ export function premiumGiftFromUrl(url: string): PendingPremiumGift | null {
 export function keyRecoveryFromUrl(url: string): (PendingKeyRecoveryApproval & { secret: string }) | null {
   const link = parsed(url);
   // The recovery token authorizes a chat member to inspect/fulfill the request,
-  // so both it and the local envelope secret stay fragment-only.
+  // so both it and the local envelope secret stay fragment-only and no unrelated
+  // query/fragment keys are accepted.
   if (!link || link.family !== 'recover-key' || link.pathSegments.length !== 1) return null;
+  if (!hasNoParameters(link.query) || !hasExactlyParameters(link.fragment, ['token', 's'])) return null;
   const token = exactFragmentValue(link.fragment, 'token', RECOVERY_TOKEN_PATTERN);
   const secret = exactFragmentValue(link.fragment, 's', INVITATION_SECRET_PATTERN);
   if (!token || !secret) return null;

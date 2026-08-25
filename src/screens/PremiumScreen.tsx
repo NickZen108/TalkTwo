@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/I18nContext';
 
 function Button({ title, onPress, styles, disabled = false, quiet = false }: { title: string; onPress: () => void; styles: ReturnType<typeof makeStyles>; disabled?: boolean; quiet?: boolean }) {
   return (
-    <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button, quiet && styles.quietButton, disabled && styles.disabled]}>
+    <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, quiet && styles.quietButton, disabled && styles.disabled]}>
       <Text style={[styles.buttonText, quiet && styles.quietButtonText]}>{title}</Text>
     </TouchableOpacity>
   );
@@ -25,8 +25,8 @@ export default function PremiumScreen({ onBack, onBuyPremium, onBuyGift, onManag
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [recipient, setRecipient] = useState('');
   const copy = locale === 'da'
-    ? { title: 'Premium', subtitle: 'Mere plads og en intelligent kommunikationsvagt.', gift: 'Giv Premium', giftHelp: 'Indtast modtagerens e-mail. Værdien er knyttet til modtageren, ikke til et enkelt link.' }
-    : { title: 'Premium', subtitle: 'More room and an intelligent communication gatekeeper.', gift: 'Gift Premium', giftHelp: 'Enter the recipient email. The value is tied to the recipient, not to a single link.' };
+    ? { title: 'Premium', subtitle: 'Mere plads og en intelligent kommunikationsvagt.', back: 'Tilbage', gift: 'Giv Premium', giftHelp: 'Indtast modtagerens e-mail. Værdien er knyttet til modtageren, ikke til et enkelt link.' }
+    : { title: 'Premium', subtitle: 'More room and an intelligent communication gatekeeper.', back: 'Back', gift: 'Gift Premium', giftHelp: 'Enter the recipient email. The value is tied to the recipient, not to a single link.' };
 
   function buyGift() {
     const email = recipient.trim();
@@ -40,9 +40,9 @@ export default function PremiumScreen({ onBack, onBuyPremium, onBuyGift, onManag
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" onPress={onBack} style={styles.backButton}><Text style={styles.back}>‹</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={copy.back} onPress={onBack} style={styles.backButton}><Text style={styles.back}>‹</Text></TouchableOpacity>
         <View style={styles.headerText}>
-          <Text style={styles.title}>{copy.title}</Text>
+          <Text accessibilityRole="header" style={styles.title}>{copy.title}</Text>
           <Text style={styles.subtitle}>{copy.subtitle}</Text>
         </View>
       </View>

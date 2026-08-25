@@ -10,6 +10,7 @@ export default function FaqScreen({ onBack }: { onBack: () => void }) {
 
   const copy = locale === 'da' ? {
     title: 'FAQ',
+    back: 'Tilbage',
     items: [
       ['Hvorfor bliver min besked blokeret?', 'TalkTwo er lavet til lavkonflikt-kommunikation. Bandeord, fornærmelser, nedladende tillægsord og anden tydeligt eskalerende formulering bliver stoppet.'],
       ['Hvad er forskellen på Free og Premium?', 'Free bruger enkle mekaniske regler og beskeder på op til 160 tegn. Premium kan analysere op til 480 tegn og kan, når Coach er slået til, foreslå en mere neutral formulering.'],
@@ -20,6 +21,7 @@ export default function FaqScreen({ onBack }: { onBack: () => void }) {
     ],
   } : {
     title: 'FAQ',
+    back: 'Back',
     items: [
       ['Why was my message blocked?', 'TalkTwo is designed for low-conflict communication. Profanity, insults, degrading adjectives and other clearly escalating wording are stopped.'],
       ['What is the difference between Free and Premium?', 'Free uses simple mechanical rules and messages up to 160 characters. Premium can review up to 480 characters and, when Coach is enabled, may suggest a calmer rewrite.'],
@@ -33,10 +35,10 @@ export default function FaqScreen({ onBack }: { onBack: () => void }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={copy.back} onPress={onBack} style={styles.backButton}>
           <Text style={styles.back}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>{copy.title}</Text>
+        <Text accessibilityRole="header" style={styles.title}>{copy.title}</Text>
         <View style={styles.headerSpacer} />
       </View>
       <ScrollView contentContainerStyle={styles.content}>

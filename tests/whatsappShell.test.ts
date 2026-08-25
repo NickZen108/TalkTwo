@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const home = fs.readFileSync('src/screens/HomeScreen.tsx', 'utf8');
 const chat = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
+const faq = fs.readFileSync('src/screens/FaqScreen.tsx', 'utf8');
+const premium = fs.readFileSync('src/screens/PremiumScreen.tsx', 'utf8');
 const palette = fs.readFileSync('src/domain/appPalette.ts', 'utf8');
 const premiumEdge = fs.readFileSync('supabase/functions/analyze-message/index.ts', 'utf8');
 
@@ -46,4 +48,14 @@ test('Premium edge hard-blocks degrading language before an AI call', () => {
   assert.match(premiumEdge, /stupid/);
   assert.match(premiumEdge, /degrading language are not allowed/);
   assert.ok(premiumEdge.indexOf('const hardBlock = hardBlockedFragment(message)') < premiumEdge.indexOf('consume_ai_analysis_for_user'));
+});
+
+test('new FAQ and Premium screens give glyph-only back controls localized accessible names', () => {
+  assert.match(faq, /back: 'Tilbage'/);
+  assert.match(faq, /back: 'Back'/);
+  assert.match(faq, /accessibilityLabel=\{copy\.back\}/);
+  assert.match(premium, /back: 'Tilbage'/);
+  assert.match(premium, /back: 'Back'/);
+  assert.match(premium, /accessibilityLabel=\{copy\.back\}/);
+  assert.match(premium, /accessibilityState=\{\{ disabled \}\}/);
 });

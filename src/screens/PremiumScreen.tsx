@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { normalizeGiftRecipientEmail } from '../domain/email';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import { useI18n } from '../i18n/I18nContext';
 
@@ -25,13 +26,13 @@ export default function PremiumScreen({ onBack, onBuyPremium, onBuyGift, onManag
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [recipient, setRecipient] = useState('');
   const copy = locale === 'da'
-    ? { title: 'Premium', subtitle: 'Mere plads og en intelligent kommunikationsvagt.', back: 'Tilbage', gift: 'Giv Premium', giftHelp: 'Indtast modtagerens e-mail. Værdien er knyttet til modtageren, ikke til et enkelt link.' }
-    : { title: 'Premium', subtitle: 'More room and an intelligent communication gatekeeper.', back: 'Back', gift: 'Gift Premium', giftHelp: 'Enter the recipient email. The value is tied to the recipient, not to a single link.' };
+    ? { title: 'Premium', subtitle: 'Mere plads og en intelligent kommunikationsvagt.', back: 'Tilbage', gift: 'Giv Premium', giftHelp: 'Indtast modtagerens e-mail. Værdien er knyttet til modtageren, ikke til et enkelt link.', invalidEmail: 'Indtast en gyldig e-mailadresse til modtageren.' }
+    : { title: 'Premium', subtitle: 'More room and an intelligent communication gatekeeper.', back: 'Back', gift: 'Gift Premium', giftHelp: 'Enter the recipient email. The value is tied to the recipient, not to a single link.', invalidEmail: 'Enter a valid recipient email address.' };
 
   function buyGift() {
-    const email = recipient.trim();
+    const email = normalizeGiftRecipientEmail(recipient);
     if (!email) {
-      Alert.alert(t('home.recipientNeeded'), t('home.recipientNeededBody'));
+      Alert.alert(t('home.recipientNeeded'), copy.invalidEmail);
       return;
     }
     onBuyGift(email);

@@ -1,3 +1,4 @@
+import { normalizePolicyText } from '../domain/policyText';
 import { FilterReason, FilterResult } from './types';
 
 const MAX_FREE_LENGTH = 160;
@@ -60,7 +61,8 @@ const EMOTION_PATTERNS = [
 ];
 
 // Extended pictographs covers most emoji. Regional indicators catch flags, while
-// variation selector/keycap catch emoji sequences such as ©️ and 1️⃣.
+// variation selector/keycap catch emoji sequences such as ©️ and 1️⃣. Run this
+// against the original text before policy canonicalization removes format marks.
 const emojiRegex = /[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u20E3]/u;
 const emoticonRegex = /(?:[:;=8xX][\-^']?[()DPp]|<3)/;
 
@@ -76,6 +78,7 @@ export function countMessageCharacters(message: string) {
 
 export function evaluateFreeMessage(message: string): FilterResult {
   const text = message.trim();
+  const policyText = normalizePolicyText(text);
   const reasons: FilterReason[] = [];
 
   if (countMessageCharacters(text) > MAX_FREE_LENGTH) {
@@ -87,7 +90,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
     });
   }
 
-  if (text.includes('!')) {
+  if (policyText.includes('!')) {
     addReason(reasons, {
       code: 'exclamation_mark',
       title: 'Remove the exclamation mark',
@@ -97,7 +100,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
     });
   }
 
-  if (emojiRegex.test(text) || emoticonRegex.test(text)) {
+  if (emojiRegex.test(text) || emoticonRegex.test(policyText)) {
     addReason(reasons, {
       code: 'emoji',
       title: 'Remove emoji or emoticon',
@@ -107,7 +110,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
   }
 
   for (const { label, regex } of PROFANITY_PATTERNS) {
-    if (regex.test(text)) {
+    if (regex.test(policyText)) {
       addReason(reasons, {
         code: 'profanity',
         title: 'Remove profanity',
@@ -120,7 +123,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
   }
 
   for (const { label, regex } of GENERALISATIONS) {
-    if (regex.test(text)) {
+    if (regex.test(policyText)) {
       addReason(reasons, {
         code: 'generalisation',
         title: 'Remove the generalisation',
@@ -132,7 +135,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
   }
 
   for (const pattern of FAULT_REMINDER_PATTERNS) {
-    const match = text.match(pattern);
+    const match = policyText.match(pattern);
     if (match) {
       addReason(reasons, {
         code: 'fault_reminder',
@@ -146,7 +149,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
   }
 
   for (const pattern of CRITICISM_PATTERNS) {
-    const match = text.match(pattern);
+    const match = policyText.match(pattern);
     if (match) {
       addReason(reasons, {
         code: 'criticism',
@@ -160,7 +163,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
   }
 
   for (const pattern of EMOTION_PATTERNS) {
-    const match = text.match(pattern);
+    const match = policyText.match(pattern);
     if (match) {
       addReason(reasons, {
         code: 'emotion_dumping',
@@ -173,7 +176,7 @@ export function evaluateFreeMessage(message: string): FilterResult {
     }
   }
 
-  const letters = text.replace(/[^A-Za-zÆØÅÄÖÜæøåäöü]/g, '');
+  const letters = policyText.replace(/[^A-Za-zÆØÅÄÖÜæøåäöü]/g, '');
   if (letters.length >= 8) {
     const upper = letters.replace(/[^A-ZÆØÅÄÖÜ]/g, '').length;
     if (upper / letters.length > 0.7) {

@@ -500,7 +500,7 @@ function makeStyles(colors: AppColors) {
     aliasInput: { minHeight: 44, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 12, fontSize: 16, color: colors.text, backgroundColor: colors.input },
     smallLabel: { fontSize: 12, color: colors.muted, fontWeight: '700' },
     colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    colorDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.borderStrong },
+    colorDot: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong },
     colorSelected: { borderWidth: 3, borderColor: colors.accent },
     approvalCard: { gap: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     twoButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

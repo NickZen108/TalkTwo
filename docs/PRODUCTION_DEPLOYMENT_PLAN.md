@@ -8,7 +8,7 @@ Snapshot note (2026-08-24): the connected production Supabase project was observ
 
 Before changing production:
 
-- finish the systematic account-independent audit and freeze one exact release commit;
+- finish the intended repository audit and freeze one exact release commit;
 - move `qa/full-stack-20260824` to that exact commit and require a normal full QA run to complete green;
 - run `npm run release:preflight` with the final release environment and require `TalkTwo release preflight OK.`;
 - Apple/Google product IDs and package IDs still match `src/domain/storeProducts.ts` and `com.talktwo.app`;
@@ -51,6 +51,8 @@ Current release sequence:
 26. `20260824115800_resumable_member_upgrade_checkout.sql`
 27. `20260824115900_member_upgrade_approval_snapshot.sql`
 28. `20260824120000_key_recovery_membership_revalidation.sql`
+29. `20260825100000_unicode_policy_canonicalization.sql`
+30. `20260825101000_message_send_idempotency.sql`
 
 If later migrations exist on the eventual frozen release commit, append them in lexical order and update this plan before deployment.
 
@@ -66,12 +68,28 @@ If later migrations exist on the eventual frozen release commit, append them in 
 - verify `notification_mutes` has no direct `anon`/`authenticated` table access;
 - verify sender-visible message rows contain no recipient open/rejection/block/mute state;
 - verify emoji/emoticon storage is rejected regardless of plan/client;
+- verify policy matching canonicalizes NFKC compatibility forms and removes invisible/bidi/default-ignorable formatting controls: full-width `！`, zero-width-split generalisations/profanity and zero-width-split Personal Boundary phrases must not bypass enforcement;
+- verify an existing obfuscated Personal Boundary that canonicalizes to an essential single logistics word is removed by migration 29 rather than becoming an active hidden block;
+- verify deceptive invisible/bidi formatting in attachment file names is rejected, and `.txt`/`.md`/`.markdown`/`.csv` extensions must agree with the server-approved MIME type;
 - verify an expired timed block cannot bypass an active recipient Personal Boundary for text or text documents;
 - send disposable approved text/document messages through real RPCs and verify the persisted `public.messages.body` is immediately `NULL`, `plaintext_scrubbed_at` is populated, and ciphertext + verification hash remain available for the authorized open flow;
 - before explicitly opening an incoming disposable message, verify `list_relationship_messages` returns `body`, `ciphertext` and `body_hash` as `NULL`; after `open_message`, verify ciphertext + hash are returned and decrypt to the approved text on the recipient device;
 - verify Personal Boundary rejection never echoes the recipient's matching private word/phrase to the sender;
 - verify a key-recovery request becomes unusable if the requester is no longer a current member of the active relationship, even when its bearer token has not expired;
+- verify authenticated callers cannot execute the legacy three-argument `send_message` or seven-argument `send_text_attachment` signatures;
 - use disposable content only; never inspect real conversation plaintext as a release shortcut.
+
+### Mandatory retry-idempotency and ciphertext-binding gates
+
+Using disposable users/messages:
+
+- each new text/document send uses a client-generated UUID as its server `logical_id` and a `v2.` ciphertext envelope;
+- call the same v2 send RPC twice with exactly the same sender, logical UUID, relationship, plaintext and ciphertext; the second call must return the existing logical message and create **zero additional recipient rows**;
+- concurrent calls with the same sender/logical UUID must serialize and still create only one logical message fan-out;
+- reuse the same sender/logical UUID with different plaintext, ciphertext, relationship, message kind or attachment metadata; the server must reject it;
+- v2 ciphertext decrypts only with AAD containing both the correct relationship id and correct logical message id; substituting another message id must fail authentication;
+- a legacy v1 ciphertext without the `v2.` prefix must remain locally decryptable for already-existing messages, but new authenticated send RPCs must require v2;
+- simulate a transient network failure after a committed send and verify the client retry uses the same logical UUID/ciphertext and reconciles to one message, not two.
 
 ### Mandatory observer → participant database gates
 
@@ -104,23 +122,23 @@ Provider/custom-auth endpoints:
 - `google-store-events` — verify Google Pub/Sub identity/audience/email/package;
 - `dispatch-push-notifications` — require the dedicated dispatcher bearer secret.
 
-Never disable JWT verification for a user-facing function merely to make a test pass.
+Never turn JWT verification off for a user-facing function merely to make a test pass.
 
 ## Phase 3 — server smoke tests
 
 Use disposable test identities and sandbox/store-test transactions only.
 
-- Free and Premium message send/receive.
+- Free and Premium message send/receive, including Unicode policy-bypass probes and retry-idempotency.
 - AI review hard budget reservation/finalization and prompt/context integrity.
-- Document analysis/send/open.
+- Document analysis/send/open, deceptive filename rejection and extension/MIME consistency.
 - Communication-window release without partner timezone/window disclosure.
 - 1h/4h/24h/indefinite private blocks and global/chat/person private notification mutes.
 - Queued alerts are cancelled when muted/blocked; new alerts are not queued while the relevant mute is active.
 - Push payload contains no message text, sender name, relationship id, risk label or document name.
 - Delivery acknowledgement occurs at app sync without read/open/rejection leakage.
-- Editing/withdrawal cannot probe recipient open state.
-- New message rows are ciphertext-only at rest immediately after trusted checks.
-- Unopened messages expose no deterministic body hash.
+- Editing/withdrawal cannot be used to probe recipient open state.
+- New message rows are ciphertext-only at rest immediately after trusted send-time checks.
+- An unopened message exposes no deterministic body hash.
 - Key recovery on a second device, including relationship-bound recovery AAD and stale-membership invalidation.
 - Organization sponsorship claim with a disposable verified email.
 - Store purchase verification/restore with sandbox/licensed testers.
@@ -135,9 +153,10 @@ Use disposable test identities and sandbox/store-test transactions only.
 - serve `/.well-known/apple-app-site-association` with final Apple Team ID + `com.talktwo.app`, scoped to intended `/app/*` routes;
 - serve `/.well-known/assetlinks.json` with `com.talktwo.app` and the SHA-256 fingerprint of the actual Android release signing key;
 - final `app.json` must contain `applinks:<final-host>` and Android `autoVerify` HTTPS intent filter with `pathPrefix: "/app/"`;
-- allowlist final `/app/auth` in Supabase Auth and verify PKCE code exchange; legacy access/refresh-token redirects must be rejected;
-- invitation/member/recovery/gift possession secrets remain in URL fragments and the `/app/*` fallback must not read/transmit them;
-- verify public account deletion with a disposable account; unknown email must neither create an account nor disclose account existence;
+- allowlist the exact final `/app/auth` redirect in Supabase Auth and verify magic-link sign-in uses PKCE; legacy `access_token`/`refresh_token` redirects must be rejected;
+- invitation/member/recovery/gift possession secrets remain in URL fragments and the public `/app/*` fallback never logs, parses or transmits them;
+- verify public account deletion with a disposable account; unknown email neither creates an account nor discloses account existence;
+- verify valid final-domain `/app/auth` and other app links open the signed app while a look-alike domain does not inherit trust;
 - only then set `EXPO_PUBLIC_TALKTWO_SITE_URL` for the signed release build.
 
 ## Phase 5 — native store setup and signed-device tests
@@ -163,10 +182,10 @@ Use disposable test identities and sandbox/store-test transactions only.
 - EAS production builds use remote app versions and auto-increment;
 - Android compile/target SDK remains at least the required release level;
 - signed iOS and Android devices pass every final-domain app-link family and reject look-alike domains;
-- local SQLite reports non-empty SQLCipher `cipher_version`; Android merged manifest keeps app-data backup disabled;
-- TestFlight/Play internal testing covers cross-platform delivery, billing/upgrade/restore, notifications, deletion, new-device key recovery, dark mode and accessibility;
-- store metadata/privacy answers/public URLs match the shipped binary and backend.
+- local SQLite database reports a non-empty `cipher_version`; Android app-data backup remains disabled in the merged release manifest;
+- TestFlight/Play internal testing covers Android-to-iOS and iOS-to-Android chat delivery, billing/upgrade/restore, notifications, deletion, new-device key recovery, v1/v2 message decryption, transient-send retry, dark mode and accessibility;
+- final app icon/splash/store artwork is approved and store metadata/privacy answers/public URLs match the shipped binary and backend.
 
 ## Stop conditions
 
-Stop release for any red exact-tree QA job, failed schema gate, migration drift, failed preflight, missing secret, mismatched store product, broken verified app link, PKCE regression, SQLCipher failure, server plaintext retention, unread-hash leak, Personal Boundary privacy leak, stale-member key-recovery authorization, unverified/incorrect subscription replacement, billing double-charge risk, account-deletion failure, unexpected native permission or failed provider verification.
+Stop release for any red exact-tree QA job, failed schema gate, migration drift, failed preflight, missing secret, mismatched store product, broken verified app link, PKCE regression, local SQLCipher failure, server plaintext retention, unread-hash leak, Personal Boundary privacy leak, Unicode policy bypass, duplicate logical message after same-id retry, v2 ciphertext accepting the wrong logical-id AAD, stale-member key-recovery authorization, unverified/incorrect subscription replacement, billing double-charge risk, account-deletion failure, unexpected native permission or failed provider verification.

@@ -545,7 +545,7 @@ function makeStyles(colors: AppColors) {
     quietActionText: { color: colors.text },
     disabled: { opacity: 0.4 },
     appearanceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    appearanceChip: { minHeight: 42, minWidth: 82, flexGrow: 1, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: colors.surfaceSoft },
+    appearanceChip: { minHeight: 44, minWidth: 82, flexGrow: 1, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: colors.surfaceSoft },
     appearanceChipSelected: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
     appearanceChipText: { color: colors.text, fontWeight: '800' },
     appearanceChipTextSelected: { color: colors.accentText },

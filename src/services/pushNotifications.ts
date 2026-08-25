@@ -23,6 +23,12 @@ function easProjectId() {
   return Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId ?? null;
 }
 
+function nativePlatform() {
+  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
+  if (!platform) throw new Error('Push notifications are available only on iOS and Android.');
+  return platform;
+}
+
 async function configureAndroidChannel() {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('messages', {
@@ -36,14 +42,24 @@ async function configureAndroidChannel() {
 }
 
 async function registerToken(token: string) {
-  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
-  if (!platform) throw new Error('Push notifications are available only on iOS and Android.');
   const { error } = await supabase.rpc('register_push_device', {
     expo_token: token,
-    device_platform: platform,
+    device_platform: nativePlatform(),
   });
   if (error) throw error;
   await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token, secureOptions);
+}
+
+async function rotateToken(previousToken: string, nextToken: string) {
+  const { error } = await supabase.rpc('rotate_push_device', {
+    previous_expo_token: previousToken,
+    next_expo_token: nextToken,
+    device_platform: nativePlatform(),
+  });
+  if (error) throw error;
+  // Persist the replacement only after the server atomically activated it and
+  // retired the previous token. A failed rotation therefore remains retryable.
+  await SecureStore.setItemAsync(PUSH_TOKEN_KEY, nextToken, secureOptions);
 }
 
 async function setGlobalNotificationMute(muted: boolean) {
@@ -119,14 +135,8 @@ export async function refreshPushRegistrationIfEnabled() {
   if (permission.status !== 'granted') return;
   await configureAndroidChannel();
   const next = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  await registerToken(next);
-  if (next !== existing) {
-    try {
-      await supabase.rpc('disable_push_device', { expo_token: existing });
-    } catch {
-      // The refreshed token remains active even if stale-token cleanup must retry later.
-    }
-  }
+  if (next === existing) await registerToken(next);
+  else await rotateToken(existing, next);
 }
 
 export function addPushTokenRefreshListener() {

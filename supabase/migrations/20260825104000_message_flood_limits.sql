@@ -1,15 +1,17 @@
 -- Generous abuse-only server limits. These are not intended as normal product
 -- quotas; they cap pathological successful-send floods that would otherwise create
 -- unbounded message rows and push jobs. Idempotent retries and fan-out rows for the
--- same logical message do not consume extra quota.
+-- same logical message do not consume extra quota. Per-chat buckets are per sender
+-- so one participant cannot exhaust another participant's send allowance.
 
 create table if not exists public.message_send_rate_buckets (
   scope_kind text not null check (scope_kind in ('user_day','relationship_10m')),
   scope_id uuid not null,
+  actor_id uuid not null,
   bucket_start timestamptz not null,
   message_count integer not null default 0 check (message_count between 0 and 100000),
   updated_at timestamptz not null default pg_catalog.now(),
-  primary key(scope_kind,scope_id,bucket_start)
+  primary key(scope_kind,scope_id,actor_id,bucket_start)
 );
 
 alter table public.message_send_rate_buckets enable row level security;
@@ -48,9 +50,12 @@ begin
   );
   day_bucket:=(date_trunc('day',now_at at time zone 'UTC') at time zone 'UTC');
 
-  insert into public.message_send_rate_buckets(scope_kind,scope_id,bucket_start,message_count)
-  values('relationship_10m',new.relationship_id,ten_minute_bucket,1)
-  on conflict(scope_kind,scope_id,bucket_start) do update
+  insert into public.message_send_rate_buckets(
+    scope_kind,scope_id,actor_id,bucket_start,message_count
+  ) values(
+    'relationship_10m',new.relationship_id,new.sender_id,ten_minute_bucket,1
+  )
+  on conflict(scope_kind,scope_id,actor_id,bucket_start) do update
      set message_count=public.message_send_rate_buckets.message_count+1,
          updated_at=pg_catalog.now()
   returning message_count into relationship_count;
@@ -59,9 +64,12 @@ begin
     raise exception 'Too many messages were sent to this chat recently. Try again later.';
   end if;
 
-  insert into public.message_send_rate_buckets(scope_kind,scope_id,bucket_start,message_count)
-  values('user_day',new.sender_id,day_bucket,1)
-  on conflict(scope_kind,scope_id,bucket_start) do update
+  insert into public.message_send_rate_buckets(
+    scope_kind,scope_id,actor_id,bucket_start,message_count
+  ) values(
+    'user_day',new.sender_id,new.sender_id,day_bucket,1
+  )
+  on conflict(scope_kind,scope_id,actor_id,bucket_start) do update
      set message_count=public.message_send_rate_buckets.message_count+1,
          updated_at=pg_catalog.now()
   returning message_count into user_count;
@@ -73,6 +81,7 @@ begin
   -- Keep the service-only bucket table bounded without global scans.
   delete from public.message_send_rate_buckets b
    where b.bucket_start<now_at-interval '3 days'
+     and b.actor_id=new.sender_id
      and (
        (b.scope_kind='user_day' and b.scope_id=new.sender_id)
        or (b.scope_kind='relationship_10m' and b.scope_id=new.relationship_id)

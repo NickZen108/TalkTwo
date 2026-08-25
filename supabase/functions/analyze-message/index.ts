@@ -46,7 +46,7 @@ function estimateCost(model: string, inputTokens: number, outputTokens: number) 
 }
 
 function hardBlockedFragment(text: string): string | null {
-  const pattern = /(?:^|[^\p{L}])(?:fuck(?:ing|ed|er)?|motherfucker|shit|bullshit|bitch|asshole|cunt|dickhead|idiot|moron|dumb|stupid|crazy|insane|retard(?:ed)?|pathetic|useless|incompetent|ridiculous|fuck\s+dig|lort|røvhul|kælling|fandme|dum(?:me)?|sindssyg(?:e|t)?|retarderet(?:e)?|patetisk(?:e)?|ubrugelig(?:e)?|inkompetent(?:e)?|latterlig(?:e|t)?|hold\s+kæft)(?=$|[^\p{L}])/iu;
+  const pattern = /(?:^|[^\p{L}])(?:fuck(?:ing|ed|er)?|motherfucker|shit|bullshit|bitch|asshole|cunt|dickhead|idiot|moron|dumb|stupid|crazy|insane|retard(?:ed)?|pathetic|useless|incompetent|ridiculous|fuck\s+dig|lort|røvhul|kælling|fandme|dum(?:me)?|sindssyg(?:e|t)?|retarder(?:et|ede)|patetisk(?:e)?|ubrugelig(?:e)?|inkompetent(?:e)?|latterlig(?:e|t)?|hold\s+kæft)(?=$|[^\p{L}])/iu;
   const match = text.match(pattern);
   return match?.[0]?.trim() || null;
 }

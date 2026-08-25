@@ -8,7 +8,7 @@ Statuses:
 - **OPEN** — a concrete account-independent item remains.
 - **EXTERNAL** — implementation is ready as far as the repository can take it, but final validation/configuration requires provider accounts, signing identity, final domain, legal approval, physical devices or another external input.
 
-A final v1 freeze is appropriate only when every account-independent row is REVIEWED or FIXED and all remaining OPEN items are either resolved or explicitly accepted as non-blocking. EXTERNAL rows remain release gates, not reasons to keep redesigning repository code.
+A final v1 freeze is appropriate only when every account-independent row is REVIEWED or FIXED and all remaining OPEN items are either a product-owner decision or explicitly accepted as non-blocking. EXTERNAL rows remain release gates, not reasons to keep redesigning repository code.
 
 | Area | Status | Audit result / remaining gate |
 | --- | --- | --- |
@@ -42,21 +42,24 @@ A final v1 freeze is appropriate only when every account-independent row is REVI
 | Languages / semantic filter scope | **REVIEWED** | v1 UI is DA/EN. Free semantic-filter quality is intentionally DA/EN; additional languages are post-v1 scope unless explicitly re-opened. |
 | Store catalogue / IDs | **REVIEWED** | Canonical Apple/Google product IDs and prices are documented. Final store creation, grouping and sandbox/internal purchase tests are external. |
 | Apple/Google subscription replacement | **EXTERNAL** | Code contract is implemented; final Apple subscription-group hierarchy and Google replacement behavior require configured store products and sandbox/internal testing. |
-| Production migration order / smoke tests | **OPEN** | Deployment plan must include the latest recovery membership-revalidation migration and final audit migrations in exact order, then run read-only/post-deploy gates plus disposable smoke tests after explicit deployment approval. |
-| GitHub exact-tree QA | **EXTERNAL** | Earlier candidate completed full native QA green. Current hosted runs terminate before checkout with jobs reporting steps=null. Eventual frozen SHA still requires a normal full QA run green. |
-| Brand / product name | **OPEN** | `TalkTwo` has public name collisions, including an active UK AI call-management service and a prior therapy marketplace. Select a final brand before domain, artwork, AASA/assetlinks, legal publication and store metadata are frozen. Do not mechanically rename bundle/package identifiers unless separately decided. |
+| Production migration order / smoke tests | **FIXED** | Deployment plan is explicit through `20260824120000_key_recovery_membership_revalidation.sql`, requires lexical-order deployment from one frozen tree, post-deploy schema gates and disposable smoke tests including stale-member recovery rejection. |
+| GitHub exact-tree QA | **EXTERNAL** | Earlier candidate completed full native QA green. Newer hosted runs have terminated before checkout with jobs reporting steps=null. Eventual final audit/frozen SHA still requires a normal full QA run green. |
+| Brand / product name | **OPEN** | `TalkTwo` has public name collisions, including an active UK AI call-management service and a prior therapy marketplace. This is now the first unresolved product-owner decision. Select a final brand before domain, artwork, AASA/assetlinks, legal publication and store metadata are frozen. Do not mechanically rename bundle/package identifiers unless separately decided. |
 | Final domain / icon / splash / store artwork | **EXTERNAL** | Depends on final brand and controlled domain. Release preflight intentionally remains red until real assets/configuration exist. |
 | Legal/privacy publication | **EXTERNAL** | Draft source and publication gate exist. Final legal entity/contact/consumer/privacy wording requires explicit review/approval before publication. |
 | Handover / ownership transfer | **REVIEWED** | Asset register, configuration inventory, role model and handover material exist. Final provider ownership/credential transfer is operational work. |
 
-## Remaining account-independent audit queue
+## Account-independent audit conclusion
 
-1. Update production deployment migration list with the latest recovery membership-revalidation migration and current audit migrations.
-2. Re-read this matrix and the release/handover runbook for contradictions or stale assumptions.
-3. Move the QA mirror to the exact resulting audit head and compare trees identical.
-4. Attempt exact-tree QA. A pre-checkout hosted-runner failure remains EXTERNAL; any real test/build failure returns to the appropriate row above.
-5. Select the final product name. After selection, perform a separate deliberate rename plan covering display copy/domain/legal/store metadata and decide whether internal technical identifiers should remain stable.
+The broad account-independent repository audit is **complete** as of this checkpoint: every repository-controlled technical area is REVIEWED or FIXED, and the final deployment/handover consistency pass found no new concrete code defect. Do not continue speculative hardening merely to search for another possible improvement.
+
+Next sequence:
+
+1. Move `qa/full-stack-20260824` to the exact current audit head and confirm the trees are identical.
+2. Attempt exact-tree QA. A pre-checkout hosted-runner failure remains EXTERNAL; a real test/build failure reopens only the specific affected audit row.
+3. Select the final product name. After selection, perform a deliberate rename plan covering display copy/domain/legal/store metadata and explicitly decide whether stable technical identifiers should remain unchanged.
+4. Complete external domain/artwork/accounts/signing/legal/store configuration, then freeze the actual release SHA and run the full release gates.
 
 ## Stop rule
 
-When steps 1–2 are complete and no new concrete defect is found while executing them, stop broad repository hardening. Do not invent more speculative v1 work. Remaining work is brand selection, external release configuration, exact-tree QA and explicit launch execution.
+Broad repository hardening stops here unless exact-tree QA, provider sandbox tests, signed-device tests or a newly demonstrated concrete defect produces evidence that reopens a specific row. Remaining imagined improvements go to post-v1 rather than moving the launch finish line again.

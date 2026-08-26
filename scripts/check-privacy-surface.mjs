@@ -75,11 +75,20 @@ if (!sqlitePlugin || sqlitePlugin[1]?.useSQLCipher !== true) {
 }
 
 const localDb = fs.readFileSync('src/services/localDb.ts', 'utf8');
-const keyPosition = localDb.indexOf('PRAGMA key');
-const cipherVersionPosition = localDb.indexOf('PRAGMA cipher_version');
-const firstTablePosition = localDb.indexOf('CREATE TABLE');
-if (keyPosition < 0 || cipherVersionPosition < 0 || firstTablePosition < 0
-  || !(keyPosition < cipherVersionPosition && cipherVersionPosition < firstTablePosition)) {
+// Runtime order is enforced inside initializeEncryptedDatabase: key pragma, then
+// assertSqlCipher (which issues PRAGMA cipher_version), then CREATE TABLE.
+// The helper is defined earlier in the file, so global indexOf ordering is unreliable.
+const initializeStart = localDb.indexOf('async function initializeEncryptedDatabase');
+const keyInInit = localDb.indexOf('PRAGMA key', initializeStart);
+const assertCallInInit = localDb.indexOf('assertSqlCipher(db)', initializeStart);
+const firstTable = localDb.indexOf('CREATE TABLE', initializeStart);
+if (
+  initializeStart < 0
+  || keyInInit <= initializeStart
+  || assertCallInInit <= keyInInit
+  || firstTable <= assertCallInInit
+  || !/PRAGMA cipher_version/.test(localDb)
+) {
   failures.push('src/services/localDb.ts: local DB must apply its key, verify SQLCipher, then access/create plaintext tables');
 }
 if (!/Encrypted local storage is unavailable on this build/.test(localDb)) {

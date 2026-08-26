@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { canResendPremiumGift, premiumGiftStatusLabel } from '../domain/premiumGifts';
+import { canResendPremiumGift } from '../domain/premiumGifts';
 import {
   claimPremiumGift,
   listMyPendingPremiumGifts,
@@ -10,6 +10,8 @@ import {
   type PurchasedPremiumGift,
 } from '../services/premiumGifts';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
+import { useI18n } from '../i18n/I18nContext';
+import type { SupportedLocale, TranslationKey } from '../i18n/translations';
 
 function Button({ title, onPress, disabled = false, secondary = false, styles }: {
   title: string;
@@ -25,13 +27,22 @@ function Button({ title, onPress, disabled = false, secondary = false, styles }:
   );
 }
 
-function dateLabel(value: string) {
+function dateLabel(value: string, locale: SupportedLocale, unknownDate: string) {
   const date = new Date(value);
-  return Number.isFinite(date.valueOf()) ? date.toLocaleDateString() : 'unknown date';
+  return Number.isFinite(date.valueOf()) ? date.toLocaleDateString(locale === 'da' ? 'da-DK' : 'en') : unknownDate;
+}
+
+function giftStatusKey(status: string): TranslationKey {
+  if (status === 'paid') return 'gifts.statusPaid';
+  if (status === 'claimed') return 'gifts.statusClaimed';
+  if (status === 'expired') return 'gifts.statusExpired';
+  if (status === 'refunded') return 'gifts.statusRefunded';
+  return 'gifts.statusProcessing';
 }
 
 export default function PremiumGiftsScreen({ onBack }: { onBack: () => void }) {
   const { colors } = useAppTheme();
+  const { locale, t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [pending, setPending] = useState<PendingPremiumGift[]>([]);
   const [purchased, setPurchased] = useState<PurchasedPremiumGift[]>([]);
@@ -49,26 +60,26 @@ export default function PremiumGiftsScreen({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     void refresh()
-      .catch((error) => Alert.alert('Gifts could not be loaded', error instanceof Error ? error.message : 'Please try again.'))
+      .catch((error) => Alert.alert(t('gifts.loadError'), error instanceof Error ? error.message : t('common.tryAgain')))
       .finally(() => setLoading(false));
   }, []);
 
   function activate(gift: PendingPremiumGift) {
     Alert.alert(
-      'Activate Premium gift?',
-      `This adds ${gift.duration_months} month${gift.duration_months === 1 ? '' : 's'} of Premium to this TalkTwo account.`,
+      t('gifts.activateTitle'),
+      t(gift.duration_months === 1 ? 'gifts.activateOne' : 'gifts.activateMany', { count: gift.duration_months }),
       [
-        { text: 'Not now', style: 'cancel' },
+        { text: t('home.notNow'), style: 'cancel' },
         {
-          text: 'Activate',
+          text: t('gifts.activate'),
           onPress: () => {
             setBusyGiftId(gift.gift_id);
             void claimPremiumGift(gift.gift_id)
               .then(async (premiumEndsAt) => {
                 await refresh();
-                Alert.alert('Premium activated', `Premium is now available through ${dateLabel(premiumEndsAt)}.`);
+                Alert.alert(t('gifts.activated'), t('gifts.activatedBody', { date: dateLabel(premiumEndsAt, locale, t('gifts.unknownDate')) }));
               })
-              .catch((error) => Alert.alert('Gift could not be activated', error instanceof Error ? error.message : 'Please try again.'))
+              .catch((error) => Alert.alert(t('gifts.activateError'), error instanceof Error ? error.message : t('common.tryAgain')))
               .finally(() => setBusyGiftId(null));
           },
         },
@@ -81,11 +92,11 @@ export default function PremiumGiftsScreen({ onBack }: { onBack: () => void }) {
       setBusyGiftId(gift.gift_id);
       const link = await rotatePremiumGiftLink(gift.gift_id);
       await Share.share({
-        message: `A one-month TalkTwo Premium gift is waiting for you. Open this link in TalkTwo: ${link.url}\n\nThe gift is also tied to your TalkTwo email, so you can still find it after signing in if this link is lost.`,
+        message: t('gifts.share', { url: link.url }),
       });
       await refresh();
     } catch (error) {
-      Alert.alert('Gift link could not be created', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert(t('gifts.linkError'), error instanceof Error ? error.message : t('common.tryAgain'));
     } finally {
       setBusyGiftId(null);
     }
@@ -95,42 +106,42 @@ export default function PremiumGiftsScreen({ onBack }: { onBack: () => void }) {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('gifts.back')} onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.title}>Premium gifts</Text>
-            <Text style={styles.subtitle}>Paid value belongs to the recipient account—not to a fragile link.</Text>
+            <Text style={styles.title}>{t('gifts.title')}</Text>
+            <Text style={styles.subtitle}>{t('gifts.subtitle')}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Gifts waiting for you</Text>
-          <Text style={styles.help}>TalkTwo finds gifts by your verified account email. The original link is optional.</Text>
+          <Text style={styles.sectionTitle}>{t('gifts.waitingTitle')}</Text>
+          <Text style={styles.help}>{t('gifts.waitingHelp')}</Text>
           {pending.map((gift) => (
             <View key={gift.gift_id} style={styles.card}>
-              <Text style={styles.cardTitle}>{gift.duration_months} month{gift.duration_months === 1 ? '' : 's'} of Premium</Text>
-              <Text style={styles.meta}>Activate by {dateLabel(gift.claim_expires_at)}</Text>
-              <Button styles={styles} title={busyGiftId === gift.gift_id ? 'Activating…' : 'Activate gift'} onPress={() => activate(gift)} disabled={busyGiftId !== null} />
+              <Text style={styles.cardTitle}>{t(gift.duration_months === 1 ? 'gifts.monthOne' : 'gifts.monthMany', { count: gift.duration_months })}</Text>
+              <Text style={styles.meta}>{t('gifts.activateBy', { date: dateLabel(gift.claim_expires_at, locale, t('gifts.unknownDate')) })}</Text>
+              <Button styles={styles} title={busyGiftId === gift.gift_id ? t('gifts.activating') : t('gifts.activateGift')} onPress={() => activate(gift)} disabled={busyGiftId !== null} />
             </View>
           ))}
-          {!loading && !pending.length ? <Text style={styles.empty}>No unclaimed gifts are waiting for this email.</Text> : null}
-          {loading ? <Text style={styles.empty}>Checking gifts…</Text> : null}
+          {!loading && !pending.length ? <Text style={styles.empty}>{t('gifts.noneWaiting')}</Text> : null}
+          {loading ? <Text style={styles.empty}>{t('gifts.checking')}</Text> : null}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Gifts you bought</Text>
-          <Text style={styles.help}>Creating a new link invalidates the previous link. It never changes who owns the paid gift.</Text>
+          <Text style={styles.sectionTitle}>{t('gifts.boughtTitle')}</Text>
+          <Text style={styles.help}>{t('gifts.boughtHelp')}</Text>
           {purchased.map((gift) => {
             const canResend = canResendPremiumGift(gift);
             return (
               <View key={gift.gift_id} style={styles.card}>
                 <Text numberOfLines={2} ellipsizeMode="middle" style={styles.cardTitle}>{gift.recipient_email}</Text>
-                <Text style={styles.meta}>{premiumGiftStatusLabel(gift.status)} · {gift.duration_months} month{gift.duration_months === 1 ? '' : 's'}</Text>
-                <Text style={styles.meta}>{gift.status === 'claimed' && gift.claimed_at ? `Activated ${dateLabel(gift.claimed_at)}` : `Claim by ${dateLabel(gift.claim_expires_at)}`}</Text>
-                {canResend ? <Button styles={styles} title={busyGiftId === gift.gift_id ? 'Creating link…' : 'Create and share a new link'} onPress={() => void resend(gift)} disabled={busyGiftId !== null} secondary /> : null}
+                <Text style={styles.meta}>{t(giftStatusKey(gift.status))} · {t(gift.duration_months === 1 ? 'gifts.monthOne' : 'gifts.monthMany', { count: gift.duration_months })}</Text>
+                <Text style={styles.meta}>{gift.status === 'claimed' && gift.claimed_at ? t('gifts.activatedDate', { date: dateLabel(gift.claimed_at, locale, t('gifts.unknownDate')) }) : t('gifts.claimBy', { date: dateLabel(gift.claim_expires_at, locale, t('gifts.unknownDate')) })}</Text>
+                {canResend ? <Button styles={styles} title={busyGiftId === gift.gift_id ? t('gifts.creatingLink') : t('gifts.shareNewLink')} onPress={() => void resend(gift)} disabled={busyGiftId !== null} secondary /> : null}
               </View>
             );
           })}
-          {!loading && !purchased.length ? <Text style={styles.empty}>You have not bought any Premium gifts yet.</Text> : null}
+          {!loading && !purchased.length ? <Text style={styles.empty}>{t('gifts.noneBought')}</Text> : null}
         </View>
       </ScrollView>
     </SafeAreaView>

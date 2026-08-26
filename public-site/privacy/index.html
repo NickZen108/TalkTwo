@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="index,follow" />
+    <title>TalkTwo Privacy Policy</title>
+  </head>
+  <body>
+    <main class="shell">
+      <article class="card legal" aria-labelledby="page-title">
+        <nav class="topnav" aria-label="TalkTwo public pages">
+          <a href="/">TalkTwo</a>
+          <a aria-current="page" href="/privacy/">Privacy</a>
+          <a href="/terms/">Terms</a>
+          <a href="/support/">Support</a>
+        </nav>
+        <div class="notice draft" data-publication-status hidden></div>
+        <p class="brand">TalkTwo</p>
+        <h1 id="page-title">Privacy Policy</h1>
+        <p class="fineprint">Effective date: <span data-config="privacyEffectiveDate">Not configured</span></p>
+        <p class="lead">TalkTwo is a private communication service designed to help people slow down difficult conversations. This policy explains what information TalkTwo processes, why it is processed, how it is protected, and the choices available to users.</p>
+
+        <h2>1. Who is responsible</h2>
+        <p><strong>Service:</strong> TalkTwo<br /><strong>Developer / data controller:</strong> <span data-config="legalEntity">Not configured</span><br /><strong>Postal address:</strong> <span data-config="postalAddress">Not configured</span><br /><strong>Privacy contact:</strong> <a data-mailto="privacyEmail">Not configured</a></p>
+
+        <h2>2. Information TalkTwo processes</h2>
+        <ul>
+          <li><strong>Account information:</strong> email address, account/user ID, display name, language preference and authentication records.</li>
+          <li><strong>Conversation membership and settings:</strong> conversation IDs, roles, invitations, approvals, communication-window settings, blocking state and subscription entitlements.</li>
+          <li><strong>Messages and supported text documents:</strong> content needed to provide messaging and user-requested conflict review, plus operational metadata such as sender/recipient IDs, timestamps, availability, risk, delivery and rejection/withdrawal state.</li>
+          <li><strong>Encrypted/local message data:</strong> TalkTwo encrypts message content for delivery and stores decrypted visible copies locally on the user's device. Server-side readable content is designed to be minimized and scrubbed after required device caching conditions. TalkTwo is not described as universally end-to-end encrypted because Premium AI review requires selected plaintext to be processed by the AI provider.</li>
+          <li><strong>AI review data:</strong> when a Premium user requests review, submitted text and limited recent context may be sent to the configured AI provider. Current code sends OpenAI requests with provider-side response storage disabled (<code>store: false</code>).</li>
+          <li><strong>Coach data:</strong> if Coach is enabled, TalkTwo stores only the user's aggregate reviewed/green/yellow/red counters; the stats table does not store message text or partner comparisons.</li>
+          <li><strong>Purchase and entitlement information:</strong> product IDs, transaction/subscription identifiers and status needed to verify purchases, restore access, handle refunds and prevent fraud. TalkTwo does not receive payment-card details from Apple or Google.</li>
+          <li><strong>Organization-funded access:</strong> a one-way hash of the recipient's normalized verified email may be stored temporarily to match a pending grant. The match hash is designed to be erased after claim or expiry. The sponsor is not given conversation content, membership, read/open status, Coach statistics or encryption material.</li>
+          <li><strong>Notifications:</strong> if opted in, a device push token is stored. Notification text is designed not to contain message text, sender names or document names.</li>
+          <li><strong>Feedback/support and security data:</strong> information deliberately submitted to support and limited technical records needed for authentication, abuse prevention, purchase integrity, reliability and security.</li>
+        </ul>
+        <p>TalkTwo does not intentionally request contacts, photos, camera, microphone, precise/coarse location, SMS/call logs or advertising identifiers for its core service.</p>
+
+        <h2>3. Why information is processed</h2>
+        <p>TalkTwo processes information to create and secure accounts; deliver conversations; enforce roles, approvals, communication windows, blocking and message states; provide requested Free/Premium conflict review and optional Coach functionality; verify and restore paid access; send optional privacy-minimized notifications; answer support requests; prevent abuse/fraud/unauthorized access; and comply with applicable legal obligations.</p>
+
+        <h2>4. Service providers and sharing</h2>
+        <p>TalkTwo does not sell personal data and does not use it for cross-app advertising or tracking. Necessary service providers are expected to include Supabase for authentication/database/backend infrastructure, OpenAI for user-requested Premium AI review, Expo plus Apple/Google infrastructure for optional push notifications, and Apple App Store / Google Play for purchases and entitlement events.</p>
+        <p>A sponsoring organization does not gain access to a user's private conversations or activity merely because it funds Premium.</p>
+
+        <h2>5. Local device data</h2>
+        <p>Some data deliberately remains local, including decrypted visible messages, conversation keys and local appearance choices such as aliases, bubble colours and backgrounds. Local message storage is designed to use encrypted device storage/SQLCipher where supported by the release configuration.</p>
+
+        <h2>6. Retention and deletion</h2>
+        <p>TalkTwo is designed to minimize server-side readable message content. Operational, security and purchase-integrity records may require different retention periods. Where limited purchase/security records must be retained for a lawful purpose, TalkTwo is designed to remove or pseudonymize the deleted user's direct identity where feasible.</p>
+        <p>A signed-in user can permanently delete their account under <strong>Account &amp; privacy → Delete account</strong>, or use the authenticated <a href="/delete-account/">public account-deletion page</a>. Account deletion is designed to remove the authentication account, profile, memberships, settings and server-side message data involving that account, and the app removes that account's decrypted local messages and conversation keys from the device performing deletion.</p>
+        <p>TalkTwo cannot remotely erase copies already opened and stored on another participant's device. Deleting a TalkTwo account does not itself cancel an Apple App Store or Google Play subscription; cancel through the relevant store to stop future billing.</p>
+
+        <h2>7. User choices and rights</h2>
+        <p>Users can turn optional notifications off, enable/disable Premium Coach, set communication windows, block another member privately, export selected locally visible ordinary messages after an unencrypted-file warning, and delete their account. Depending on applicable law, additional access, correction, objection, restriction, portability, consent-withdrawal or deletion rights may apply. Contact <a data-mailto="privacyEmail">Not configured</a>.</p>
+
+        <h2>8. Security</h2>
+        <p>TalkTwo uses HTTPS/TLS for data in transit and is designed around encryption, least-privilege backend access, authenticated database functions, local encrypted storage and data minimization. No online service can guarantee absolute security. Protect access to your email account and device because TalkTwo uses passwordless email sign-in and local device storage.</p>
+
+        <h2>9. Children</h2>
+        <p data-config="minimumAgeRule">Not configured</p>
+
+        <h2>10. International processing</h2>
+        <p data-config="internationalTransferText">Not configured</p>
+
+        <h2>11. Changes</h2>
+        <p>TalkTwo may update this policy when the service, providers or legal requirements change. The public version will identify its effective date, and material changes will be communicated as required.</p>
+
+        <h2>12. Contact</h2>
+        <p>Privacy: <a data-mailto="privacyEmail">Not configured</a><br />Support: <a data-mailto="supportEmail">Not configured</a></p>
+      </article>
+    </main>
+    <script type="module" src="/src/publicPages.js"></script>
+  </body>
+</html>

@@ -54,13 +54,18 @@ function checkManifest(manifestPath, expectRemovalDirectives) {
   const active = [...new Set(entries.filter((entry) => !entry.removed).map((entry) => entry.name))].sort();
   const removed = [...new Set(entries.filter((entry) => entry.removed).map((entry) => entry.name))].sort();
   const sensitive = active.filter((permission) => forbidden.has(permission));
+  const applicationTag = xml.match(/<application\b[^>]*>/i)?.[0] ?? '';
+  const allowBackup = applicationTag.match(/android:allowBackup="([^"]+)"/i)?.[1]?.toLowerCase() ?? '';
 
   console.log(`${manifestPath}: active permissions = ${active.length ? active.join(', ') : '(none)'}`);
+  console.log(`${manifestPath}: android:allowBackup = ${allowBackup || '(missing/default true)'}`);
   if (expectRemovalDirectives) console.log(`${manifestPath}: explicit removal directives = ${removed.length ? removed.join(', ') : '(none)'}`);
 
-  if (!active.includes('android.permission.INTERNET')) return [`${manifestPath}: INTERNET permission is missing`];
-  if (sensitive.length) return [`${manifestPath}: sensitive permissions are ACTIVE: ${sensitive.join(', ')}`];
-  return [];
+  const failures = [];
+  if (!active.includes('android.permission.INTERNET')) failures.push(`${manifestPath}: INTERNET permission is missing`);
+  if (sensitive.length) failures.push(`${manifestPath}: sensitive permissions are ACTIVE: ${sensitive.join(', ')}`);
+  if (allowBackup !== 'false') failures.push(`${manifestPath}: android:allowBackup must be explicitly false for TalkTwo private app data`);
+  return failures;
 }
 
 const mergedMode = process.argv.includes('--merged');
@@ -79,8 +84,8 @@ if (!paths.length || paths.some((item) => !fs.existsSync(item))) {
 
 const failures = paths.flatMap((manifestPath) => checkManifest(manifestPath, !mergedMode));
 if (failures.length) {
-  console.error('Android permission gate failed:\n- ' + failures.join('\n- '));
+  console.error('Android privacy/permission gate failed:\n- ' + failures.join('\n- '));
   process.exit(1);
 }
 
-console.log(`${mergedMode ? 'Merged Android' : 'Prebuild Android'} sensitive-permission gate passed.`);
+console.log(`${mergedMode ? 'Merged Android' : 'Prebuild Android'} privacy/permission gate passed.`);

@@ -23,7 +23,22 @@ type PurchaseRequest = {
   purchaseKind?: unknown;
 };
 
-Deno.serve(async (req) => {
+type UpgradeVerificationContext = {
+  payment_provider: 'apple' | 'google';
+  provider_subscription_id: string;
+};
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function text(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405);
 
   try {
@@ -39,6 +54,7 @@ Deno.serve(async (req) => {
     if (mode === 'restore' && checkoutIntentId) return jsonResponse({ error: 'checkout_intent_not_allowed_for_restore' }, 400);
 
     let event;
+    let googleLinkedPurchaseToken: string | null = null;
     if (body.platform === 'apple') {
       const signedTransaction = typeof body.signedTransactionInfo === 'string'
         ? body.signedTransactionInfo
@@ -73,6 +89,7 @@ Deno.serve(async (req) => {
       }
       if (mode === 'purchase' && envelope.purchaseKind === 'subscription') {
         assertCurrentGoogleSubscription(verifiedPurchase);
+        googleLinkedPurchaseToken = text(record(verifiedPurchase).linkedPurchaseToken);
       }
       event = envelope.purchaseKind === 'one_time'
         ? await normalizeGoogleOneTimePurchase(envelope, verifiedPurchase)
@@ -82,6 +99,33 @@ Deno.serve(async (req) => {
     }
 
     const admin = supabaseAdmin();
+
+    // Observer -> participant is a replacement of an existing paid subscription,
+    // not permission to create a second unrelated subscription. For an upgrade
+    // checkout the database returns the current verified provider identity. Apple
+    // must keep the same original transaction within the subscription group;
+    // Google must explicitly link the new purchase token to the old token.
+    if (mode === 'purchase' && checkoutIntentId) {
+      const { data: contextRows, error: contextError } = await admin.rpc(
+        'get_member_upgrade_verification_context',
+        { intent_id: checkoutIntentId, purchaser: user.id },
+      );
+      if (contextError) throw contextError;
+      const context = (Array.isArray(contextRows) ? contextRows[0] : contextRows) as UpgradeVerificationContext | null;
+      if (context) {
+        const expectedProviderId = text(context.provider_subscription_id);
+        if (!expectedProviderId || context.payment_provider !== event.platform) {
+          return jsonResponse({ error: 'subscription_replacement_mismatch' }, 400);
+        }
+        const replacementMatches = event.platform === 'apple'
+          ? event.providerOriginalTransactionId === expectedProviderId
+          : googleLinkedPurchaseToken === expectedProviderId;
+        if (!replacementMatches) {
+          return jsonResponse({ error: 'subscription_replacement_mismatch' }, 400);
+        }
+      }
+    }
+
     if (mode === 'restore') {
       const { data: restored, error: restoreError } = await admin.rpc('confirm_verified_store_restore', {
         p_platform: event.platform,

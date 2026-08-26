@@ -1,45 +1,47 @@
 # TalkTwo
 
-TalkTwo is a conflict-aware messaging app designed to help people communicate calmly and constructively, especially after separation or divorce.
+TalkTwo is a private, low-conflict messaging app for conversations that deserve more care. The repository contains the Expo mobile client, Supabase migrations/Edge Functions, privacy-focused local storage, store billing integration, public account-deletion site source, and launch QA.
 
-## Product principles
+## Start here
 
-- Necessary information over emotional unloading
-- Facts, requests, agreements and practical next steps
-- Free tier uses a strict local rule-based filter
-- Premium uses AI for contextual analysis, rewriting and optional coaching
-- No message previews in push notifications
-- Delivery respects recipient-defined communication windows
-- Message history is designed to be local-first
+Do not begin by reading the whole repository. Open [`docs/START_HERE.md`](docs/START_HERE.md) and choose the path for your role:
 
-## Current status
+- TalkTwo user / usability reviewer;
+- municipality, family centre, clinic or other sponsoring organisation;
+- developer/operator;
+- new owner/buyer.
 
-Early MVP scaffold.
+The role hub links to the canonical product, privacy, access, release and ownership-transfer documents.
 
-## Planned stack
+## Development
 
-- React Native + Expo + TypeScript
-- Supabase for authentication and backend services
-- Local-first message storage
-- Replaceable AI provider layer for Premium analysis
+```sh
+npm install
+npm run typecheck
+npm run typecheck:tests
+npm test
+npm run layout:check
+npm run privacy:check
+npx expo-doctor
+npm run audit:runtime
+```
 
-## Free tier
+Native QA also prebuilds iOS/Android, verifies permissions and builds Android release artifacts through GitHub Actions.
 
-- Max 160 characters per message
-- No emojis
-- No profanity
-- No exclamation marks
-- Blocks common criticism, generalisations and personal attacks
-- Gives a clear reason and concrete correction guidance
+## Release gates
 
-## Premium
+Do not treat a successful local build as deployment approval. The current launch stack is intentionally kept in draft PRs and must not be merged or deployed merely because it compiles.
 
-- Max 480 characters
-- AI evaluates the current message in context of up to 10 recent messages
-- Green / Yellow / Red assessment
-- Optional calm rewrite and Coach
-- Personal Boundaries
-- PDF export
-- Text-document attachments subject to conflict scanning
+Use `docs/PRODUCTION_DEPLOYMENT_PLAN.md` as the fail-closed release runbook. In particular:
 
-TalkTwo is currently private and under active development.
+- freeze and validate the exact release tree;
+- apply migrations in order;
+- require the account-deletion and SECURITY DEFINER schema gates;
+- deploy Edge Functions from the same frozen commit with the documented JWT/custom-auth boundaries;
+- complete disposable-account, billing, push and public-site smoke tests;
+- run `npm run release:preflight` only with final release environment values;
+- complete Apple/Google account configuration and internal testing before submission.
+
+The preflight is expected to fail until the final HTTPS site, real publishable key, EAS project ID and approved app/adaptive icon assets are configured.
+
+See also `docs/STORE_SETUP_CHECKLIST.md` and `docs/STORE_SUBMISSION_PACK.md`.

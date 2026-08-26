@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="index,follow" />
+    <title>Delete your TalkTwo account</title>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card" aria-labelledby="page-title">
+        <nav class="topnav" aria-label="TalkTwo public pages">
+          <a href="/">TalkTwo</a>
+          <a href="/privacy/">Privacy</a>
+          <a href="/terms/">Terms</a>
+          <a href="/support/">Support</a>
+        </nav>
+        <p class="brand">TalkTwo</p>
+        <h1 id="page-title">Delete your TalkTwo account</h1>
+        <p class="lead">Use this page if you no longer have the TalkTwo app. Your identity must be verified through the email address already attached to your TalkTwo account before deletion is possible.</p>
+
+        <div id="config-error" class="notice danger" hidden></div>
+
+        <section id="request-section" hidden>
+          <h2>Verify your account</h2>
+          <form id="request-form">
+            <label for="email">TalkTwo email address</label>
+            <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required maxlength="320" />
+            <button id="request-button" type="submit">Email me a secure sign-in link</button>
+          </form>
+          <p id="request-status" class="status" role="status" aria-live="polite"></p>
+        </section>
+
+        <section id="delete-section" hidden>
+          <h2>Permanent deletion</h2>
+          <p>Signed in as <strong id="signed-in-email"></strong>.</p>
+          <p>Deleting your TalkTwo account removes your account, profile, chat memberships, settings and server-side message data involving your account. It also removes local decrypted messages and conversation keys from the device where deletion is performed by the app.</p>
+          <p>Other conversation participants may still have messages they already opened and stored on their own devices. TalkTwo cannot remotely erase private data stored on somebody else's device.</p>
+          <p><strong>Deleting TalkTwo does not cancel an Apple App Store or Google Play subscription.</strong> Cancel the subscription in the relevant store to stop future billing.</p>
+          <div class="notice danger"><strong>This is permanent.</strong> A new account using the same email will not recover deleted chats or encryption keys.</div>
+          <form id="delete-form">
+            <label for="confirmation">Type DELETE to continue</label>
+            <input id="confirmation" name="confirmation" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required />
+            <button id="delete-button" class="danger-button" type="submit" disabled>Delete account permanently</button>
+          </form>
+          <p id="delete-status" class="status" role="status" aria-live="assertive"></p>
+          <button id="sign-out-button" class="secondary" type="button">Sign out without deleting</button>
+        </section>
+
+        <section id="deleted-section" hidden>
+          <h2>Account deleted</h2>
+          <p>Your TalkTwo account deletion request was completed. If you had an Apple App Store or Google Play subscription, cancel it separately in the store to stop future billing.</p>
+        </section>
+
+        <hr />
+        <p class="fineprint">Need help? <a id="support-link" href="/support/">Contact TalkTwo support</a>. Do not send private conversation content unless it is necessary to explain a support problem.</p>
+      </section>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

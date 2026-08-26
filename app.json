@@ -8,6 +8,8 @@
     "userInterfaceStyle": "automatic",
     "plugins": [
       "expo-iap",
+      "expo-localization",
+      "expo-notifications",
       [
         "expo-build-properties",
         {
@@ -16,6 +18,8 @@
           },
           "android": {
             "minSdkVersion": 24,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
             "kotlinVersion": "2.2.0"
           }
         }
@@ -33,6 +37,7 @@
     },
     "android": {
       "package": "com.talktwo.app",
+      "allowBackup": false,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.CAMERA",

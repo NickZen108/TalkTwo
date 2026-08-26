@@ -9,15 +9,6 @@ export interface MessageWindow {
   enabled: boolean;
 }
 
-export interface PartnerWindow {
-  user_id: string;
-  timezone: string;
-  weekday: number | null;
-  start_local: string | null;
-  end_local: string | null;
-  enabled: boolean | null;
-}
-
 export async function getMyTimezone() {
   const { data, error } = await supabase.from('profiles').select('timezone').single();
   if (error) throw error;
@@ -48,12 +39,6 @@ export async function saveMyWindow(weekday: number, enabled: boolean, startLocal
   });
   if (error) throw error;
   return data as MessageWindow;
-}
-
-export async function getPartnerWindows(relationshipId: string) {
-  const { data, error } = await supabase.rpc('get_relationship_partner_settings', { rel_id: relationshipId });
-  if (error) throw error;
-  return (data ?? []) as PartnerWindow[];
 }
 
 export async function releaseWaitingMessages(relationshipId?: string) {

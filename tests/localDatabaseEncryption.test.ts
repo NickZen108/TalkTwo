@@ -21,15 +21,23 @@ test('local database key is device-only random 256-bit material', () => {
 });
 
 test('database fails closed unless SQLCipher responds before any plaintext table access', () => {
-  const keyPosition = localDb.indexOf('PRAGMA key');
-  const cipherVersionPosition = localDb.indexOf('PRAGMA cipher_version');
-  const firstTablePosition = localDb.indexOf('CREATE TABLE');
-
-  assert.ok(keyPosition >= 0, 'database key pragma is required');
-  assert.ok(cipherVersionPosition > keyPosition, 'SQLCipher must be verified after applying the key');
-  assert.ok(firstTablePosition > cipherVersionPosition, 'SQLCipher must be verified before table access');
+  // Runtime order is enforced inside initializeEncryptedDatabase: key pragma, then
+  // assertSqlCipher (which issues PRAGMA cipher_version), then CREATE TABLE.
+  // The helper is defined earlier in the file, so simple indexOf ordering is unreliable.
+  assert.match(localDb, /PRAGMA key\s*=/);
+  assert.match(localDb, /assertSqlCipher\(db\)/);
+  assert.match(localDb, /PRAGMA cipher_version/);
   assert.match(localDb, /if \(!row\?\.cipher_version\?\.trim\(\)\)/);
   assert.match(localDb, /throw new Error\('Encrypted local storage is unavailable on this build\.'\)/);
+
+  const initializeStart = localDb.indexOf('async function initializeEncryptedDatabase');
+  const keyInInit = localDb.indexOf("PRAGMA key", initializeStart);
+  const assertCallInInit = localDb.indexOf('assertSqlCipher(db)', initializeStart);
+  const firstTable = localDb.indexOf('CREATE TABLE', initializeStart);
+  assert.ok(initializeStart >= 0, 'initializeEncryptedDatabase is required');
+  assert.ok(keyInInit > initializeStart, 'key pragma must appear inside initializeEncryptedDatabase');
+  assert.ok(assertCallInInit > keyInInit, 'SQLCipher verification must follow the key pragma');
+  assert.ok(firstTable > assertCallInInit, 'SQLCipher must be verified before table access');
 });
 
 test('database proves the key can read the file header before schema writes', () => {

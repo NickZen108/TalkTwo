@@ -11,6 +11,9 @@ permissions:
 jobs:
   qa:
     runs-on: ubuntu-latest
+    env:
+      # Frontend-only shell for CI APK artifacts (no live Supabase secrets in Actions).
+      EXPO_PUBLIC_UI_PREVIEW: 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -50,6 +53,8 @@ jobs:
 
   ios-prebuild:
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_UI_PREVIEW: 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

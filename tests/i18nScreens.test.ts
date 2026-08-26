@@ -7,6 +7,7 @@ const feedbackScreen = fs.readFileSync('src/screens/FeedbackScreen.tsx', 'utf8')
 const chatScreen = fs.readFileSync('src/screens/ChatScreen.tsx', 'utf8');
 const homeScreen = fs.readFileSync('src/screens/HomeScreen.tsx', 'utf8');
 const giftsScreen = fs.readFileSync('src/screens/PremiumGiftsScreen.tsx', 'utf8');
+const premiumScreen = fs.readFileSync('src/screens/PremiumScreen.tsx', 'utf8');
 const settingsScreen = fs.readFileSync('src/screens/ChatSettingsScreen.tsx', 'utf8');
 const accountScreen = fs.readFileSync('src/screens/AccountScreen.tsx', 'utf8');
 
@@ -43,7 +44,7 @@ test('home navigation, recovery and purchase gates use localized copy', () => {
   assert.match(homeScreen, /const upgradeCopy = locale === 'da'/);
   assert.match(homeScreen, /t\('home\.shareKeyBody', \{ name: request\.requester_name, code: request\.verification_code \}\)/);
   assert.match(homeScreen, /t\('home\.extraPaymentBody', \{ access:/);
-  assert.match(homeScreen, /accessibilityLabel=\{t\('home\.giftEmailLabel'\)\}/);
+  assert.match(premiumScreen, /accessibilityLabel=\{t\('home\.giftEmailLabel'\)\}/);
   assert.doesNotMatch(homeScreen, />Sign out</);
   assert.doesNotMatch(homeScreen, /title="Manage Premium gifts"/);
   assert.doesNotMatch(homeScreen, /Alert\.alert\('Purchase could not start'/);

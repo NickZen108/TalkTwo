@@ -17,6 +17,8 @@ import AccountScreen from './AccountScreen';
 import FaqScreen from './FaqScreen';
 import { createKeyRecoveryRequest, fulfillKeyRecoveryRequest, getKeyRecoveryApproval, installFulfilledKeyRecoveries } from '../services/keyRecovery';
 import { useI18n } from '../i18n/I18nContext';
+import { isUiPreviewMode } from '../lib/supabase';
+import { UI_PREVIEW_MEMBERS, UI_PREVIEW_RELATIONSHIPS } from '../lib/uiPreviewDemo';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 type PendingRecovery = { token: string };
@@ -48,8 +50,8 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   const { colors, mode, resolved, setMode } = useAppTheme();
   const { t, locale } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
-  const [members, setMembers] = useState<Record<string, RelationshipMember[]>>({});
+  const [relationships, setRelationships] = useState<RelationshipSummary[]>(isUiPreviewMode ? UI_PREVIEW_RELATIONSHIPS : []);
+  const [members, setMembers] = useState<Record<string, RelationshipMember[]>>(isUiPreviewMode ? UI_PREVIEW_MEMBERS : {});
   const [pendingMemberships, setPendingMemberships] = useState<PendingMembership[]>([]);
   const [writeUpgrades, setWriteUpgrades] = useState<MemberWriteUpgradeRequest[]>([]);
   const [writeUpgradeApprovals, setWriteUpgradeApprovals] = useState<PendingMemberWriteUpgradeApproval[]>([]);
@@ -134,6 +136,15 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   });
 
   async function refreshRelationships() {
+    if (isUiPreviewMode) {
+      setRelationships(UI_PREVIEW_RELATIONSHIPS);
+      setMembers(UI_PREVIEW_MEMBERS);
+      setPendingMemberships([]);
+      setWriteUpgrades([]);
+      setWriteUpgradeApprovals([]);
+      setMissingSecureKeys([]);
+      return;
+    }
     await installFulfilledKeyRecoveries();
     const keyResult = await installMyActiveMemberKeys();
     const [nextRelationships, nextPending, nextWriteUpgrades, nextWriteApprovals] = await Promise.all([
@@ -195,10 +206,17 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   }
 
   useEffect(() => {
-    void refreshRelationships().catch((error) => Alert.alert(t('home.loadChatsError'), error instanceof Error ? error.message : t('common.tryAgain')));
+    void refreshRelationships().catch((error) => {
+      if (isUiPreviewMode) return;
+      Alert.alert(t('home.loadChatsError'), error instanceof Error ? error.message : t('common.tryAgain'));
+    });
   }, []);
 
   async function makeInvite() {
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Invitationer kræver backend.' : 'Invitations require a backend.');
+      return;
+    }
     try {
       setBusy(true);
       const invite = await createInvitation();
@@ -309,6 +327,10 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   }
 
   async function checkWaiting() {
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Ingen ventende beskeder i preview.' : 'No waiting messages in preview.');
+      return;
+    }
     try {
       setBusy(true);
       const count = await releaseWaitingMessages();
@@ -392,7 +414,9 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.brand}>TalkTwo</Text>
-            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.account}>{session.user.email}</Text>
+            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.account}>
+              {isUiPreviewMode ? (locale === 'da' ? 'UI-forhåndsvisning · ingen backend' : 'UI preview · no backend') : session.user.email}
+            </Text>
           </View>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Menu" onPress={() => setShowMenu((value) => !value)} style={styles.headerButton}>
             <Text style={styles.headerButtonText}>⋮</Text>
@@ -400,6 +424,17 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
         </View>
 
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          {isUiPreviewMode ? (
+            <View style={styles.pendingNotice}>
+              <Text style={styles.upgradeTitle}>{locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview'}</Text>
+              <Text style={styles.pendingNoticeText}>
+                {locale === 'da'
+                  ? 'Åbn ⋮-menuen for Premium, FAQ, konto m.m. Tryk på en chat for chat-skærmen (tom uden backend).'
+                  : 'Open the ⋮ menu for Premium, FAQ, account, etc. Tap a chat for the chat screen (empty without backend).'}
+              </Text>
+            </View>
+          ) : null}
+
           {pendingInvite ? (
             <View style={styles.invitationBanner}>
               <View style={styles.bannerText}>
@@ -508,7 +543,14 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
               <MenuItem styles={styles} title={menuCopy.faq} onPress={() => { setShowMenu(false); setShowFaq(true); }} />
               <MenuItem styles={styles} title={menuCopy.account} onPress={() => { setShowMenu(false); setShowAccount(true); }} />
               <View style={styles.menuDivider} />
-              <MenuItem styles={styles} title={menuCopy.signOut} danger onPress={() => { setShowMenu(false); void signOut(); }} />
+              <MenuItem styles={styles} title={menuCopy.signOut} danger onPress={() => {
+                setShowMenu(false);
+                if (isUiPreviewMode) {
+                  Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Log ud er deaktiveret i preview.' : 'Sign out is disabled in preview.');
+                  return;
+                }
+                void signOut();
+              }} />
             </View>
           </View>
         ) : null}

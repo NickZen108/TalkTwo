@@ -1,5 +1,5 @@
 import { AppState, Platform } from 'react-native';
-import { createClient, processLock } from '@supabase/supabase-js';
+import { createClient, processLock, type SupabaseClient } from '@supabase/supabase-js';
 import 'react-native-url-polyfill/auto';
 import { secureAuthStorage } from './secureAuthStorage';
 
@@ -30,13 +30,12 @@ if (!configOk && !UI_PREVIEW) {
   throw new Error('TalkTwo Supabase client configuration is missing or unsafe.');
 }
 
-function createUiPreviewClient() {
+function createUiPreviewClient(): SupabaseClient {
   const emptySession = { data: { session: null }, error: null };
-  const noBackend = () =>
-    Promise.resolve({
-      data: { session: null, user: null },
-      error: { message: 'UI preview only — backend is not connected in this build.' },
-    });
+  const noBackend = async () => ({
+    data: { session: null, user: null },
+    error: { message: 'UI preview only — backend is not connected in this build.' },
+  });
 
   return {
     auth: {
@@ -56,10 +55,10 @@ function createUiPreviewClient() {
         error: { message: 'UI preview only — backend is not connected in this build.' },
       }),
     },
-  } as ReturnType<typeof createClient>;
+  } as unknown as SupabaseClient;
 }
 
-export const supabase = configOk
+export const supabase: SupabaseClient = configOk
   ? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: {
         ...(Platform.OS !== 'web' ? { storage: secureAuthStorage } : {}),

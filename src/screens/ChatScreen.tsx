@@ -17,6 +17,9 @@ import { sentDeliveryStatusText } from '../i18n/deliveryCopy';
 import type { SupportedLocale } from '../i18n/translations';
 import type { TranslationKey } from '../i18n/translations';
 import type { FilterReason } from '../filter/types';
+import { isUiPreviewMode } from '../lib/supabase';
+import { UI_PREVIEW_MEMBERS } from '../lib/uiPreviewDemo';
+import { useKeyboardBottomInset } from '../hooks/useKeyboardBottomInset';
 
 const MAX_PREMIUM_LENGTH = 480;
 
@@ -94,15 +97,16 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   const { colors } = useAppTheme();
   const { locale, t } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const keyboardInset = useKeyboardBottomInset();
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [members, setMembers] = useState<RelationshipMember[]>([]);
+  const [members, setMembers] = useState<RelationshipMember[]>(UI_PREVIEW_MEMBERS[relationship.id] ?? []);
   const [memberLooks, setMemberLooks] = useState<Record<string, MemberLook>>({});
   const [background, setBackground] = useState<BackgroundThemeName>('paper');
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
-  const [plan, setPlan] = useState<UserPlan | null>(null);
+  const [plan, setPlan] = useState<UserPlan | null>(isUiPreviewMode ? { plan: 'free', trial_ends_at: null, premium_ends_at: null, analyses_remaining_today: 0 } as UserPlan : null);
   const [review, setReview] = useState<AiReview | null>(null);
   const [reviewedText, setReviewedText] = useState('');
   const [trialFallback, setTrialFallback] = useState(false);
@@ -124,16 +128,38 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   const canSend = canCompose && (premiumAi ? canSendPremium : freeResult.canSend) && messageLength <= maxLength;
 
   async function refreshMessages() {
+    if (isUiPreviewMode) {
+      setMessages([]);
+      return;
+    }
     setMessages(await listMessages(relationship.id));
   }
 
   async function refreshPlan() {
+    if (isUiPreviewMode) {
+      setPlan({ plan: 'free', trial_ends_at: null, premium_ends_at: null, analyses_remaining_today: 0 } as UserPlan);
+      return;
+    }
     const next = await getMyPlan();
     setPlan(next);
     setTrialFallback(next.plan === 'trial' && next.analyses_remaining_today === 0);
   }
 
   async function refreshAppearance() {
+    if (isUiPreviewMode) {
+      const nextMembers = UI_PREVIEW_MEMBERS[relationship.id] ?? [];
+      const looks: Record<string, MemberLook> = {};
+      for (const member of nextMembers) {
+        looks[member.user_id] = {
+          name: member.display_name || t('chat.member'),
+          bubble: safeBubbleTheme(member.user_id === session.user.id ? 'sage' : 'grey'),
+        };
+      }
+      setMembers(nextMembers);
+      setMemberLooks(looks);
+      setBackground('paper');
+      return;
+    }
     const [nextMembers, preferences, theme] = await Promise.all([
       listRelationshipMembers(relationship.id),
       listMemberPreferences(session.user.id, relationship.id),
@@ -154,11 +180,7 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   }
 
   async function refreshAll() {
-    await Promise.all([
-      refreshMessages(),
-      refreshPlan(),
-      refreshAppearance(),
-    ]);
+    await Promise.all([refreshMessages(), refreshPlan(), refreshAppearance()]);
   }
 
   useEffect(() => {
@@ -168,7 +190,10 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     setMessage('');
     setReview(null);
     setReviewedText('');
-    void refreshAll().catch((error) => Alert.alert(t('chat.openError'), error instanceof Error ? error.message : t('common.tryAgain')));
+    void refreshAll().catch((error) => {
+      if (isUiPreviewMode) return;
+      Alert.alert(t('chat.openError'), error instanceof Error ? error.message : t('common.tryAgain'));
+    });
   }, [relationship.id]);
 
   function changeMessage(text: string) {
@@ -182,6 +207,10 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   }
 
   async function startTrial() {
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Trial kræver backend.' : 'Trial requires a backend.');
+      return;
+    }
     try {
       setBusy(true);
       const next = await startPremiumTrial();
@@ -220,6 +249,10 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
 
   async function sendCurrentMessage() {
     if (!canSend) return;
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Afsendelse kræver backend.' : 'Sending requires a backend.');
+      return;
+    }
     const lastTrialReview = plan?.plan === 'trial' && reviewCurrent && review?.usage?.analyses_remaining === 0;
     try {
       setBusy(true);
@@ -365,184 +398,186 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
-        <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.backChats')} onPress={onBack} style={styles.headerIcon}>
-            <Text style={styles.back}>‹</Text>
-          </TouchableOpacity>
-          <View style={styles.headerAvatar}><Text style={styles.headerAvatarText}>{initialsForName(title)}</Text></View>
-          <View style={styles.headerText}>
-            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerTitle}>{title}</Text>
-            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerSubtitle}>{headerSubtitle}</Text>
+        <View style={[styles.flex, keyboardInset > 0 ? { paddingBottom: keyboardInset } : null]}>
+          <View style={styles.header}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.backChats')} onPress={onBack} style={styles.headerIcon}>
+              <Text style={styles.back}>‹</Text>
+            </TouchableOpacity>
+            <View style={styles.headerAvatar}><Text style={styles.headerAvatarText}>{initialsForName(title)}</Text></View>
+            <View style={styles.headerText}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerTitle}>{title}</Text>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.headerSubtitle}>{headerSubtitle}</Text>
+            </View>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.settings')} onPress={() => setShowSettings(true)} style={styles.headerIcon}>
+              <Text style={styles.settingsGlyph}>•••</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.settings')} onPress={() => setShowSettings(true)} style={styles.headerIcon}>
-            <Text style={styles.settingsGlyph}>•••</Text>
-          </TouchableOpacity>
-        </View>
 
-        {!premiumEntitled && plan?.plan === 'free' && canCompose ? (
-          <TouchableOpacity accessibilityRole="button" onPress={() => void startTrial()} disabled={busy} style={styles.trialStrip}>
-            <Text style={styles.trialText}>{t('chat.tryTrial')}</Text>
-          </TouchableOpacity>
-        ) : null}
-        {trialFallback ? <View style={styles.infoStrip}><Text style={styles.infoText}>{t('chat.trialFallback')}</Text></View> : null}
+          {!premiumEntitled && plan?.plan === 'free' && canCompose ? (
+            <TouchableOpacity accessibilityRole="button" onPress={() => void startTrial()} disabled={busy} style={styles.trialStrip}>
+              <Text style={styles.trialText}>{t('chat.tryTrial')}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {trialFallback ? <View style={styles.infoStrip}><Text style={styles.infoText}>{t('chat.trialFallback')}</Text></View> : null}
 
-        <View style={[styles.chatArea, { backgroundColor }]}>
-          <PatternBackdrop theme={background} styles={styles} dotColor={chatTextColor} />
-          <FlatList
-            data={messages}
-            keyExtractor={(item) => item.sender_id === session.user.id ? item.logical_id : item.id}
-            contentContainerStyle={styles.messageContent}
-            keyboardShouldPersistTaps="handled"
-            refreshControl={(
-              <RefreshControl
-                refreshing={refreshing}
-                tintColor={colors.accent}
-                colors={[colors.accent]}
-                onRefresh={() => {
-                  setRefreshing(true);
-                  void refreshAll().catch(() => undefined).finally(() => setRefreshing(false));
-                }}
-              />
-            )}
-            renderItem={({ item, index }) => {
-              const mine = item.sender_id === session.user.id;
-              const sender = memberLooks[item.sender_id] ?? { name: mine ? t('chat.you') : t('chat.member'), bubble: (mine ? 'sage' : 'grey') as BubbleThemeName };
-              const bubble = BUBBLE_THEMES[sender.bubble];
-              const textColor = textColorForBackground(bubble.background);
-              const previous = index > 0 ? messages[index - 1] : null;
-              const showDate = !previous || !sameDay(previous.created_at, item.created_at);
-              const unopened = !mine && !item.opened_at;
-              const blocked = !mine && item.blocked_for_recipient;
-              const senderStatus = mine
-                ? sentDeliveryStatusText(item.delivered_count ?? 0, item.recipient_count, item.rejected_count, locale)
-                : '';
-              const isAttachment = item.message_kind === 'text_attachment';
+          <View style={[styles.chatArea, { backgroundColor }]}>
+            <PatternBackdrop theme={background} styles={styles} dotColor={chatTextColor} />
+            <FlatList
+              data={messages}
+              keyExtractor={(item) => item.sender_id === session.user.id ? item.logical_id : item.id}
+              contentContainerStyle={styles.messageContent}
+              keyboardShouldPersistTaps="handled"
+              refreshControl={(
+                <RefreshControl
+                  refreshing={refreshing}
+                  tintColor={colors.accent}
+                  colors={[colors.accent]}
+                  onRefresh={() => {
+                    setRefreshing(true);
+                    void refreshAll().catch(() => undefined).finally(() => setRefreshing(false));
+                  }}
+                />
+              )}
+              renderItem={({ item, index }) => {
+                const mine = item.sender_id === session.user.id;
+                const sender = memberLooks[item.sender_id] ?? { name: mine ? t('chat.you') : t('chat.member'), bubble: (mine ? 'sage' : 'grey') as BubbleThemeName };
+                const bubble = BUBBLE_THEMES[sender.bubble];
+                const textColor = textColorForBackground(bubble.background);
+                const previous = index > 0 ? messages[index - 1] : null;
+                const showDate = !previous || !sameDay(previous.created_at, item.created_at);
+                const unopened = !mine && !item.opened_at;
+                const blocked = !mine && item.blocked_for_recipient;
+                const senderStatus = mine
+                  ? sentDeliveryStatusText(item.delivered_count ?? 0, item.recipient_count, item.rejected_count, locale)
+                  : '';
+                const isAttachment = item.message_kind === 'text_attachment';
 
-              return (
-                <>
-                  {showDate ? <View style={styles.datePill}><Text style={styles.datePillText}>{dateLabel(item.created_at, locale, t('chat.today'), t('chat.yesterday'))}</Text></View> : null}
-                  <View style={[styles.messageRow, mine ? styles.messageRowMine : styles.messageRowTheirs]}>
-                    {!mine && members.length > 2 ? <View style={styles.smallAvatar}><Text style={styles.smallAvatarText}>{initialsForName(sender.name)}</Text></View> : null}
-                    <View style={[styles.bubble, { backgroundColor: bubble.background }, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                      {!mine && members.length > 2 ? <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.senderName, { color: textColor }]}>{sender.name}</Text> : null}
-                      {blocked ? (
-                        <>
-                          <Text style={[styles.blockedTitle, { color: textColor }]}>{t('chat.messageUnavailable')}</Text>
-                          <Text style={[styles.messageText, { color: textColor }]}>{t('chat.blockedBody')}</Text>
-                        </>
-                      ) : unopened ? (
-                        <>
-                          <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? t(isAttachment ? 'chat.sensitiveDocument' : 'chat.sensitiveMessage') : t(isAttachment ? 'chat.newDocument' : 'chat.newMessage')}</Text>
-                          <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? t('chat.cautionBody') : t(isAttachment ? 'chat.hiddenDocument' : 'chat.hiddenText')}</Text>
-                          <View style={styles.bubbleActions}>
-                            <CompactButton styles={styles} title={t('chat.open')} onPress={() => void openIncoming(item)} secondary />
-                            {item.risk_level === 'yellow' ? <CompactButton styles={styles} title={t('chat.rejectUnread')} onPress={() => void rejectIncoming(item)} secondary /> : null}
+                return (
+                  <>
+                    {showDate ? <View style={styles.datePill}><Text style={styles.datePillText}>{dateLabel(item.created_at, locale, t('chat.today'), t('chat.yesterday'))}</Text></View> : null}
+                    <View style={[styles.messageRow, mine ? styles.messageRowMine : styles.messageRowTheirs]}>
+                      {!mine && members.length > 2 ? <View style={styles.smallAvatar}><Text style={styles.smallAvatarText}>{initialsForName(sender.name)}</Text></View> : null}
+                      <View style={[styles.bubble, { backgroundColor: bubble.background }, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                        {!mine && members.length > 2 ? <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.senderName, { color: textColor }]}>{sender.name}</Text> : null}
+                        {blocked ? (
+                          <>
+                            <Text style={[styles.blockedTitle, { color: textColor }]}>{t('chat.messageUnavailable')}</Text>
+                            <Text style={[styles.messageText, { color: textColor }]}>{t('chat.blockedBody')}</Text>
+                          </>
+                        ) : unopened ? (
+                          <>
+                            <Text style={[styles.blockedTitle, { color: textColor }]}>{item.risk_level === 'yellow' ? t(isAttachment ? 'chat.sensitiveDocument' : 'chat.sensitiveMessage') : t(isAttachment ? 'chat.newDocument' : 'chat.newMessage')}</Text>
+                            <Text style={[styles.messageText, { color: textColor }]}>{item.risk_level === 'yellow' ? t('chat.cautionBody') : t(isAttachment ? 'chat.hiddenDocument' : 'chat.hiddenText')}</Text>
+                            <View style={styles.bubbleActions}>
+                              <CompactButton styles={styles} title={t('chat.open')} onPress={() => void openIncoming(item)} secondary />
+                              {item.risk_level === 'yellow' ? <CompactButton styles={styles} title={t('chat.rejectUnread')} onPress={() => void rejectIncoming(item)} secondary /> : null}
+                            </View>
+                          </>
+                        ) : isAttachment ? (
+                          <View style={styles.documentCard}>
+                            <Text numberOfLines={2} ellipsizeMode="middle" style={[styles.documentName, { color: textColor }]}>▤ {item.attachment_name ?? t('chat.textDocument')}</Text>
+                            <Text style={[styles.documentMeta, { color: textColor }]}>
+                              {item.attachment_size_bytes !== null ? attachmentSizeLabel(item.attachment_size_bytes) : t('chat.plainText')}
+                              {item.attachment_page_count ? ` · ${t(item.attachment_page_count === 1 ? 'chat.page' : 'chat.pages', { count: item.attachment_page_count })}` : ''}
+                            </Text>
+                            {item.body ? <Text numberOfLines={4} style={[styles.documentExcerpt, { color: textColor }]}>{attachmentExcerpt(item.body)}</Text> : null}
+                            {item.body ? <CompactButton styles={styles} title={t('chat.viewDocument')} onPress={() => setViewingAttachment(item)} secondary /> : null}
                           </View>
-                        </>
-                      ) : isAttachment ? (
-                        <View style={styles.documentCard}>
-                          <Text numberOfLines={2} ellipsizeMode="middle" style={[styles.documentName, { color: textColor }]}>▤ {item.attachment_name ?? t('chat.textDocument')}</Text>
-                          <Text style={[styles.documentMeta, { color: textColor }]}>
-                            {item.attachment_size_bytes !== null ? attachmentSizeLabel(item.attachment_size_bytes) : t('chat.plainText')}
-                            {item.attachment_page_count ? ` · ${t(item.attachment_page_count === 1 ? 'chat.page' : 'chat.pages', { count: item.attachment_page_count })}` : ''}
+                        ) : (
+                          <Text selectable style={[styles.messageText, { color: textColor }]}>{item.body ?? t('chat.encryptedUnavailable')}</Text>
+                        )}
+                        <View style={styles.messageMetaRow}>
+                          <Text style={[styles.messageMeta, { color: textColor }]}>
+                            {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {item.edited_at ? ` · ${t('chat.edited')}` : ''}
+                            {item.risk_level === 'yellow' ? ` · ${t('chat.caution')}` : ''}
                           </Text>
-                          {item.body ? <Text numberOfLines={4} style={[styles.documentExcerpt, { color: textColor }]}>{attachmentExcerpt(item.body)}</Text> : null}
-                          {item.body ? <CompactButton styles={styles} title={t('chat.viewDocument')} onPress={() => setViewingAttachment(item)} secondary /> : null}
                         </View>
-                      ) : (
-                        <Text selectable style={[styles.messageText, { color: textColor }]}>{item.body ?? t('chat.encryptedUnavailable')}</Text>
-                      )}
-                      <View style={styles.messageMetaRow}>
-                        <Text style={[styles.messageMeta, { color: textColor }]}>
-                          {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          {item.edited_at ? ` · ${t('chat.edited')}` : ''}
-                          {item.risk_level === 'yellow' ? ` · ${t('chat.caution')}` : ''}
-                        </Text>
+                        {mine ? (
+                          <View style={styles.senderControls}>
+                            <Text accessibilityLabel={senderStatus} style={[styles.sentStatus, { color: textColor }]}>{senderStatus}</Text>
+                          </View>
+                        ) : null}
                       </View>
-                      {mine ? (
-                        <View style={styles.senderControls}>
-                          <Text accessibilityLabel={senderStatus} style={[styles.sentStatus, { color: textColor }]}>{senderStatus}</Text>
-                        </View>
-                      ) : null}
+                    </View>
+                  </>
+                );
+              }}
+              ListEmptyComponent={(
+                <View style={styles.emptyChat}>
+                  <Text style={[styles.emptyChatTitle, { color: chatTextColor }]}>{t('chat.emptyTitle')}</Text>
+                  <Text style={[styles.emptyChatText, { color: chatTextColor }]}>{t(relationship.my_role === 'observer' ? 'chat.observerEmpty' : 'chat.participantEmpty')}</Text>
+                </View>
+              )}
+            />
+          </View>
+
+          {canCompose ? (
+            <View style={styles.composerWrap}>
+              {premiumAi && reviewCurrent ? (
+                <View style={[styles.reviewStrip, review?.level === 'red' ? styles.reviewRed : review?.level === 'yellow' ? styles.reviewYellow : styles.reviewGreen]}>
+                  <View style={styles.reviewTextWrap}>
+                    <Text style={styles.reviewTitle}>{review?.level === 'green' ? t('chat.ready') : review?.level === 'yellow' ? t('chat.caution') : t('chat.blocked')}</Text>
+                    <Text numberOfLines={3} style={styles.reviewReason}>{review?.reason}</Text>
+                  </View>
+                  {review?.rewrite ? <TouchableOpacity accessibilityRole="button" style={styles.rewriteButton} onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>{t('chat.useRewrite')}</Text></TouchableOpacity> : null}
+                </View>
+              ) : null}
+              {!premiumAi && hasText && !freeResult.canSend && translatedProblem ? (
+                <View style={styles.reviewStrip}>
+                  <View style={styles.reviewTextWrap}>
+                    <Text style={styles.reviewTitle}>{translatedProblem.title}</Text>
+                    <Text numberOfLines={3} style={styles.reviewReason}>{translatedProblem.explanation}</Text>
+                  </View>
+                </View>
+              ) : null}
+              {attachment ? (
+                <View style={styles.attachmentComposer}>
+                  <View style={styles.attachmentComposerText}>
+                    <Text numberOfLines={2} ellipsizeMode="middle" style={styles.attachmentComposerName}>{attachment.name}</Text>
+                    <Text style={styles.attachmentComposerMeta}>{attachmentSizeLabel(attachment.sizeBytes)} · {t(attachment.pageCount === 1 ? 'chat.page' : 'chat.pages', { count: attachment.pageCount })}</Text>
+                    <Text style={[styles.attachmentReviewText, attachmentReview?.level === 'red' && styles.attachmentReviewDanger]}>
+                      {attachmentBusy ? t('chat.reviewingDocument') : attachmentReview?.reason ?? t('chat.waitingReview')}
+                    </Text>
+                    {attachmentReview?.problematic_text[0] ? <Text numberOfLines={3} style={styles.attachmentProblem}>“{attachmentReview.problematic_text[0]}”</Text> : null}
+                  </View>
+                  <View style={styles.attachmentComposerActions}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.cancelAttachment')} onPress={cancelAttachment} style={styles.cancelAttachmentButton}>
+                      <Text style={styles.cancelAttachmentText}>{t('chat.cancel')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.sendDocument')} disabled={busy || attachmentBusy || !attachmentReview?.can_send} onPress={() => void sendAttachment()} style={[styles.sendCircle, (busy || attachmentBusy || !attachmentReview?.can_send) && styles.disabled]}>
+                      <Text style={styles.sendGlyph}>➤</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.composerRow}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.attachDocument')} disabled={busy || attachmentBusy} onPress={() => void chooseAttachment()} style={[styles.attachCircle, (busy || attachmentBusy) && styles.disabled]}>
+                    <Text style={styles.attachGlyph}>{attachmentBusy ? '…' : '+'}</Text>
+                  </TouchableOpacity>
+                  <View style={styles.inputShell}>
+                    <TextInput multiline value={message} onChangeText={changeMessage} placeholder={t('chat.message')} placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel={t('chat.message')} />
+                    <View style={styles.counterRow}>
+                      <Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text>
+                      <Text style={styles.filterLabel}>{premiumAi ? t('chat.aiReview') : t('chat.freeFilter')}</Text>
                     </View>
                   </View>
-                </>
-              );
-            }}
-            ListEmptyComponent={(
-              <View style={styles.emptyChat}>
-                <Text style={[styles.emptyChatTitle, { color: chatTextColor }]}>{t('chat.emptyTitle')}</Text>
-                <Text style={[styles.emptyChatText, { color: chatTextColor }]}>{t(relationship.my_role === 'observer' ? 'chat.observerEmpty' : 'chat.participantEmpty')}</Text>
-              </View>
-            )}
-          />
+                  {premiumAi && (!reviewCurrent || review?.level === 'red') ? (
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.reviewMessage')} disabled={reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH} onPress={() => void reviewWithAi()} style={[styles.sendCircle, styles.reviewCircle, (reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH) && styles.disabled]}>
+                      <Text style={styles.sendGlyph}>{reviewBusy ? '…' : '✓'}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.sendMessage')} disabled={busy || !hasText || !canSend} onPress={() => void sendCurrentMessage()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
+                      <Text style={styles.sendGlyph}>➤</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={styles.observerBar}><Text style={styles.observerText}>{t('chat.observerReadOnly')}</Text></View>
+          )}
         </View>
-
-        {canCompose ? (
-          <View style={styles.composerWrap}>
-            {premiumAi && reviewCurrent ? (
-              <View style={[styles.reviewStrip, review?.level === 'red' ? styles.reviewRed : review?.level === 'yellow' ? styles.reviewYellow : styles.reviewGreen]}>
-                <View style={styles.reviewTextWrap}>
-                  <Text style={styles.reviewTitle}>{review?.level === 'green' ? t('chat.ready') : review?.level === 'yellow' ? t('chat.caution') : t('chat.blocked')}</Text>
-                  <Text numberOfLines={3} style={styles.reviewReason}>{review?.reason}</Text>
-                </View>
-                {review?.rewrite ? <TouchableOpacity accessibilityRole="button" style={styles.rewriteButton} onPress={() => changeMessage(review.rewrite ?? '')}><Text style={styles.rewrite}>{t('chat.useRewrite')}</Text></TouchableOpacity> : null}
-              </View>
-            ) : null}
-            {!premiumAi && hasText && !freeResult.canSend && translatedProblem ? (
-              <View style={styles.reviewStrip}>
-                <View style={styles.reviewTextWrap}>
-                  <Text style={styles.reviewTitle}>{translatedProblem.title}</Text>
-                  <Text numberOfLines={3} style={styles.reviewReason}>{translatedProblem.explanation}</Text>
-                </View>
-              </View>
-            ) : null}
-            {attachment ? (
-              <View style={styles.attachmentComposer}>
-                <View style={styles.attachmentComposerText}>
-                  <Text numberOfLines={2} ellipsizeMode="middle" style={styles.attachmentComposerName}>{attachment.name}</Text>
-                  <Text style={styles.attachmentComposerMeta}>{attachmentSizeLabel(attachment.sizeBytes)} · {t(attachment.pageCount === 1 ? 'chat.page' : 'chat.pages', { count: attachment.pageCount })}</Text>
-                  <Text style={[styles.attachmentReviewText, attachmentReview?.level === 'red' && styles.attachmentReviewDanger]}>
-                    {attachmentBusy ? t('chat.reviewingDocument') : attachmentReview?.reason ?? t('chat.waitingReview')}
-                  </Text>
-                  {attachmentReview?.problematic_text[0] ? <Text numberOfLines={3} style={styles.attachmentProblem}>“{attachmentReview.problematic_text[0]}”</Text> : null}
-                </View>
-                <View style={styles.attachmentComposerActions}>
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.cancelAttachment')} onPress={cancelAttachment} style={styles.cancelAttachmentButton}>
-                    <Text style={styles.cancelAttachmentText}>{t('chat.cancel')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.sendDocument')} disabled={busy || attachmentBusy || !attachmentReview?.can_send} onPress={() => void sendAttachment()} style={[styles.sendCircle, (busy || attachmentBusy || !attachmentReview?.can_send) && styles.disabled]}>
-                    <Text style={styles.sendGlyph}>➤</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.composerRow}>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.attachDocument')} disabled={busy || attachmentBusy} onPress={() => void chooseAttachment()} style={[styles.attachCircle, (busy || attachmentBusy) && styles.disabled]}>
-                  <Text style={styles.attachGlyph}>{attachmentBusy ? '…' : '+'}</Text>
-                </TouchableOpacity>
-                <View style={styles.inputShell}>
-                  <TextInput multiline value={message} onChangeText={changeMessage} placeholder={t('chat.message')} placeholderTextColor={colors.subtle} style={styles.input} accessibilityLabel={t('chat.message')} />
-                  <View style={styles.counterRow}>
-                    <Text style={[styles.counter, messageLength > maxLength && styles.counterDanger]}>{messageLength}/{maxLength}</Text>
-                    <Text style={styles.filterLabel}>{premiumAi ? t('chat.aiReview') : t('chat.freeFilter')}</Text>
-                  </View>
-                </View>
-                {premiumAi && (!reviewCurrent || review?.level === 'red') ? (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.reviewMessage')} disabled={reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH} onPress={() => void reviewWithAi()} style={[styles.sendCircle, styles.reviewCircle, (reviewBusy || busy || !hasText || messageLength > MAX_PREMIUM_LENGTH) && styles.disabled]}>
-                    <Text style={styles.sendGlyph}>{reviewBusy ? '…' : '✓'}</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('chat.sendMessage')} disabled={busy || !hasText || !canSend} onPress={() => void sendCurrentMessage()} style={[styles.sendCircle, (busy || !hasText || !canSend) && styles.disabled]}>
-                    <Text style={styles.sendGlyph}>➤</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-        ) : (
-          <View style={styles.observerBar}><Text style={styles.observerText}>{t('chat.observerReadOnly')}</Text></View>
-        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -598,7 +633,7 @@ function makeStyles(colors: AppColors) {
     emptyChat: { flex: 1, minHeight: 220, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 8 },
     emptyChatTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
     emptyChatText: { lineHeight: 20, textAlign: 'center', flexShrink: 1, opacity: 0.78 },
-    composerWrap: { backgroundColor: colors.surface, paddingHorizontal: 8, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 8 : 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    composerWrap: { backgroundColor: colors.surface, paddingHorizontal: 8, paddingTop: 6, paddingBottom: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 },
     attachCircle: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSoft, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
     attachGlyph: { color: colors.accent, fontSize: 25, lineHeight: 28, fontWeight: '500' },

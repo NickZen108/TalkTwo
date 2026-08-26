@@ -38,6 +38,7 @@
     "android": {
       "package": "com.talktwo.app",
       "allowBackup": false,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [],
       "blockedPermissions": [
         "android.permission.CAMERA",

@@ -19,5 +19,5 @@ test('mobile checkout cannot request a multi-month gift', () => {
 
 test('store catalog still contains the one-month gift product at 59 DKK', () => {
   assert.match(catalog, /premium_gift_1m/i);
-  assert.match(catalog, /priceDkk:\s*59/i);
+  assert.match(catalog, /expectedDkk:\s*59/i);
 });

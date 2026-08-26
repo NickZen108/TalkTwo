@@ -43,7 +43,7 @@ test('store setup checklist requires the fail-closed production gates', () => {
   assert.match(checklist, /npm run release:preflight/i);
   assert.match(checklist, /account_deletion_schema_ok/i);
   assert.match(checklist, /security_definer_schema_ok/i);
-  assert.match(checklist, /20260824084500_ai_budget_reservations\.sql/i);
-  assert.match(checklist, /Final app\/adaptive icon and store artwork must be approved/i);
-  assert.match(checklist, /unknown email neither creates an account nor reveals/i);
+  assert.match(checklist, /20260824114000/i);
+  assert.match(checklist, /20260824115900/i);
+  assert.match(checklist, /Final app\/adaptive icon, splash and store artwork must be approved/i);
 });

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useAppTheme, type AppColors } from '../theme/AppTheme';
-import { useI18n } from '../i18n/I18nContext';
+import { useAppTheme, type AppColors } from '../../theme/AppTheme';
+import { useI18n } from '../../i18n/I18nContext';
 
 export default function FAQScreen({ onBack }: { onBack: () => void }) {
   const { colors } = useAppTheme();
@@ -19,7 +19,7 @@ export default function FAQScreen({ onBack }: { onBack: () => void }) {
       ['Kan den anden se, om jeg har åbnet eller afvist en besked?', 'TalkTwo er designet til ikke at give almindelige læsekvitteringer eller afsløre private afvisninger.'],
       ['Hvorfor kan en besked vente?', 'Du kan selv vælge kommunikationsvinduer. Beskeder kan sendes når som helst, men kan vente med at blive tilgængelige hos dig.'],
       ['Er blokering privat?', 'Ja. TalkTwo forsøger ikke at fortælle den anden person, at du har blokeret eller slået notifikationer fra.'],
-      ['Er mine beskeder krypterede?', 'Beskeder lagres krypteret, og den lokale database er krypteret. TalkTwo kalder ikke løsningen zero-knowledge eller fuld end-to-end-kryptering, fordi serveren i visse flows kortvarigt behandler tekst for at håndhæve reglerne.'],
+      ['Hvordan beskytter TalkTwo mit privatliv?', 'TalkTwo er designet til at begrænse unødvendige oplysninger mellem deltagere. Se Privatliv i appen for de fulde oplysninger.'],
       ['Er TalkTwo til nødsituationer?', 'Nej. TalkTwo er ikke en nød-, læge-, juridisk- eller krisetjeneste.'],
     ] as const,
   } : {
@@ -33,7 +33,7 @@ export default function FAQScreen({ onBack }: { onBack: () => void }) {
       ['Can the other person see whether I opened or rejected a message?', 'TalkTwo is designed not to provide ordinary read receipts or reveal private rejection actions.'],
       ['Why can a message wait?', 'You choose communication windows. Messages can be sent at any time but may wait before becoming available to you.'],
       ['Is blocking private?', 'Yes. TalkTwo does not try to tell the other person that you blocked them or muted notifications.'],
-      ['Are my messages encrypted?', 'Messages are stored encrypted and the local database is encrypted. TalkTwo does not call the design zero-knowledge or full end-to-end encryption because the server briefly processes text in some flows to enforce rules.'],
+      ['How does TalkTwo protect my privacy?', 'TalkTwo is designed to limit unnecessary information shared between participants. See Privacy in the app for full details.'],
       ['Is TalkTwo for emergencies?', 'No. TalkTwo is not emergency, medical, legal or crisis support.'],
     ] as const,
   };

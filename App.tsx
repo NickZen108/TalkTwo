@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, SafeAreaView, StyleSheet, Text } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from './src/lib/supabase';
+import { isUiPreviewMode, supabase } from './src/lib/supabase';
 import {
   invitationFromUrl,
   isAuthCallbackUrl,
@@ -31,6 +31,24 @@ const PENDING_RECOVERY_KEY = 'talktwo.pendingKeyRecoveryApproval.v1';
 const secureOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
+
+/** Fake signed-in session so UI-preview can open Home and nested screens. */
+export const UI_PREVIEW_SESSION = {
+  access_token: 'ui-preview',
+  refresh_token: 'ui-preview',
+  expires_in: 3600,
+  expires_at: Math.floor(Date.now() / 1000) + 3600,
+  token_type: 'bearer',
+  user: {
+    id: 'ui-preview-user',
+    aud: 'authenticated',
+    role: 'authenticated',
+    email: 'preview@talktwo.local',
+    app_metadata: {},
+    user_metadata: { full_name: 'UI Preview' },
+    created_at: '2026-01-01T00:00:00.000Z',
+  },
+} as Session;
 
 function parseStoredInvite(value: string | null): PendingInvite | null {
   if (!value) return null;
@@ -72,15 +90,18 @@ function parseStoredRecovery(value: string | null): PendingKeyRecoveryApproval |
 function AppContent() {
   const { colors } = useAppTheme();
   const { t, syncAccountPreference } = useI18n();
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(isUiPreviewMode ? UI_PREVIEW_SESSION : null);
+  const [loading, setLoading] = useState(!isUiPreviewMode);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
   const [pendingGift, setPendingGift] = useState<PendingPremiumGift | null>(null);
   const [pendingRecovery, setPendingRecovery] = useState<PendingKeyRecoveryApproval | null>(null);
   const [giftPromptedForUserId, setGiftPromptedForUserId] = useState<string | null>(null);
-  const [sponsorshipReadyForUserId, setSponsorshipReadyForUserId] = useState<string | null>(null);
+  const [sponsorshipReadyForUserId, setSponsorshipReadyForUserId] = useState<string | null>(
+    isUiPreviewMode ? UI_PREVIEW_SESSION.user.id : null,
+  );
 
   useEffect(() => {
+    if (isUiPreviewMode) return;
     let mounted = true;
 
     async function savePendingInvite(invite: PendingInvite) {
@@ -188,7 +209,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!session || giftPromptedForUserId === session.user.id) return;
+    if (isUiPreviewMode || !session || giftPromptedForUserId === session.user.id) return;
     let cancelled = false;
 
     void (async () => {
@@ -237,6 +258,7 @@ function AppContent() {
   }, [session, pendingGift, giftPromptedForUserId]);
 
   useEffect(() => {
+    if (isUiPreviewMode) return;
     if (!session) {
       setSponsorshipReadyForUserId(null);
       return;
@@ -254,7 +276,7 @@ function AppContent() {
   }, [session?.user.id, sponsorshipReadyForUserId]);
 
   useEffect(() => {
-    if (!session) return;
+    if (isUiPreviewMode || !session) return;
     void syncAccountPreference().catch(() => undefined);
     void refreshPushRegistrationIfEnabled().catch(() => undefined);
     const listener = addPushTokenRefreshListener();

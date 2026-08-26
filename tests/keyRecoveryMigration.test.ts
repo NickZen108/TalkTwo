@@ -35,7 +35,7 @@ test('only the requester can list, complete or cancel their recovery', () => {
 
 test('recovery envelope authentication binds both token and relationship', () => {
   assert.match(threadKeys, /function recoveryAad\(token: string, relationshipId: string\)/);
-  assert.match(threadKeys, /talktwo-key-recovery-v2:\$\{token\.trim\(\)\}:\$\{cleanRelationshipId\}/);
+  assert.match(threadKeys, /talktwo-key-recovery-v2:\$\{token\.trim\(\)\}:\$\{assertRelationshipId\(relationshipId\)\}/);
   assert.match(threadKeys, /aesEncryptAsync[\s\S]*additionalData: recoveryAad\(token, relationshipId\)/);
   assert.match(threadKeys, /aesDecryptAsync[\s\S]*additionalData: recoveryAad\(token, relationshipId\)/);
 });

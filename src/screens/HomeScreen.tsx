@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, SafeAreaView, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { initialsForName } from '../domain/chatPresentation';
 import { signOut } from '../services/auth';
@@ -7,14 +7,18 @@ import { useNativeStoreBilling } from '../hooks/useNativeStoreBilling';
 import { acceptInvitation, acceptMemberInvitation, createInvitation, getMemberPaymentOffer, installMyActiveMemberKeys, listMyPendingMemberships, listRelationshipMembers, listRelationships, type PendingMembership, type RelationshipMember, type RelationshipSummary } from '../services/relationships';
 import { createMemberWriteUpgradeRequest, listMyMemberWriteUpgradeRequests, listPendingMemberWriteUpgradeApprovals, respondMemberWriteUpgrade, type MemberWriteUpgradeRequest, type PendingMemberWriteUpgradeApproval } from '../services/memberBilling';
 import { releaseWaitingMessages } from '../services/windows';
-import { useAppTheme, type AppColors, type AppearanceMode } from '../theme/AppTheme';
+import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import ChatScreen from './ChatScreen';
 import MessageWindowsScreen from './MessageWindowsScreen';
 import FeedbackScreen from './FeedbackScreen';
 import PremiumGiftsScreen from './PremiumGiftsScreen';
+import PremiumScreen from './PremiumScreen';
 import AccountScreen from './AccountScreen';
+import FaqScreen from './FaqScreen';
 import { createKeyRecoveryRequest, fulfillKeyRecoveryRequest, getKeyRecoveryApproval, installFulfilledKeyRecoveries } from '../services/keyRecovery';
 import { useI18n } from '../i18n/I18nContext';
+import { isUiPreviewMode } from '../lib/supabase';
+import { UI_PREVIEW_MEMBERS, UI_PREVIEW_RELATIONSHIPS } from '../lib/uiPreviewDemo';
 
 type PendingInvite = { kind: 'invite' | 'member'; token: string };
 type PendingRecovery = { token: string };
@@ -23,6 +27,14 @@ function Action({ title, onPress, styles, disabled = false, quiet = false }: { t
   return (
     <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.action, quiet && styles.quietAction, disabled && styles.disabled]}>
       <Text style={[styles.actionText, quiet && styles.quietActionText]}>{title}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function MenuItem({ title, onPress, styles, danger = false }: { title: string; onPress: () => void; styles: ReturnType<typeof makeStyles>; danger?: boolean }) {
+  return (
+    <TouchableOpacity accessibilityRole="button" onPress={onPress} style={styles.menuItem}>
+      <Text style={[styles.menuItemText, danger && styles.menuItemDanger]}>{title}</Text>
     </TouchableOpacity>
   );
 }
@@ -38,8 +50,8 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   const { colors, mode, resolved, setMode } = useAppTheme();
   const { t, locale } = useI18n();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [relationships, setRelationships] = useState<RelationshipSummary[]>([]);
-  const [members, setMembers] = useState<Record<string, RelationshipMember[]>>({});
+  const [relationships, setRelationships] = useState<RelationshipSummary[]>(isUiPreviewMode ? UI_PREVIEW_RELATIONSHIPS : []);
+  const [members, setMembers] = useState<Record<string, RelationshipMember[]>>(isUiPreviewMode ? UI_PREVIEW_MEMBERS : {});
   const [pendingMemberships, setPendingMemberships] = useState<PendingMembership[]>([]);
   const [writeUpgrades, setWriteUpgrades] = useState<MemberWriteUpgradeRequest[]>([]);
   const [writeUpgradeApprovals, setWriteUpgradeApprovals] = useState<PendingMemberWriteUpgradeApproval[]>([]);
@@ -49,8 +61,11 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   const [showWindows, setShowWindows] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showPremiumGifts, setShowPremiumGifts] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
-  const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
+  const [showFaq, setShowFaq] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+
   const upgradeCopy = locale === 'da' ? {
     title: 'Skriveadgang',
     requestBody: 'Du er skrivebeskyttet i denne chat. Du kan anmode om deltageradgang. Alle andre nuværende medlemmer skal godkende først.',
@@ -79,6 +94,32 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
     approved: 'Your approval was recorded.',
   };
 
+  const menuCopy = locale === 'da' ? {
+    premium: 'Premium',
+    windows: 'Beskedvinduer',
+    waiting: 'Tjek ventende beskeder',
+    appearance: 'Udseende',
+    feedback: 'Send feedback',
+    faq: 'FAQ',
+    account: 'Konto og privatliv',
+    signOut: 'Log ud',
+    system: 'System',
+    light: 'Lys',
+    dark: 'Mørk',
+  } : {
+    premium: 'Premium',
+    windows: 'Message windows',
+    waiting: 'Check waiting messages',
+    appearance: 'Appearance',
+    feedback: 'Send feedback',
+    faq: 'FAQ',
+    account: 'Account & privacy',
+    signOut: 'Sign out',
+    system: 'System',
+    light: 'Light',
+    dark: 'Dark',
+  };
+
   const storeBilling = useNativeStoreBilling(session.user.id, {
     onError: (message) => Alert.alert(t('home.storeUnavailable'), message),
     onPurchaseVerified: async () => {
@@ -95,6 +136,15 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   });
 
   async function refreshRelationships() {
+    if (isUiPreviewMode) {
+      setRelationships(UI_PREVIEW_RELATIONSHIPS);
+      setMembers(UI_PREVIEW_MEMBERS);
+      setPendingMemberships([]);
+      setWriteUpgrades([]);
+      setWriteUpgradeApprovals([]);
+      setMissingSecureKeys([]);
+      return;
+    }
     await installFulfilledKeyRecoveries();
     const keyResult = await installMyActiveMemberKeys();
     const [nextRelationships, nextPending, nextWriteUpgrades, nextWriteApprovals] = await Promise.all([
@@ -156,10 +206,17 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   }
 
   useEffect(() => {
-    void refreshRelationships().catch((error) => Alert.alert(t('home.loadChatsError'), error instanceof Error ? error.message : t('common.tryAgain')));
+    void refreshRelationships().catch((error) => {
+      if (isUiPreviewMode) return;
+      Alert.alert(t('home.loadChatsError'), error instanceof Error ? error.message : t('common.tryAgain'));
+    });
   }, []);
 
   async function makeInvite() {
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Invitationer kræver backend.' : 'Invitations require a backend.');
+      return;
+    }
     try {
       setBusy(true);
       const invite = await createInvitation();
@@ -270,6 +327,10 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   }
 
   async function checkWaiting() {
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Ingen ventende beskeder i preview.' : 'No waiting messages in preview.');
+      return;
+    }
     try {
       setBusy(true);
       const count = await releaseWaitingMessages();
@@ -298,12 +359,7 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
     );
   }
 
-  function buyPremiumGift() {
-    const recipient = giftRecipientEmail.trim();
-    if (!recipient) {
-      Alert.alert(t('home.recipientNeeded'), t('home.recipientNeededBody'));
-      return;
-    }
+  function buyPremiumGift(recipient: string) {
     Alert.alert(
       t('home.giftConfirmTitle'),
       t('home.giftConfirmBody', { recipient }),
@@ -313,12 +369,20 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
           text: t('home.continueStore'),
           onPress: () => {
             void storeBilling.purchasePremiumGift(recipient)
-              .then(() => setGiftRecipientEmail(''))
               .catch((error) => Alert.alert(t('home.giftStartError'), error instanceof Error ? error.message : t('common.tryAgain')));
           },
         },
       ],
     );
+  }
+
+  function chooseAppearance() {
+    setShowMenu(false);
+    Alert.alert(menuCopy.appearance, undefined, [
+      { text: menuCopy.system, onPress: () => void setMode('system') },
+      { text: menuCopy.light, onPress: () => void setMode('light') },
+      { text: menuCopy.dark, onPress: () => void setMode('dark') },
+    ]);
   }
 
   const approvedPending = useMemo(() => pendingMemberships.find((item) => item.status === 'awaiting_payment') ?? null, [pendingMemberships]);
@@ -331,167 +395,166 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
   if (showFeedback) return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
   if (showPremiumGifts) return <PremiumGiftsScreen onBack={() => setShowPremiumGifts(false)} />;
   if (showAccount) return <AccountScreen userId={session.user.id} relationshipIds={relationships.map((relationship) => relationship.id)} onBack={() => setShowAccount(false)} />;
-
-  const appearanceOptions: AppearanceMode[] = ['system', 'light', 'dark'];
+  if (showFaq) return <FaqScreen onBack={() => setShowFaq(false)} />;
+  if (showPremium) return (
+    <PremiumScreen
+      onBack={() => setShowPremium(false)}
+      onBuyPremium={buyIndividualPremium}
+      onBuyGift={buyPremiumGift}
+      onManageGifts={() => { setShowPremium(false); setShowPremiumGifts(true); }}
+      onRestore={() => void storeBilling.restore().catch((error) => Alert.alert(t('home.restoreUnavailable'), error instanceof Error ? error.message : t('common.tryAgain')))}
+      processing={storeBilling.processing}
+      connected={storeBilling.connected}
+    />
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <View style={styles.shell}>
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.brand}>TalkTwo</Text>
-            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.account}>{session.user.email}</Text>
+            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.account}>
+              {isUiPreviewMode ? (locale === 'da' ? 'UI-forhåndsvisning · ingen backend' : 'UI preview · no backend') : session.user.email}
+            </Text>
           </View>
-          <TouchableOpacity accessibilityRole="button" onPress={() => void signOut()} style={styles.headerButton}><Text style={styles.headerButtonText}>{t('home.signOut')}</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Menu" onPress={() => setShowMenu((value) => !value)} style={styles.headerButton}>
+            <Text style={styles.headerButtonText}>⋮</Text>
+          </TouchableOpacity>
         </View>
 
-        {pendingInvite ? (
-          <View style={styles.invitationBanner}>
-            <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>{t(pendingInvite.kind === 'member' ? 'home.groupInvitation' : 'home.conversationInvitation')}</Text>
-              <Text style={styles.bannerHelp}>{t(pendingInvite.kind === 'member' ? 'home.groupInvitationHelp' : 'home.conversationInvitationHelp')}</Text>
-            </View>
-            <Action styles={styles} title={busy ? t('home.pleaseWait') : t('home.accept')} onPress={() => void acceptPendingInvite()} disabled={busy} />
-          </View>
-        ) : null}
-
-        {pendingRecovery ? (
-          <View style={styles.invitationBanner}>
-            <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>{t('home.secureRecovery')}</Text>
-              <Text style={styles.bannerHelp}>{t('home.secureRecoveryHelp')}</Text>
-            </View>
-            <Action styles={styles} title={busy ? t('home.pleaseWait') : t('home.reviewRequest')} onPress={() => void reviewKeyRecovery()} disabled={busy} />
-          </View>
-        ) : null}
-
-        {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.viewMembership')} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
-
-        {writeUpgradeApprovals.map((approval) => {
-          const requester = (members[approval.relationship_id] ?? []).find((member) => member.user_id === approval.requester_id);
-          const requesterName = requester?.display_name?.trim() || t('chat.member');
-          return (
-            <View key={approval.request_id} style={styles.pendingNotice}>
-              <Text style={styles.upgradeTitle}>{upgradeCopy.approval(requesterName)}</Text>
-              <Text style={styles.pendingNoticeText}>{upgradeCopy.approvalHelp}</Text>
-              <View style={styles.approvalActions}>
-                <View style={styles.approvalAction}><Action styles={styles} title={t('settings.reject')} onPress={() => void respondWriteAccess(approval.request_id, false)} disabled={busy} quiet /></View>
-                <View style={styles.approvalAction}><Action styles={styles} title={t('settings.approve')} onPress={() => void respondWriteAccess(approval.request_id, true)} disabled={busy} /></View>
-              </View>
-            </View>
-          );
-        })}
-
-        {relationships.filter((relationship) => relationship.my_role === 'observer').map((relationship) => {
-          const request = writeUpgrades.find((item) => item.relationship_id === relationship.id);
-          const relMembers = members[relationship.id] ?? [];
-          const title = conversationTitle(relMembers, session.user.id, t('chat.member'), t('home.newConversation'));
-          const activeStatus = request && !['completed', 'rejected', 'expired'].includes(request.status) ? request.status : null;
-          const body = activeStatus === 'awaiting_approvals'
-            ? upgradeCopy.waiting
-            : activeStatus === 'awaiting_payment'
-              ? upgradeCopy.ready
-              : activeStatus === 'checkout_pending'
-                ? upgradeCopy.checkoutPending
-                : upgradeCopy.requestBody;
-          return (
-            <View key={`write-upgrade-${relationship.id}`} style={styles.pendingNotice}>
-              <Text style={styles.upgradeTitle}>{upgradeCopy.title} · {title}</Text>
-              <Text style={styles.pendingNoticeText}>{body}</Text>
-              {!activeStatus ? <Action styles={styles} title={upgradeCopy.requestAction} onPress={() => void requestWriteAccess(relationship.id)} disabled={busy} quiet /> : null}
-              {activeStatus === 'awaiting_payment' || activeStatus === 'checkout_pending' ? (
-                <Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.continueStore')} onPress={() => continueWriteUpgrade(relationship.id)} disabled={busy || storeBilling.processing || !storeBilling.connected} />
-              ) : null}
-            </View>
-          );
-        })}
-
-        {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>{t('home.keyNeeded')}</Text><Text style={styles.securityText}>{t('home.keyNeededBody')}</Text></View> : null}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{t('home.chats')}</Text>
-          <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void makeInvite()}><Text style={styles.newChat}>{t('home.newChat')}</Text></TouchableOpacity>
-        </View>
-
-        <View style={styles.chatList}>
-          {relationships.map((rel) => {
-            const relMembers = members[rel.id] ?? [];
-            const title = conversationTitle(relMembers, session.user.id, t('chat.member'), t('home.newConversation'));
-            const initials = initialsForName(title);
-            const subtitle = rel.my_role === 'observer' ? t('chat.observerPeople', { count: rel.member_count }) : rel.member_count > 2 ? t('chat.people', { count: rel.member_count }) : t('chat.privateConversation');
-            const keyMissing = missingSecureKeys.includes(rel.id);
-            return (
-              <TouchableOpacity accessibilityRole="button" key={rel.id} disabled={busy} onPress={() => keyMissing ? void requestSecureKey(rel) : setSelected(rel)} style={[styles.chatRow, busy && styles.disabled]}>
-                <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
-                <View style={styles.chatText}>
-                  <Text numberOfLines={2} ellipsizeMode="tail" style={styles.chatTitle}>{title}</Text>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{keyMissing ? t('home.keyUnavailable') : subtitle}</Text>
-                </View>
-                <Text style={styles.chevron}>{keyMissing ? t('home.key') : '›'}</Text>
-              </TouchableOpacity>
-            );
-          })}
-          {!relationships.length ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>{t('home.noChats')}</Text>
-              <Text style={styles.emptyText}>{t('home.noChatsBody')}</Text>
-              <Action styles={styles} title={t('home.startChat')} onPress={() => void makeInvite()} disabled={busy} />
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          {isUiPreviewMode ? (
+            <View style={styles.pendingNotice}>
+              <Text style={styles.upgradeTitle}>{locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview'}</Text>
+              <Text style={styles.pendingNoticeText}>
+                {locale === 'da'
+                  ? 'Åbn ⋮-menuen for Premium, FAQ, konto m.m. Tryk på en chat for chat-skærmen (tom uden backend).'
+                  : 'Open the ⋮ menu for Premium, FAQ, account, etc. Tap a chat for the chat screen (empty without backend).'}
+              </Text>
             </View>
           ) : null}
-        </View>
 
-        <View style={styles.tools}>
-          <Text style={styles.sectionTitle}>{t('home.premium')}</Text>
-          <Text style={styles.toolHelp}>{t('home.premiumHelp')}</Text>
-          <Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.individualAction')} onPress={buyIndividualPremium} disabled={storeBilling.processing || !storeBilling.connected} />
-          <Text style={styles.privacy}>{t('home.twoPersonHelp')}</Text>
-          <View style={styles.giftDivider} />
-          <Text style={styles.giftTitle}>{t('home.giftTitle')}</Text>
-          <Text style={styles.toolHelp}>{t('home.giftHelp')}</Text>
-          <TextInput
-            accessibilityLabel={t('home.giftEmailLabel')}
-            autoCapitalize="none"
-            autoComplete="email"
-            autoCorrect={false}
-            editable={!storeBilling.processing}
-            keyboardType="email-address"
-            onChangeText={setGiftRecipientEmail}
-            placeholder="recipient@example.com"
-            placeholderTextColor={colors.subtle}
-            style={styles.input}
-            value={giftRecipientEmail}
-          />
-          <Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.giftAction')} onPress={buyPremiumGift} disabled={storeBilling.processing || !storeBilling.connected} quiet />
-          <Action styles={styles} title={t('home.manageGifts')} onPress={() => setShowPremiumGifts(true)} quiet />
-        </View>
+          {pendingInvite ? (
+            <View style={styles.invitationBanner}>
+              <View style={styles.bannerText}>
+                <Text style={styles.bannerTitle}>{t(pendingInvite.kind === 'member' ? 'home.groupInvitation' : 'home.conversationInvitation')}</Text>
+                <Text style={styles.bannerHelp}>{t(pendingInvite.kind === 'member' ? 'home.groupInvitationHelp' : 'home.conversationInvitationHelp')}</Text>
+              </View>
+              <Action styles={styles} title={busy ? t('home.pleaseWait') : t('home.accept')} onPress={() => void acceptPendingInvite()} disabled={busy} />
+            </View>
+          ) : null}
 
-        <View style={styles.tools}>
-          <Text style={styles.sectionTitle}>{t('home.quietControls')}</Text>
-          <Text style={styles.toolHelp}>{t('home.quietHelp')}</Text>
-          <Action styles={styles} title={t('windows.title')} onPress={() => setShowWindows(true)} quiet />
-          <Action styles={styles} title={t('home.checkWaiting')} onPress={() => void checkWaiting()} disabled={busy} quiet />
-        </View>
+          {pendingRecovery ? (
+            <View style={styles.invitationBanner}>
+              <View style={styles.bannerText}>
+                <Text style={styles.bannerTitle}>{t('home.secureRecovery')}</Text>
+                <Text style={styles.bannerHelp}>{t('home.secureRecoveryHelp')}</Text>
+              </View>
+              <Action styles={styles} title={busy ? t('home.pleaseWait') : t('home.reviewRequest')} onPress={() => void reviewKeyRecovery()} disabled={busy} />
+            </View>
+          ) : null}
 
-        <View style={styles.tools}>
-          <Text style={styles.sectionTitle}>{t('home.appearance')}</Text>
-          <Text style={styles.toolHelp}>{t('home.appearanceHelp', { appearance: t(resolved === 'dark' ? 'home.appearanceDark' : 'home.appearanceLight') })}</Text>
-          <View style={styles.appearanceRow}>
-            {appearanceOptions.map((option) => (
-              <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ selected: mode === option }} onPress={() => void setMode(option)} style={[styles.appearanceChip, mode === option && styles.appearanceChipSelected]}>
-                <Text style={[styles.appearanceChipText, mode === option && styles.appearanceChipTextSelected]}>{t(option === 'system' ? 'home.appearanceSystem' : option === 'light' ? 'home.appearanceLight' : 'home.appearanceDark')}</Text>
-              </TouchableOpacity>
-            ))}
+          {pendingText ? <View style={styles.pendingNotice}><Text style={styles.pendingNoticeText}>{pendingText}</Text>{approvedPending ? <View style={styles.pendingAction}><Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.viewMembership')} onPress={() => void showPaymentOffer(approvedPending)} disabled={busy || storeBilling.processing || !storeBilling.connected} /></View> : null}</View> : null}
+
+          {writeUpgradeApprovals.map((approval) => {
+            const requester = (members[approval.relationship_id] ?? []).find((member) => member.user_id === approval.requester_id);
+            const requesterName = requester?.display_name?.trim() || t('chat.member');
+            return (
+              <View key={approval.request_id} style={styles.pendingNotice}>
+                <Text style={styles.upgradeTitle}>{upgradeCopy.approval(requesterName)}</Text>
+                <Text style={styles.pendingNoticeText}>{upgradeCopy.approvalHelp}</Text>
+                <View style={styles.approvalActions}>
+                  <View style={styles.approvalAction}><Action styles={styles} title={t('settings.reject')} onPress={() => void respondWriteAccess(approval.request_id, false)} disabled={busy} quiet /></View>
+                  <View style={styles.approvalAction}><Action styles={styles} title={t('settings.approve')} onPress={() => void respondWriteAccess(approval.request_id, true)} disabled={busy} /></View>
+                </View>
+              </View>
+            );
+          })}
+
+          {relationships.filter((relationship) => relationship.my_role === 'observer').map((relationship) => {
+            const request = writeUpgrades.find((item) => item.relationship_id === relationship.id);
+            const relMembers = members[relationship.id] ?? [];
+            const title = conversationTitle(relMembers, session.user.id, t('chat.member'), t('home.newConversation'));
+            const activeStatus = request && !['completed', 'rejected', 'expired'].includes(request.status) ? request.status : null;
+            const body = activeStatus === 'awaiting_approvals'
+              ? upgradeCopy.waiting
+              : activeStatus === 'awaiting_payment'
+                ? upgradeCopy.ready
+                : activeStatus === 'checkout_pending'
+                  ? upgradeCopy.checkoutPending
+                  : upgradeCopy.requestBody;
+            return (
+              <View key={`write-upgrade-${relationship.id}`} style={styles.pendingNotice}>
+                <Text style={styles.upgradeTitle}>{upgradeCopy.title} · {title}</Text>
+                <Text style={styles.pendingNoticeText}>{body}</Text>
+                {!activeStatus ? <Action styles={styles} title={upgradeCopy.requestAction} onPress={() => void requestWriteAccess(relationship.id)} disabled={busy} quiet /> : null}
+                {activeStatus === 'awaiting_payment' || activeStatus === 'checkout_pending' ? (
+                  <Action styles={styles} title={storeBilling.processing ? t('home.processingPurchase') : t('home.continueStore')} onPress={() => continueWriteUpgrade(relationship.id)} disabled={busy || storeBilling.processing || !storeBilling.connected} />
+                ) : null}
+              </View>
+            );
+          })}
+
+          {missingSecureKeys.length ? <View style={styles.securityNotice}><Text style={styles.securityTitle}>{t('home.keyNeeded')}</Text><Text style={styles.securityText}>{t('home.keyNeededBody')}</Text></View> : null}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('home.chats')}</Text>
+            <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void makeInvite()} style={styles.newChatButton}><Text style={styles.newChat}>{t('home.newChat')}</Text></TouchableOpacity>
           </View>
-        </View>
 
-        <View style={styles.tools}>
-          <Text style={styles.sectionTitle}>TalkTwo</Text>
-          <Action styles={styles} title={storeBilling.processing ? t('home.checkingPurchases') : t('home.restorePurchases')} onPress={() => void storeBilling.restore().catch((error) => Alert.alert(t('home.restoreUnavailable'), error instanceof Error ? error.message : t('common.tryAgain')))} disabled={storeBilling.processing || !storeBilling.connected} quiet />
-          <Action styles={styles} title={t('home.sendFeedback')} onPress={() => setShowFeedback(true)} quiet />
-          <Action styles={styles} title={t('home.accountPrivacy')} onPress={() => setShowAccount(true)} quiet />
-          <Text style={styles.privacy}>{t('home.privacyBody')}</Text>
-        </View>
-      </ScrollView>
+          <View style={styles.chatList}>
+            {relationships.map((rel) => {
+              const relMembers = members[rel.id] ?? [];
+              const title = conversationTitle(relMembers, session.user.id, t('chat.member'), t('home.newConversation'));
+              const initials = initialsForName(title);
+              const subtitle = rel.my_role === 'observer' ? t('chat.observerPeople', { count: rel.member_count }) : rel.member_count > 2 ? t('chat.people', { count: rel.member_count }) : t('chat.privateConversation');
+              const keyMissing = missingSecureKeys.includes(rel.id);
+              return (
+                <TouchableOpacity accessibilityRole="button" key={rel.id} disabled={busy} onPress={() => keyMissing ? void requestSecureKey(rel) : setSelected(rel)} style={[styles.chatRow, busy && styles.disabled]}>
+                  <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
+                  <View style={styles.chatText}>
+                    <Text numberOfLines={2} ellipsizeMode="tail" style={styles.chatTitle}>{title}</Text>
+                    <Text numberOfLines={1} ellipsizeMode="tail" style={styles.chatSubtitle}>{keyMissing ? t('home.keyUnavailable') : subtitle}</Text>
+                  </View>
+                  <Text style={styles.chevron}>{keyMissing ? t('home.key') : '›'}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            {!relationships.length ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyTitle}>{t('home.noChats')}</Text>
+                <Text style={styles.emptyText}>{t('home.noChatsBody')}</Text>
+                <Action styles={styles} title={t('home.startChat')} onPress={() => void makeInvite()} disabled={busy} />
+              </View>
+            ) : null}
+          </View>
+        </ScrollView>
+
+        {showMenu ? (
+          <View style={styles.menuLayer} pointerEvents="box-none">
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close menu" activeOpacity={1} onPress={() => setShowMenu(false)} style={styles.menuBackdrop} />
+            <View style={styles.menuCard}>
+              <MenuItem styles={styles} title={menuCopy.premium} onPress={() => { setShowMenu(false); setShowPremium(true); }} />
+              <MenuItem styles={styles} title={menuCopy.windows} onPress={() => { setShowMenu(false); setShowWindows(true); }} />
+              <MenuItem styles={styles} title={menuCopy.waiting} onPress={() => { setShowMenu(false); void checkWaiting(); }} />
+              <MenuItem styles={styles} title={`${menuCopy.appearance} · ${mode === 'system' ? menuCopy.system : resolved === 'dark' ? menuCopy.dark : menuCopy.light}`} onPress={chooseAppearance} />
+              <MenuItem styles={styles} title={menuCopy.feedback} onPress={() => { setShowMenu(false); setShowFeedback(true); }} />
+              <MenuItem styles={styles} title={menuCopy.faq} onPress={() => { setShowMenu(false); setShowFaq(true); }} />
+              <MenuItem styles={styles} title={menuCopy.account} onPress={() => { setShowMenu(false); setShowAccount(true); }} />
+              <View style={styles.menuDivider} />
+              <MenuItem styles={styles} title={menuCopy.signOut} danger onPress={() => {
+                setShowMenu(false);
+                if (isUiPreviewMode) {
+                  Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Log ud er deaktiveret i preview.' : 'Sign out is disabled in preview.');
+                  return;
+                }
+                void signOut();
+              }} />
+            </View>
+          </View>
+        ) : null}
+      </View>
     </SafeAreaView>
   );
 }
@@ -499,28 +562,30 @@ export default function HomeScreen({ session, pendingInvite, clearPendingInvite,
 function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
-    container: { paddingBottom: 42 },
-    header: { minHeight: 78, paddingHorizontal: 18, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    shell: { flex: 1, position: 'relative' },
+    container: { paddingBottom: 24, flexGrow: 1 },
+    header: { minHeight: 68, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     headerText: { flex: 1, minWidth: 0 },
-    brand: { fontSize: 28, fontWeight: '800', color: colors.brand, flexShrink: 1 },
-    account: { marginTop: 2, color: colors.subtle, fontSize: 12, flexShrink: 1 },
-    headerButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4, flexShrink: 0 },
-    headerButtonText: { fontWeight: '700', color: colors.muted },
+    brand: { fontSize: 24, fontWeight: '800', color: colors.brand, flexShrink: 1 },
+    account: { marginTop: 1, color: colors.subtle, fontSize: 11, flexShrink: 1 },
+    headerButton: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, flexShrink: 0 },
+    headerButtonText: { fontWeight: '800', color: colors.brand, fontSize: 28, lineHeight: 30 },
     invitationBanner: { margin: 14, padding: 14, backgroundColor: colors.invite, borderRadius: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
     bannerText: { flex: 1, minWidth: 190 },
     bannerTitle: { fontWeight: '800', color: colors.inviteText, fontSize: 16, flexShrink: 1 },
     bannerHelp: { marginTop: 4, color: colors.muted, lineHeight: 18, flexShrink: 1 },
-    pendingNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: colors.notice, padding: 12, gap: 10 },
+    pendingNotice: { marginHorizontal: 14, marginTop: 10, borderRadius: 12, backgroundColor: colors.notice, padding: 12, gap: 10 },
     pendingNoticeText: { color: colors.noticeText, lineHeight: 19, flexShrink: 1 },
     pendingAction: { alignSelf: 'stretch' },
     upgradeTitle: { color: colors.noticeText, fontWeight: '800', fontSize: 15, flexShrink: 1 },
     approvalActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     approvalAction: { flex: 1, minWidth: 120 },
-    securityNotice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger, padding: 12, gap: 5 },
+    securityNotice: { marginHorizontal: 14, marginTop: 10, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger, padding: 12, gap: 5 },
     securityTitle: { color: colors.danger, fontWeight: '800', flexShrink: 1 },
     securityText: { color: colors.muted, lineHeight: 18, flexShrink: 1 },
     sectionHeader: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text, flexShrink: 1 },
+    newChatButton: { minHeight: 44, justifyContent: 'center' },
     newChat: { color: colors.accent, fontWeight: '800', paddingVertical: 10 },
     chatList: { backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     chatRow: { minHeight: 72, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
@@ -533,21 +598,18 @@ function makeStyles(colors: AppColors) {
     empty: { padding: 22, gap: 10, alignItems: 'stretch' },
     emptyTitle: { textAlign: 'center', fontWeight: '800', fontSize: 17, color: colors.text },
     emptyText: { textAlign: 'center', color: colors.muted, lineHeight: 20 },
-    tools: { marginTop: 16, marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-    toolHelp: { color: colors.muted, lineHeight: 20, flexShrink: 1 },
-    privacy: { color: colors.subtle, fontSize: 12, lineHeight: 17, flexShrink: 1 },
-    giftDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 2 },
-    giftTitle: { color: colors.text, fontWeight: '800', fontSize: 15, flexShrink: 1 },
-    input: { minHeight: 46, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: colors.text, backgroundColor: colors.surfaceSoft },
     action: { minHeight: 44, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentStrong, flexShrink: 0 },
     quietAction: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
     actionText: { color: colors.accentText, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
     quietActionText: { color: colors.text },
     disabled: { opacity: 0.4 },
-    appearanceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    appearanceChip: { minHeight: 44, minWidth: 82, flexGrow: 1, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: colors.surfaceSoft },
-    appearanceChipSelected: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
-    appearanceChipText: { color: colors.text, fontWeight: '800' },
-    appearanceChipTextSelected: { color: colors.accentText },
+    menuLayer: { ...StyleSheet.absoluteFill, zIndex: 30, elevation: 30 },
+    menuBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.08)' },
+    menuCard: { position: 'absolute', right: 8, top: 58, width: 268, maxWidth: '88%', backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 6, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, elevation: 12, shadowColor: '#000000', shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+    menuItem: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 18 },
+    menuItemText: { color: colors.text, fontSize: 15, fontWeight: '600' },
+    menuItemDanger: { color: colors.danger },
+    menuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 4 },
+    appearanceChip: { minHeight: 44, minWidth: 82, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: colors.surfaceSoft },
   });
 }

@@ -8,6 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "eas:init": "npx eas-cli init",
+    "build:android:apk": "npx eas-cli build --platform android --profile preview",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "test": "tsx --test tests/*.test.ts",

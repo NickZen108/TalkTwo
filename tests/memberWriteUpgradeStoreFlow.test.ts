@@ -57,7 +57,8 @@ test('interrupted native checkout can be cancelled or resumed without creating c
   assert.match(guard, /A store upgrade is already in progress/i);
   assert.match(recovery, /cancel_my_billing_checkout_intent/i);
   assert.match(recovery, /set status='awaiting_payment'/i);
-  assert.match(resumable, /request\.status in \('awaiting_payment','checkout_pending'\)/i);
+  // The resumable migration selects with table alias r.
+  assert.match(resumable, /r\.status in \('awaiting_payment','checkout_pending'\)/i);
   assert.match(resumable, /return query select existing_intent\.id,9900,'dkk'::text,true,existing_intent\.expires_at/i);
   assert.match(billingHook, /Reconcile a still-authorized pending intent/i);
 });

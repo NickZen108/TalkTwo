@@ -12,10 +12,10 @@ test('thread, invite and recovery SecureStore entries are tracked in a deletion 
   assert.match(keys, /getTrackedSecret[\s\S]*migrates secrets written by pre-index TalkTwo builds/i);
 });
 
-test('normal sign-out clears transient invitation and recovery secrets but preserves thread-key cleanup semantics', () => {
-  assert.match(keys, /clearPendingThreadSecrets[\s\S]*!name\.startsWith\(THREAD_PREFIX\)/i);
-  assert.match(auth, /signOut\(\)[\s\S]*clearPendingThreadSecrets\(\)/i);
-  assert.doesNotMatch(auth, /signOut\(\)[\s\S]{0,500}clearAllTalkTwoThreadSecrets\(\)/i);
+test('normal sign-out clears every indexed TalkTwo secret so prior-account keys cannot survive an account switch', () => {
+  assert.match(keys, /clearAllTalkTwoThreadSecrets[\s\S]*clearTrackedSecrets\(\(\) => true\)/i);
+  assert.match(auth, /signOut\(\)[\s\S]*clearAllTalkTwoThreadSecrets\(\)/i);
+  assert.doesNotMatch(auth, /signOut\(\)[\s\S]{0,500}clearPendingThreadSecrets\(\)/i);
 });
 
 test('permanent deletion clears legacy known thread keys and every indexed TalkTwo secret', () => {

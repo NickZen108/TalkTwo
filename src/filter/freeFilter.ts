@@ -5,18 +5,24 @@ const MAX_FREE_LENGTH = 160;
 export const FREE_PROFANITY_LANGUAGES = ['en', 'da'] as const;
 
 // Keep the Free tier deliberately mechanical. These are exact normalized words,
-// not an attempt to infer intent or relationship dynamics. Avoid ambiguous words
-// that are commonly harmless in practical messages.
+// not an attempt to infer intent or relationship dynamics. The list includes
+// obvious profanity, direct insults and degrading adjectives that should not be
+// routed through a high-conflict conversation even when the sentence is short.
 const BANNED_WORDS = new Set([
-  // English profanity / direct insults
+  // English profanity / direct insults / degrading adjectives
   'fuck', 'fucked', 'fucker', 'fuckers', 'fucking', 'motherfucker', 'motherfuckers',
   'shit', 'bullshit', 'bitch', 'bitches', 'asshole', 'assholes', 'cunt', 'cunts',
   'dickhead', 'dickheads', 'bastard', 'bastards', 'prick', 'pricks', 'wanker',
-  'wankers', 'twat', 'twats', 'idiot', 'idiots', 'moron', 'morons',
-  // Danish profanity / direct insults
+  'wankers', 'twat', 'twats', 'idiot', 'idiots', 'moron', 'morons', 'dumb',
+  'stupid', 'crazy', 'insane', 'retard', 'retarded', 'pathetic', 'useless',
+  'incompetent', 'ridiculous',
+  // Danish profanity / direct insults / degrading adjectives
   'fandme', 'fanden', 'satme', 'kraftedeme', 'krafteme', 'lort', 'lorte', 'pis',
   'pisse', 'røvhul', 'røvhuller', 'kælling', 'kællinger', 'idiot', 'idioter',
-  'nar', 'narrer', 'svin', 'klaphat', 'klaphatte',
+  'nar', 'narrer', 'svin', 'klaphat', 'klaphatte', 'dum', 'dumme', 'sindssyg',
+  'sindssygt', 'sindssyge', 'retarderet', 'retarderede', 'patetisk', 'patetiske',
+  'ubrukelig', 'ubrugelig', 'ubrugelige', 'inkompetent', 'inkompetente', 'latterlig',
+  'latterligt', 'latterlige',
 ]);
 
 const BANNED_PHRASES = [
@@ -99,9 +105,9 @@ export function evaluateFreeMessage(message: string): FilterResult {
   if (hasProfanity(policyText)) {
     addReason(reasons, {
       code: 'profanity',
-      title: 'Remove profanity or direct insults',
-      explanation: 'Free messages do not allow obvious profanity or direct insults.',
-      suggestion: 'Replace the word with neutral language.',
+      title: 'Remove insulting or degrading language',
+      explanation: 'Free messages do not allow profanity, direct insults or degrading adjectives.',
+      suggestion: 'Replace the wording with neutral, practical language.',
     });
   }
 

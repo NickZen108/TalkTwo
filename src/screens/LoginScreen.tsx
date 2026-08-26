@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { sendMagicLink } from '../services/auth';
+import { isUiPreviewMode } from '../lib/supabase';
 import { useAppTheme, type AppColors } from '../theme/AppTheme';
 import { useI18n } from '../i18n/I18nContext';
 import { getFreeFilterCopy } from '../i18n/freeFilterCopy';
@@ -15,6 +16,15 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false);
 
   async function requestLink() {
+    if (isUiPreviewMode) {
+      Alert.alert(
+        locale === 'da' ? 'Kun UI-forhåndsvisning' : 'UI preview only',
+        locale === 'da'
+          ? 'Denne build har ingen backend. Login og beskeder virker ikke her — kun skærmene.'
+          : 'This build has no backend. Sign-in and messaging are disabled — screens only.',
+      );
+      return;
+    }
     try {
       setBusy(true);
       setSentEmail(await sendMagicLink(email));
@@ -28,6 +38,18 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        {isUiPreviewMode ? (
+          <View style={styles.previewBanner}>
+            <Text style={styles.previewTitle}>
+              {locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview'}
+            </Text>
+            <Text style={styles.previewBody}>
+              {locale === 'da'
+                ? 'Ingen Supabase-backend i denne APK. Du kan se login-skærmen; login sender ikke e-mail.'
+                : 'No Supabase backend in this APK. You can view the login screen; sign-in will not send email.'}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.header}>
           <Text style={styles.brand}>TalkTwo</Text>
           <Text style={styles.tagline}>{t('login.tagline')}</Text>
@@ -68,6 +90,16 @@ function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
     container: { padding: 22, gap: 16 },
+    previewBanner: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 2,
+      borderColor: colors.accent,
+      gap: 6,
+    },
+    previewTitle: { fontWeight: '800', color: colors.brand, fontSize: 16 },
+    previewBody: { color: colors.muted, lineHeight: 20 },
     header: { marginTop: 24, marginBottom: 8 },
     brand: { fontSize: 34, fontWeight: '800', color: colors.brand },
     tagline: { marginTop: 4, color: colors.muted },

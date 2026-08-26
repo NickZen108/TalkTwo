@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const account = fs.readFileSync('src/screens/AccountScreen.tsx', 'utf8');
-const faq = fs.readFileSync('src/screens/FAQScreen.tsx', 'utf8');
+const faq = fs.readFileSync('src/screens/FAQScreen/index.tsx', 'utf8');
 
 test('account menu exposes Suggest changes and FAQ', () => {
   assert.match(account, /Foreslå ændringer/);

@@ -17,6 +17,8 @@ import { sentDeliveryStatusText } from '../i18n/deliveryCopy';
 import type { SupportedLocale } from '../i18n/translations';
 import type { TranslationKey } from '../i18n/translations';
 import type { FilterReason } from '../filter/types';
+import { isUiPreviewMode } from '../lib/supabase';
+import { UI_PREVIEW_MEMBERS } from '../lib/uiPreviewDemo';
 
 const MAX_PREMIUM_LENGTH = 480;
 
@@ -96,13 +98,13 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [members, setMembers] = useState<RelationshipMember[]>([]);
+  const [members, setMembers] = useState<RelationshipMember[]>(UI_PREVIEW_MEMBERS[relationship.id] ?? []);
   const [memberLooks, setMemberLooks] = useState<Record<string, MemberLook>>({});
   const [background, setBackground] = useState<BackgroundThemeName>('paper');
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
-  const [plan, setPlan] = useState<UserPlan | null>(null);
+  const [plan, setPlan] = useState<UserPlan | null>(isUiPreviewMode ? { plan: 'free', trial_ends_at: null, premium_ends_at: null, analyses_remaining_today: 0 } as UserPlan : null);
   const [review, setReview] = useState<AiReview | null>(null);
   const [reviewedText, setReviewedText] = useState('');
   const [trialFallback, setTrialFallback] = useState(false);
@@ -124,16 +126,38 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   const canSend = canCompose && (premiumAi ? canSendPremium : freeResult.canSend) && messageLength <= maxLength;
 
   async function refreshMessages() {
+    if (isUiPreviewMode) {
+      setMessages([]);
+      return;
+    }
     setMessages(await listMessages(relationship.id));
   }
 
   async function refreshPlan() {
+    if (isUiPreviewMode) {
+      setPlan({ plan: 'free', trial_ends_at: null, premium_ends_at: null, analyses_remaining_today: 0 } as UserPlan);
+      return;
+    }
     const next = await getMyPlan();
     setPlan(next);
     setTrialFallback(next.plan === 'trial' && next.analyses_remaining_today === 0);
   }
 
   async function refreshAppearance() {
+    if (isUiPreviewMode) {
+      const nextMembers = UI_PREVIEW_MEMBERS[relationship.id] ?? [];
+      const looks: Record<string, MemberLook> = {};
+      for (const member of nextMembers) {
+        looks[member.user_id] = {
+          name: member.display_name || t('chat.member'),
+          bubble: safeBubbleTheme(member.user_id === session.user.id ? 'sage' : 'grey'),
+        };
+      }
+      setMembers(nextMembers);
+      setMemberLooks(looks);
+      setBackground('paper');
+      return;
+    }
     const [nextMembers, preferences, theme] = await Promise.all([
       listRelationshipMembers(relationship.id),
       listMemberPreferences(session.user.id, relationship.id),
@@ -168,7 +192,10 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
     setMessage('');
     setReview(null);
     setReviewedText('');
-    void refreshAll().catch((error) => Alert.alert(t('chat.openError'), error instanceof Error ? error.message : t('common.tryAgain')));
+    void refreshAll().catch((error) => {
+      if (isUiPreviewMode) return;
+      Alert.alert(t('chat.openError'), error instanceof Error ? error.message : t('common.tryAgain'));
+    });
   }, [relationship.id]);
 
   function changeMessage(text: string) {
@@ -182,6 +209,10 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
   }
 
   async function startTrial() {
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Trial kræver backend.' : 'Trial requires a backend.');
+      return;
+    }
     try {
       setBusy(true);
       const next = await startPremiumTrial();
@@ -220,6 +251,10 @@ export default function ChatScreen({ relationship, session, onBack, onPurchasePr
 
   async function sendCurrentMessage() {
     if (!canSend) return;
+    if (isUiPreviewMode) {
+      Alert.alert(locale === 'da' ? 'UI-forhåndsvisning' : 'UI preview', locale === 'da' ? 'Afsendelse kræver backend.' : 'Sending requires a backend.');
+      return;
+    }
     const lastTrialReview = plan?.plan === 'trial' && reviewCurrent && review?.usage?.analyses_remaining === 0;
     try {
       setBusy(true);
